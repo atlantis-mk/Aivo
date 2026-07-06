@@ -1,0 +1,23 @@
+{
+  "name": "aivo",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.1.1",
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build:core": "node scripts/build-core.mjs",
+    "build": "npm --workspace @aivo/desktop run build",
+    "lint": "npm --workspace @aivo/desktop run lint",
+    "diagnostics": "npm run test:core && npm run lint && npm run build",
+    "package": "node scripts/package-desktop.mjs package",
+    "package:mac": "node scripts/package-desktop.mjs package:mac",
+    "package:win": "node scripts/package-desktop.mjs package:win",
+    "package:linux": "node scripts/package-desktop.mjs package:linux",
+    "smoke:release": "npm run build:core && node scripts/smoke-release.mjs",
+    "dev:core": "cd core && go run ./cmd/aivo-core",
+    "test:core": "cd core && go test ./..."
+  }
+}

@@ -1,0 +1,303 @@
+import { code } from "@streamdown/code";
+import { cjk } from "@streamdown/cjk";
+import { math } from "@streamdown/math";
+import { mermaid } from "@streamdown/mermaid";
+import * as echarts from "echarts/core";
+import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
+import {
+ DatasetComponent,
+ GridComponent,
+ LegendComponent,
+ TitleComponent,
+ TooltipComponent,
+ TransformComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+import type { ECharts, EChartsCoreOption } from "echarts/core";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Streamdown, type AnimateOptions, type Components, type ControlsConfig, type CustomRendererProps } from "streamdown";
+
+import { cn } from "@/lib/utils";
+
+type MarkdownStreamFactory = () => AsyncGenerator<string, void, unknown>;
+
+type MarkdownBaseProps = {
+ className?: string;
+};
+
+type MarkdownContentProps = MarkdownBaseProps & {
+ content: string;
+ isFinished?: boolean;
+ stream?: never;
+};
+
+type MarkdownStreamProps = MarkdownBaseProps & {
+ content?: never;
+ isFinished?: never;
+ stream: MarkdownStreamFactory;
+};
+
+type MarkdownProps = MarkdownContentProps | MarkdownStreamProps;
+
+type EchartsCodeBlockProps = CustomRendererProps;
+
+const markdownContentResizeEvent = "aivo-markdown-content-resize";
+
+echarts.use([
+ BarChart,
+ LineChart,
+ PieChart,
+ ScatterChart,
+ GridComponent,
+ LegendComponent,
+ TitleComponent,
+ TooltipComponent,
+ DatasetComponent,
+ TransformComponent,
+ CanvasRenderer,
+]);
+
+const streamdownComponents: Components = {
+ a: (props) => {
+ const href = typeof props.href === "string" ? props.href : undefined;
+ const title = typeof props.title === "string" ? props.title : undefined;
+ return (
+ <a href={href} rel="noopener noreferrer" target="_blank" title={title}>
+ {props.children}
+ </a>
+ );
+ },
+ img: (props) => {
+ const src = typeof props.src === "string" ? props.src : undefined;
+ const alt = typeof props.alt === "string" ? props.alt : "";
+ const title = typeof props.title === "string" ? props.title : undefined;
+ if (!src) return null;
+
+ return <img alt={alt} loading="lazy" src={src} title={title} />;
+ },
+};
+
+const streamdownPlugins = {
+ code,
+ cjk,
+ math,
+ mermaid,
+ renderers: [{ language: "echarts", component: EchartsCodeBlock }],
+};
+
+const streamdownStreamingPlugins = {
+ code,
+ cjk,
+};
+
+const markdownControls = {
+ code: true,
+ mermaid: true,
+ table: true,
+} satisfies ControlsConfig;
+
+const markdownAnimation = {
+ animation: "fadeIn",
+ duration: 150,
+ easing: "ease-out",
+ sep: "word",
+ stagger: 20,
+} satisfies AnimateOptions;
+
+export function Markdown(props: MarkdownProps) {
+ const isStreamSource = typeof props.stream === "function";
+ const stream = isStreamSource ? props.stream : undefined;
+ const [streamContent, setStreamContent] = useState("");
+ const [streamFinished, setStreamFinished] = useState(!isStreamSource);
+
+ useEffect(() => {
+ if (!stream) return;
+
+ const streamFactory = stream;
+ let isCancelled = false;
+ let generator: AsyncGenerator<string, void, unknown> | undefined;
+
+ async function consumeStream() {
+ setStreamContent("");
+ setStreamFinished(false);
+
+ try {
+ generator = streamFactory();
+ for await (const chunk of generator) {
+ if (isCancelled) return;
+ setStreamContent((currentContent) => currentContent + chunk);
+ }
+ } catch (error) {
+ if (!isCancelled) {
+ console.error("Markdown stream failed", error);
+ }
+ } finally {
+ if (!isCancelled) setStreamFinished(true);
+ }
+ }
+
+ void consumeStream();
+
+ return () => {
+ isCancelled = true;
+ void generator?.return(undefined);
+ };
+ }, [stream]);
+
+ const content = isStreamSource ? streamContent : props.content;
+ const isFinished = isStreamSource ? streamFinished : props.isFinished ?? true;
+
+ return (
+ <MarkdownViewer
+ className={props.className}
+ content={content}
+ isFinished={isFinished}
+ />
+ );
+}
+
+function MarkdownViewer({ content, isFinished, className }: MarkdownContentProps) {
+ if (!content.trim()) return null;
+
+ return (
+ <Streamdown
+ animated={isFinished ? markdownAnimation : false}
+ className={cn("aivo-markdown break-words text-sm/relaxed", className)}
+ components={streamdownComponents}
+ controls={markdownControls}
+ isAnimating={!isFinished}
+ lineNumbers={false}
+ linkSafety={{ enabled: false }}
+ mode={isFinished ? "static" : "streaming"}
+ plugins={isFinished ? streamdownPlugins : streamdownStreamingPlugins}
+ urlTransform={safeMarkdownUrl}
+ >
+ {content}
+ </Streamdown>
+ );
+}
+
+function EchartsCodeBlock({ code: codeStr, isIncomplete }: EchartsCodeBlockProps) {
+ const chartRef = useRef<HTMLDivElement>(null);
+ const chartInstanceRef = useRef<ECharts | null>(null);
+ const parsedOption = useMemo(() => parseEchartsOption(codeStr), [codeStr]);
+ const shouldShowChart = !isIncomplete;
+
+ useLayoutEffect(() => {
+ const chartElement = chartRef.current;
+ if (!chartElement || !parsedOption.ok || !shouldShowChart) return;
+
+ const chart = echarts.getInstanceByDom(chartElement) ?? echarts.init(chartElement, null, { renderer: "canvas" });
+ chartInstanceRef.current = chart;
+ chart.setOption(normalizeEchartsOption(parsedOption.option), true);
+ const notifyContentResize = () => {
+ window.dispatchEvent(new CustomEvent(markdownContentResizeEvent));
+ };
+ chart.resize();
+ notifyContentResize();
+
+ const resizeObserver = new ResizeObserver(() => {
+ chart.resize();
+ notifyContentResize();
+ });
+ resizeObserver.observe(chartElement);
+
+ return () => {
+ resizeObserver.disconnect();
+ chart.dispose();
+ chartInstanceRef.current = null;
+ };
+ }, [parsedOption, shouldShowChart]);
+
+ if (!shouldShowChart) {
+ return (
+ <div
+ className="my-3 overflow-hidden rounded-md border border-border bg-background"
+ data-assistant-hover-ignore="true"
+ >
+ <div className="border-b border-border px-3 py-2 text-xs  text-muted-foreground">ECHART</div>
+ <div className="p-4 text-sm text-muted-foreground">解析中...</div>
+ </div>
+ );
+ }
+
+ if (!parsedOption.ok) {
+ return (
+ <div
+ className="my-3 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5"
+ data-assistant-hover-ignore="true"
+ >
+ <div className="border-b border-destructive/20 px-3 py-2 text-xs  text-destructive">ECHART</div>
+ <div className="p-4 text-sm text-destructive">ECharts JSON 配置解析失败：{parsedOption.message}</div>
+ </div>
+ );
+ }
+
+ return (
+ <div
+ className="my-3 overflow-hidden rounded-md border border-border bg-background"
+ data-assistant-hover-ignore="true"
+ >
+ <div className="border-b border-border px-3 py-2 text-xs  text-muted-foreground">ECHART</div>
+ <div className="h-[400px] min-w-0" ref={chartRef} />
+ </div>
+ );
+}
+
+function parseEchartsOption(codeStr: string): { ok: true; option: EChartsCoreOption } | { ok: false; message: string } {
+ try {
+ const parsed = JSON.parse(codeStr) as unknown;
+ if (!isRecord(parsed)) {
+ return { ok: false, message: "配置必须是 JSON 对象" };
+ }
+
+ return { ok: true, option: parsed as EChartsCoreOption };
+ } catch (error) {
+ return { ok: false, message: error instanceof Error ? error.message : "未知错误" };
+ }
+}
+
+function normalizeEchartsOption(option: EChartsCoreOption): EChartsCoreOption {
+ return {
+ ...option,
+ tooltip: normalizeEchartsTooltip((option as { tooltip?: unknown }).tooltip),
+ };
+}
+
+function normalizeEchartsTooltip(tooltip: unknown) {
+ if (Array.isArray(tooltip)) {
+ return tooltip.map((item) => normalizeEchartsTooltipObject(item));
+ }
+
+ return normalizeEchartsTooltipObject(tooltip);
+}
+
+function normalizeEchartsTooltipObject(tooltip: unknown) {
+ const tooltipOption = isRecord(tooltip) ? tooltip : {};
+
+ return {
+ ...tooltipOption,
+ appendTo: "body",
+ appendToBody: true,
+ enterable: false,
+ };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+ return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeMarkdownUrl(value: string, key: string) {
+ if (!value) return "";
+
+ try {
+ const url = new URL(value, window.location.href);
+ if (key === "src") {
+ return ["http:", "https:"].includes(url.protocol) ? value : "";
+ }
+
+ return ["http:", "https:", "mailto:"].includes(url.protocol) ? value : "";
+ } catch {
+ return "";
+ }
+}

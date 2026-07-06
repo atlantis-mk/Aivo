@@ -1,0 +1,40 @@
+schema: product-guided
+
+context: |
+  Product: Aivo
+  Category: local-first desktop AI productivity assistant
+  Primary users: independent developers and creators
+  V1 focus: code-to-delivery workflow
+  Benchmarks: anomalyco/opencode and NousResearch/hermes-agent
+  Principles: end-to-end deliverables, local-first control, user confirmation for sensitive actions
+  Engineering stack: single-repo modular Electron desktop app with Go module aivo, bundle ID com.aivo.desktop, Go backend, and pnpm-managed React + TypeScript + Vite frontend using TanStack Router
+  Frontend UI system: shadcn/ui is the default component baseline; use new-york style, CSS variables, lucide-react icons, project shadcn aliases, semantic tokens, documented component composition, and registry/CLI workflow before custom primitives
+  Frontend routing: use TanStack Router for setup, workbench, task, artifact, and settings navigation; keep route modules thin, typed, and free of workflow business rules or raw Aivo bridge calls
+  Frontend layout: keep route modules under src/routes, feature UI/hooks under src/features, typed Electron clients under src/services, shared components under src/components, and utilities under src/lib; do not add TanStack Query by default for MVP
+  Backend layering: domain / app / infra, with business rules isolated from Electron, UI, filesystem, SQLite, network, and provider adapters
+  Persistence: SQLite accessed through GORM with github.com/glebarez/sqlite stores local application state and metadata in the Electron app data directory; use GORM model migrations and targeted Migrator compatibility steps with pre-migration backups once user data exists; large files and project source remain on the filesystem
+  Provider validation: CLI providers are checked through command availability, version output where supported, and non-secret readiness checks; configured-but-unverified providers fail safely at first execution
+  Execution boundary: React sends user intent; Go app layer owns task orchestration, permission checks, confirmations, logs, retries, cancellation, and infra adapter calls
+  Frontend boundaries: React components should not scatter Aivo bridge calls; use typed client/service boundaries
+  Required quality gates: go test ./..., pnpm typecheck, and relevant Vitest/Testing Library tests once initialized; report any unrun checks with reasons
+  Error/dependency policy: handle errors explicitly with context, avoid silent failures, prefer standard library and existing dependencies
+  Source of truth: openspec/architecture.md contains the durable architecture baseline; openspec/standards.md contains the full engineering standards
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours

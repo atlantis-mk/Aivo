@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenSpec Init Project"
+  short_description: "Define global product context"
+  default_prompt: "Use $openspec-init-project to define the global product document before creating changes."
