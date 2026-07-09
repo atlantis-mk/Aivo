@@ -45,7 +45,7 @@ func visibleToolSpecsForMode(mode string, specs []domain.ToolSpec) []domain.Tool
 		action := permissionActionForSpec(spec)
 		switch mode {
 		case domain.AgentModeExplore, domain.AgentModePlan, domain.AgentModePlanner, domain.AgentModeReview, domain.AgentModeSummary, domain.AgentModeTitle:
-			if action == permissionActionRead && !isSchedulerTool(spec) {
+			if (action == permissionActionRead || action == permissionActionSkill) && !isSchedulerTool(spec) {
 				out = append(out, spec)
 			}
 		case domain.AgentModeDebug:

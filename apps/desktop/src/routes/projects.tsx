@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ProjectSelectionScreen } from '@/features/projects/project-selection-screen'
+import { ProjectWorkspaceScreen } from '@/features/projects/project-workspace-screen'
 
 export const Route = createFileRoute('/projects')({
-  component: ProjectSelectionScreen,
+  component: ProjectWorkspaceScreen,
 })

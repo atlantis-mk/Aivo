@@ -1,8 +1,5 @@
 import type { domain } from "../../bridge/go/models";
-
-function invoke<T>(method: string, ...args: unknown[]): Promise<T> {
-  return window.aivo.invoke<T>(method, ...args);
-}
+import { invokeBridge } from "@/services/bridge-invoke";
 
 export type TerminalInfo = {
   id: string;
@@ -40,19 +37,19 @@ export type TerminalUpdateInput = {
 };
 
 export function listTerminals(workspaceRoot: string) {
-  return invoke<TerminalInfo[]>("ListTerminals", workspaceRoot);
+  return invokeBridge<TerminalInfo[]>("ListTerminals", workspaceRoot);
 }
 
 export function createTerminal(input: TerminalCreateInput) {
-  return invoke<TerminalInfo>("CreateTerminal", input);
+  return invokeBridge<TerminalInfo>("CreateTerminal", input);
 }
 
 export function updateTerminal(input: TerminalUpdateInput) {
-  return invoke<TerminalInfo>("UpdateTerminal", input);
+  return invokeBridge<TerminalInfo>("UpdateTerminal", input);
 }
 
 export function removeTerminal(workspaceRoot: string, terminalId: string) {
-  return invoke<null>("RemoveTerminal", workspaceRoot, terminalId);
+  return invokeBridge<null>("RemoveTerminal", workspaceRoot, terminalId);
 }
 
 export async function createTerminalConnectTicket(
@@ -111,19 +108,19 @@ export type ShellProcessInfo = {
 };
 
 export function pollShellProcess(id: string) {
-  return invoke<ShellProcessInfo>("PollShellProcess", id);
+  return invokeBridge<ShellProcessInfo>("PollShellProcess", id);
 }
 
 export function waitShellProcess(id: string) {
-  return invoke<ShellProcessInfo>("WaitShellProcess", id);
+  return invokeBridge<ShellProcessInfo>("WaitShellProcess", id);
 }
 
 export function killShellProcess(id: string) {
-  return invoke<ShellProcessInfo>("KillShellProcess", id);
+  return invokeBridge<ShellProcessInfo>("KillShellProcess", id);
 }
 
 export function readShellProcessOutput(id: string) {
-  return invoke<ShellProcessInfo>("ReadShellProcessOutput", id);
+  return invokeBridge<ShellProcessInfo>("ReadShellProcessOutput", id);
 }
 
 export type TerminalEventPayload = {

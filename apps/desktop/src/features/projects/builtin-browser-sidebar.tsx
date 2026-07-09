@@ -6,35 +6,20 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Globe,
-  Loader2,
-  RefreshCw,
-  Search,
-  X,
-} from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import { cn } from "@/lib/utils";
-
-const EMPTY_BROWSER_STATE: AivoBrowserState = {
-  url: "",
-  title: "",
-  favicon: "",
-  loading: false,
-  canGoBack: false,
-  canGoForward: false,
-  error: "",
-};
+  BuiltinBrowserEmptyState,
+  BuiltinBrowserToolbar,
+} from "@/features/projects/builtin-browser-controls";
+import {
+  EMPTY_BROWSER_STATE,
+  navigatingBrowserState,
+  normalizeBrowserURL,
+  runBuiltinBrowserAction,
+  type BuiltinBrowserAction,
+  waitForBuiltinBrowserBounds,
+} from "@/features/projects/builtin-browser-model";
 
 type BuiltinBrowserSidebarProps = {
   browserTabId: string;
@@ -95,13 +80,7 @@ export function BuiltinBrowserSidebar({
   const navigateCurrentTab = useCallback(async (target: string) => {
     const nextUrl = normalizeBrowserURL(target);
     setAddress(nextUrl);
-    setState((currentState) => ({
-      ...currentState,
-      error: "",
-      favicon: "",
-      loading: true,
-      url: nextUrl,
-    }));
+    setState((currentState) => navigatingBrowserState(currentState, nextUrl));
     const nextState = await window.aivo?.browser?.navigate(browserTabId, nextUrl);
     if (nextState) {
       applyBrowserState(nextState);
@@ -128,20 +107,13 @@ export function BuiltinBrowserSidebar({
       if (disposed) return;
       void updateBrowserBounds().catch(() => undefined);
     };
-    const syncBoundsWhenReady = async () => {
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        if (disposed) return false;
-        if (await updateBrowserBounds().catch(() => false)) {
-          return true;
-        }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      }
-      return false;
-    };
     const resizeObserver = new ResizeObserver(syncBounds);
     resizeObserver.observe(host);
 
-    void syncBoundsWhenReady()
+    void waitForBuiltinBrowserBounds({
+      isDisposed: () => disposed,
+      updateBrowserBounds,
+    })
       .then(async (boundsReady) => ({
         boundsReady,
         nextState: await browser.getState(browserTabId),
@@ -193,21 +165,21 @@ export function BuiltinBrowserSidebar({
     }
 
     const showWhenBoundsAreStable = async () => {
-      for (let attempt = 0; attempt < 8; attempt += 1) {
+      const boundsReady = await waitForBuiltinBrowserBounds({
+        isDisposed: () => disposed,
+        updateBrowserBounds,
+      });
+      if (disposed) return;
+      if (boundsReady) {
+        const nextState = await browser.setVisible(browserTabId, true);
         if (disposed) return;
-        if (await updateBrowserBounds().catch(() => false)) {
-          if (disposed) return;
-          const nextState = await browser.setVisible(browserTabId, true);
-          if (disposed) return;
-          if (nextState) {
-            applyBrowserState(nextState);
-          }
-          onReady?.();
-          return;
+        if (nextState) {
+          applyBrowserState(nextState);
         }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        onReady?.();
+        return;
       }
-      if (!disposed) onReady?.();
+      onReady?.();
     };
 
     void showWhenBoundsAreStable().catch(() => {
@@ -224,14 +196,10 @@ export function BuiltinBrowserSidebar({
     if (!visible) return;
     let disposed = false;
     const syncReadyBounds = async () => {
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        if (disposed) return;
-        if (await updateBrowserBounds().catch(() => false)) {
-          if (!disposed) onReady?.();
-          return;
-        }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      }
+      await waitForBuiltinBrowserBounds({
+        isDisposed: () => disposed,
+        updateBrowserBounds,
+      });
       if (!disposed) onReady?.();
     };
     void syncReadyBounds();
@@ -271,20 +239,15 @@ export function BuiltinBrowserSidebar({
     }
   }
 
-  async function runBrowserAction(action: "back" | "forward" | "reload" | "stop") {
+  async function runBrowserAction(action: BuiltinBrowserAction) {
     try {
       const browser = window.aivo?.browser;
       if (!browser || !webviewReady) return;
-      let nextState: AivoBrowserState | undefined;
-      if (action === "back") {
-        nextState = await browser.goBack(browserTabId);
-      } else if (action === "forward") {
-        nextState = await browser.goForward(browserTabId);
-      } else if (action === "stop") {
-        nextState = await browser.stop(browserTabId);
-      } else {
-        nextState = await browser.reload(browserTabId);
-      }
+      const nextState = await runBuiltinBrowserAction({
+        action,
+        browser,
+        browserTabId,
+      });
       if (nextState) {
         applyBrowserState(nextState);
       }
@@ -295,119 +258,23 @@ export function BuiltinBrowserSidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background" data-app-no-drag>
-      <div className="flex shrink-0 flex-col gap-2 border-b border-border/70 p-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Button
-            aria-label="后退"
-            disabled={!webviewReady || !state.canGoBack}
-            onClick={() => void runBrowserAction("back")}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowLeft />
-          </Button>
-          <Button
-            aria-label="前进"
-            disabled={!webviewReady || !state.canGoForward}
-            onClick={() => void runBrowserAction("forward")}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowRight />
-          </Button>
-          <Button
-            aria-label={state.loading ? "停止加载" : "刷新"}
-            disabled={!webviewReady || !state.url}
-            onClick={() => void runBrowserAction(state.loading ? "stop" : "reload")}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            {state.loading ? (
-              <X />
-            ) : (
-              <RefreshCw className={cn(state.loading && "animate-spin")} />
-            )}
-          </Button>
-          <form className="min-w-0 flex-1" onSubmit={navigateToAddress}>
-            <InputGroup>
-              <InputGroupAddon align="inline-start">
-                {state.loading ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Globe />
-                )}
-              </InputGroupAddon>
-              <InputGroupInput
-                aria-label="浏览器地址"
-                autoCapitalize="none"
-                autoCorrect="off"
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="输入网址"
-                ref={inputRef}
-                spellCheck={false}
-                value={address}
-              />
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton aria-label="打开地址" type="submit">
-                  <Search />
-                </InputGroupButton>
-              </InputGroupAddon>
-            </InputGroup>
-          </form>
-          <Button
-            aria-label="关闭内置浏览器"
-            onClick={onClose}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <X />
-          </Button>
-        </div>
-        {state.error ? (
-          <div className="min-w-0 px-1 text-xs leading-5">
-            <span className="block truncate text-destructive">
-              {state.error}
-            </span>
-          </div>
-        ) : null}
-      </div>
+      <BuiltinBrowserToolbar
+        address={address}
+        inputRef={inputRef}
+        onAddressChange={setAddress}
+        onClose={onClose}
+        onRunAction={(action) => void runBrowserAction(action)}
+        onSubmitAddress={navigateToAddress}
+        state={state}
+        webviewReady={webviewReady}
+      />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div
           className="absolute inset-0 h-full w-full"
           ref={browserHostRef}
         />
-        {!state.url ? (
-          <div className="flex h-full min-h-0 items-center justify-center px-5 py-8">
-            <div className="flex max-w-72 flex-col items-center gap-3 text-center">
-              <div className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <Globe />
-              </div>
-              <div className="text-sm font-medium text-foreground">
-                内置浏览器
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {!state.url ? <BuiltinBrowserEmptyState /> : null}
       </div>
     </div>
   );
-}
-
-function normalizeBrowserURL(input: string) {
-  const raw = input.trim();
-  if (!raw) {
-    throw new Error("Browser address is required");
-  }
-  const withScheme = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw)
-    ? raw
-    : `https://${raw}`;
-  const parsed = new URL(withScheme);
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Only http(s) addresses can be opened in the built-in browser");
-  }
-  return parsed.toString();
 }

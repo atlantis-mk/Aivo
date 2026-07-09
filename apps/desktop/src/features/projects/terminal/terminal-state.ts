@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { PersistedTerminalStatus } from "@/features/projects/terminal/terminal-types";
 
 export type WorkspaceTerminalState = {
   opened: boolean;
@@ -13,7 +14,7 @@ export type WorkspaceTerminalState = {
     cursor?: number;
     scrollY?: number;
     bufferSnapshot?: string;
-    status?: "connecting" | "running" | "exited" | "failed";
+    status?: PersistedTerminalStatus;
   }>;
 };
 

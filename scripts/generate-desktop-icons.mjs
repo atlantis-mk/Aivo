@@ -2,9 +2,11 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import zlib from 'node:zlib'
 
-const rootDir = process.cwd()
+const scriptDir = path.dirname(fileURLToPath(import.meta.url))
+const rootDir = path.resolve(scriptDir, '..')
 const iconDir = path.join(rootDir, 'apps', 'desktop', 'build')
 const iconsetDir = path.join(iconDir, 'icon.iconset')
 const baseSize = 1024

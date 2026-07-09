@@ -39,7 +39,7 @@ function SettingsRoute() {
                     className="h-7 gap-2.5 px-3 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
                   >
                     <Link to="/projects/chat">
-                      <ArrowLeft className="size-3.5!" />
+                      <ArrowLeft />
                       <span>返回主页</span>
                     </Link>
                   </SidebarMenuButton>

@@ -1,0 +1,61 @@
+import type { RefObject } from "react";
+
+import type { ComposerAttachment } from "@/features/projects/project-composer-attachments";
+import type { ModelOption } from "@/features/projects/project-model-options";
+import type { ModelInfo } from "@/lib/provider-catalog";
+import type {
+  AgentModeDefinition,
+  AgentModeId,
+  PermissionMode,
+} from "@/services/aivo";
+import type { domain } from "../../../bridge/go/models";
+
+export type PromptComposerProps = {
+  agentMode: AgentModeId;
+  agentModes: AgentModeDefinition[];
+  allModelOptions: ModelOption[];
+  modelId: string;
+  modelLabel: string;
+  modelOptions: ModelInfo[];
+  onAddAttachments: (files: FileList | null) => void;
+  onAgentModeSelect: (mode: AgentModeId) => void;
+  onExtraHeightChange: (height: number) => void;
+  onHeightChange: (height: number) => void;
+  onModelSelect: (option: ModelOption) => void;
+  onPermissionModeSelect: (mode: PermissionMode) => void;
+  onPromptChange: (prompt: string) => void;
+  onProjectAdd: () => void;
+  onProjectClear: () => void;
+  onProjectSelect: (project: domain.AssistantProject) => void;
+  onReasoningEffortSelect: (reasoningEffort: string) => void;
+  onRemoveAttachment: (id: string) => void;
+  onServiceTierSelect: (serviceTier: string) => void;
+  onSubmit: () => void;
+  pending: boolean;
+  permissionMode: PermissionMode;
+  prompt: string;
+  project: domain.AssistantProject | null;
+  projectPath: string;
+  projects: domain.AssistantProject[];
+  attachments: ComposerAttachment[];
+  reasoningEffort: string;
+  serviceTier: string;
+  showProjectPicker: boolean;
+  showServiceTier: boolean;
+};
+
+export type ComposerAttachmentListProps = {
+  attachments: ComposerAttachment[];
+  onRemoveAttachment: (id: string) => void;
+};
+
+export type ProjectPickerProps = {
+  onAddProject: () => void;
+  onProjectClear: () => void;
+  onProjectSelect: (project: domain.AssistantProject) => void;
+  project: domain.AssistantProject | null;
+  projectPath: string;
+  projects: domain.AssistantProject[];
+};
+
+export type AutoTextareaHeightRef = RefObject<HTMLTextAreaElement | null>;

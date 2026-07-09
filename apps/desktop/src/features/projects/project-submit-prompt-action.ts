@@ -1,0 +1,264 @@
+import type { Dispatch, SetStateAction } from "react";
+import { toast } from "sonner";
+
+import {
+  getTurnElapsedSeconds,
+  type ConversationTurn,
+} from "@/features/projects/conversation-timeline-model";
+import type { LoadConversationTurnsOptions } from "@/features/projects/project-conversation-turn-loader";
+import {
+  attachmentKindLabel,
+  composerAttachmentToConversationAttachment,
+  formatAttachmentOnlyPrompt,
+  modelSupportsAttachment,
+  type ComposerAttachment,
+} from "@/features/projects/project-composer-attachments";
+import { providerSupportsServiceTier } from "@/features/projects/project-model-options";
+import { hasAppBridge } from "@/lib/app-config";
+import type { ModelInfo } from "@/lib/provider-catalog";
+import {
+  cancelSessionTurn,
+  createSession,
+  listSessions,
+  setPermissionMode,
+  setSessionActiveTools,
+  submitSessionMessage,
+  type AgentModeId,
+  type PermissionMode,
+} from "@/services/aivo";
+import type { domain } from "../../../bridge/go/models";
+
+export function useProjectSubmitPromptAction({
+  activeModelId,
+  activeModelRef,
+  activeSessionId,
+  activeSessionIdRef,
+  agentMode,
+  composerAttachments,
+  defaultActiveToolNames,
+  hasPendingTurn,
+  loadConversationTurns,
+  modelOptions,
+  pendingStopRequestedRef,
+  permissionMode,
+  prompt,
+  reasoningEffort,
+  refreshPendingPermissionRequests,
+  selectedProjectPath,
+  serviceTier,
+  setActiveSessionId,
+  setCodingWorkspaceRoot,
+  setComposerAttachments,
+  setConversationRunning,
+  setPrompt,
+  setSessions,
+  setTurns,
+}: {
+  activeModelId: string;
+  activeModelRef: domain.ModelRef | undefined;
+  activeSessionId: string;
+  activeSessionIdRef: { current: string };
+  agentMode: AgentModeId;
+  composerAttachments: ComposerAttachment[];
+  defaultActiveToolNames: string[];
+  hasPendingTurn: boolean;
+  loadConversationTurns: (
+    sessionId: string,
+    options?: LoadConversationTurnsOptions,
+  ) => Promise<void>;
+  modelOptions: ModelInfo[];
+  pendingStopRequestedRef: { current: boolean };
+  permissionMode: PermissionMode;
+  prompt: string;
+  reasoningEffort: string;
+  refreshPendingPermissionRequests: (sessionId?: string) => Promise<void>;
+  selectedProjectPath: string;
+  serviceTier: string;
+  setActiveSessionId: Dispatch<SetStateAction<string>>;
+  setCodingWorkspaceRoot: Dispatch<SetStateAction<string>>;
+  setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
+  setConversationRunning: (sessionId: string, running: boolean) => void;
+  setPrompt: Dispatch<SetStateAction<string>>;
+  setSessions: Dispatch<SetStateAction<domain.Session[]>>;
+  setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
+}) {
+  async function submitPrompt() {
+    const nextPrompt = prompt.trim();
+    if ((!nextPrompt && composerAttachments.length === 0) || hasPendingTurn) {
+      return;
+    }
+    const activeModel = modelOptions.find((model) => model.id === activeModelId);
+    const unsupportedAttachment = composerAttachments.find(
+      (attachment) =>
+        !modelSupportsAttachment(
+          activeModelRef,
+          activeModel,
+          attachment.kind,
+          attachment.mimeType,
+        ),
+    );
+    if (unsupportedAttachment) {
+      toast.error(
+        `当前模型不支持${attachmentKindLabel(unsupportedAttachment.kind, unsupportedAttachment.mimeType)}：${unsupportedAttachment.name}`,
+      );
+      return;
+    }
+    const localTurnId = crypto.randomUUID();
+    const startedAt = Date.now();
+    const submittedAttachments = composerAttachments;
+    const submittedTimelineAttachments = submittedAttachments.map(
+      composerAttachmentToConversationAttachment,
+    );
+    const displayPrompt =
+      nextPrompt || formatAttachmentOnlyPrompt(submittedAttachments);
+    setTurns((currentTurns) => [
+      ...currentTurns,
+      {
+        id: localTurnId,
+        activityVisible: false,
+        assistantPreambles: [],
+        attachments: submittedTimelineAttachments,
+        prompt: displayPrompt,
+        preToolText: "",
+        responseText: "",
+        responseCompletedAt: null,
+        responseVisible: false,
+        startedAt,
+        submittedAt: new Date(),
+        stopped: false,
+        thinkingSeconds: 0,
+        toolCalls: [],
+      },
+    ]);
+    setPrompt("");
+    setComposerAttachments([]);
+    if (!hasAppBridge()) {
+      setTurns((currentTurns) =>
+        currentTurns.map((turn) =>
+          turn.id === localTurnId
+            ? {
+                ...turn,
+                responseCompletedAt: new Date(),
+                responseText:
+                  "当前运行环境未连接 Aivo 后端，无法发送真实 provider 请求。",
+                responseVisible: true,
+                thinkingSeconds: getTurnElapsedSeconds({ startedAt }),
+                toolCalls: [],
+              }
+            : turn,
+        ),
+      );
+      return;
+    }
+    let submittedSessionId = activeSessionId;
+    try {
+      let sessionId = submittedSessionId;
+      if (!sessionId) {
+        const session = await createSession({
+          type: "coding",
+          source: "desktop",
+          projectPath: selectedProjectPath,
+          model: activeModelRef,
+          agentMode,
+        } as domain.CreateSessionRequest & { agentMode?: AgentModeId });
+        sessionId = session.id;
+        activeSessionIdRef.current = session.id;
+        setActiveSessionId(session.id);
+        setCodingWorkspaceRoot(session.projectPath || selectedProjectPath);
+        if (defaultActiveToolNames.length > 0) {
+          await setSessionActiveTools(session.id, defaultActiveToolNames);
+        }
+      }
+      submittedSessionId = sessionId;
+      await setPermissionMode(sessionId, permissionMode);
+      setConversationRunning(sessionId, true);
+      const run = await submitSessionMessage({
+        sessionId,
+        text: nextPrompt,
+        attachments: submittedAttachments.map((attachment) => ({
+          id: attachment.id,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          kind: attachment.kind,
+          data: attachment.data,
+          size: attachment.size,
+        })),
+        model: activeModelRef,
+        agentMode,
+        reasoningEffort,
+        serviceTier:
+          activeModelRef &&
+          providerSupportsServiceTier(activeModelRef.providerId)
+            ? serviceTier
+            : "default",
+      } as domain.SubmitSessionMessageRequest & {
+        agentMode?: AgentModeId;
+        attachments?: Array<{
+          id: string;
+          name: string;
+          mimeType: string;
+          kind: string;
+          data: string;
+          size: number;
+        }>;
+      });
+      void refreshPendingPermissionRequests(sessionId);
+      if (run.turn?.id || run.userEvent?.id) {
+        setTurns((currentTurns) =>
+          currentTurns.map((turn) =>
+            turn.id === localTurnId
+              ? {
+                  ...turn,
+                  turnId: run.turn?.id || turn.turnId,
+                  userEventId: run.userEvent?.id || turn.userEventId,
+                }
+              : turn,
+          ),
+        );
+        if (pendingStopRequestedRef.current) {
+          pendingStopRequestedRef.current = false;
+          await cancelSessionTurn({
+            turnId: run.turn.id,
+            reason: "User stopped generation",
+          } as domain.CancelTurnRequest);
+          void refreshPendingPermissionRequests(sessionId);
+          setConversationRunning(sessionId, false);
+          setSessions((await listSessions(50)) ?? []);
+          return;
+        }
+      }
+      if (run.turn?.status !== "running") {
+        await loadConversationTurns(sessionId, {
+          pendingTurnId: localTurnId,
+          pendingPrompt: displayPrompt,
+          pendingAttachments: submittedTimelineAttachments,
+          pendingStartedAt: startedAt,
+          fallbackAssistantEvent: run.assistantEvent,
+        });
+      }
+      setSessions((await listSessions(50)) ?? []);
+    } catch (err) {
+      setComposerAttachments((current) => [
+        ...submittedAttachments,
+        ...current,
+      ]);
+      setConversationRunning(submittedSessionId, false);
+      setTurns((currentTurns) =>
+        currentTurns.map((turn) =>
+          turn.id === localTurnId
+            ? {
+                ...turn,
+                responseCompletedAt: new Date(),
+                responseText: err instanceof Error ? err.message : String(err),
+                responseVisible: true,
+                thinkingSeconds: getTurnElapsedSeconds({ startedAt }),
+                toolCalls: [],
+              }
+            : turn,
+        ),
+      );
+    }
+  }
+
+  return { submitPrompt };
+}

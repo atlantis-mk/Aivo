@@ -222,6 +222,7 @@ func (s *Service) globalToolCatalogRegistry(ctx context.Context) *Registry {
 			_ = registry.Register(tool)
 		}
 	}
+	_ = registry.Register(NewSkillLoadTool(s))
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}
@@ -250,6 +251,7 @@ func (s *Service) workspaceToolCatalogRegistry(ctx context.Context, workspaceRoo
 	for _, tool := range newAgentRuntimeTools(s) {
 		_ = registry.Register(tool)
 	}
+	_ = registry.Register(NewSkillLoadTool(s))
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}
