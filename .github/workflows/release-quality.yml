@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -50,6 +52,14 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check documentation governance
+        run: npm run docs:check
+        env:
+          AIVO_ARCHIVE_BASE_REF: HEAD^
+
+      - name: Test repository scripts
+        run: npm run scripts:test
 
       - name: Test core
         run: npm run test:core

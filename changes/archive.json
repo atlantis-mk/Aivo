@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "archives": [
+    {
+      "work_id": "CHG-2026-001-document-governance",
+      "status": "Verified",
+      "archived_at": "2026-07-30T21:21:01.997Z",
+      "files": {
+        "changes/CHG-2026-001-document-governance/change.md": "sha256:162156cc5d3ee679878eb87eb88720149439f93324c2f1cce49bcfe4a9a24290",
+        "changes/CHG-2026-001-document-governance/change.yaml": "sha256:2a45f68c9ebaaade01db51070982d77c5d2f88eed7f00e048f8b27b7db8ed6b7"
+      }
+    }
+  ]
+}

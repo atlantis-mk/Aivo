@@ -1,0 +1,17 @@
+id: "CHG-YYYY-NNN-change-name"
+title: "Change title"
+type: "feature"
+status: "Draft"
+spec_revision: "TBD"
+target_release: null
+requirements: []
+tests: []
+adrs: []
+context_refs: []
+related_changes: []
+affected_surfaces: []
+affected_formats: []
+affected_versions: []
+security_impact: "TBD"
+migration: "none"
+supersedes: []
