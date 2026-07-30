@@ -26,6 +26,7 @@ export function ToolCallCommandLine({
   const running = toolCall.status === "running";
   const pendingApproval = toolCall.status === "pending_approval";
   const commandTool = isCommandToolCall(toolCall);
+  const skillTool = toolCall.name === "skill";
   const command = getToolCallCommand(toolCall);
   const fileChanges = getToolCallFileChanges(toolCall);
   const retainedRefs = getRetainedOutputRefs(toolCall);
@@ -34,16 +35,18 @@ export function ToolCallCommandLine({
   const showFileChanges =
     toolCallKind(toolCall) === "write" && fileChanges.length > 0;
   const resultText =
-    toolCall.name === "list_files" || commandTool || failed
+    toolCall.name === "list_files" || commandTool || skillTool || failed
       ? getToolResultText(toolCall)
       : "";
-  const showCommandLine = commandTool || (!resultText && !showFileChanges);
+  const showCommandLine =
+    skillTool || commandTool || (!resultText && !showFileChanges);
   const showRunningStatus = running && !showFileChanges;
   const showStatusLine = showRunningStatus || pendingApproval || failed;
   const failedRunDetail =
     failed && !showCommandLine ? failedToolRunDetail(toolCall, resultText) : "";
   const resultDetailsExpandable = Boolean(
-    resultText && (failed || commandTool) && retainedRefs.length === 0,
+    (skillTool && (resultText || retainedRefs.length > 0)) ||
+      (resultText && (failed || commandTool) && retainedRefs.length === 0),
   );
   const [resultDetailsOpen, setResultDetailsOpen] = useState(false);
   const [retainedOutput, setRetainedOutput] =
@@ -56,17 +59,20 @@ export function ToolCallCommandLine({
   );
 
   useEffect(() => {
-    let cancelled = false;
     setResultDetailsOpen(false);
     setRetainedOutput(null);
+  }, [toolCall.id, resultText, retainedRef, retainedRefsKey]);
+
+  useEffect(() => {
+    let cancelled = false;
     const ref = retainedRef;
-    if (ref) {
+    if (ref && (!skillTool || resultDetailsOpen)) {
       void loadRetainedOutput(ref, () => cancelled);
     }
     return () => {
       cancelled = true;
     };
-  }, [toolCall.id, resultText, retainedRef, retainedRefsKey]);
+  }, [retainedRef, resultDetailsOpen, skillTool]);
 
   async function loadRetainedOutput(ref: string, isCancelled: () => boolean) {
     let content = "";
@@ -199,7 +205,7 @@ export function ToolCallCommandLine({
           </pre>
         ) : null}
       </AnimatedDisclosure>
-      {retainedRefs.length > 0 ? (
+      {retainedRefs.length > 0 && (!skillTool || resultDetailsOpen) ? (
         <div className="flex min-w-0 flex-col gap-1">
           {retainedOutput?.loading && !retainedOutput.content ? (
             <div className="text-xs text-muted-foreground">

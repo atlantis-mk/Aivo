@@ -23,6 +23,7 @@ import {
 import { ProviderConnectDialog } from "@/features/projects/project-provider-connect-dialog";
 import { useAppConfig } from "@/lib/app-config";
 import type { ModelInfo } from "@/lib/provider-catalog";
+import { getProviderCatalogForProject } from "@/services/aivo";
 
 export function ModelSettingsMenu({
   compact,
@@ -33,6 +34,7 @@ export function ModelSettingsMenu({
   onModelSelect,
   onReasoningEffortSelect,
   onServiceTierSelect,
+  projectPath,
   reasoningEffort,
   serviceTier,
   showServiceTier,
@@ -45,6 +47,7 @@ export function ModelSettingsMenu({
   onModelSelect: (option: ModelOption) => void;
   onReasoningEffortSelect: (reasoningEffort: string) => void;
   onServiceTierSelect: (serviceTier: string) => void;
+  projectPath: string;
   reasoningEffort: string;
   serviceTier: string;
   showServiceTier: boolean;
@@ -118,10 +121,15 @@ export function ModelSettingsMenu({
         catalogProviders={catalog?.providers ?? []}
         onConnected={async (option) => {
           if (option) onModelSelect(option);
-          await reload();
+          if (projectPath) {
+            setCatalog(await getProviderCatalogForProject(projectPath));
+          } else {
+            await reload();
+          }
         }}
         onOpenChange={setConnectDialogOpen}
         open={connectDialogOpen}
+        projectPath={projectPath}
         setCatalog={setCatalog}
         setConfig={setConfig}
         setError={setError}

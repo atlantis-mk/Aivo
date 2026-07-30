@@ -1,16 +1,9 @@
-import { Globe } from "lucide-react";
-
 import {
   SUPPORTED_SIDEBAR_TABS,
   type SidebarSupportedTab,
 } from "@/features/projects/tool-activity-sidebar-supported-tabs";
-import { cn } from "@/lib/utils";
 
-export function ToolActivityEmptyState({
-  onOpenBrowser,
-}: {
-  onOpenBrowser?: (targetUrl?: string) => void;
-}) {
+export function ToolActivityEmptyState() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8">
       <div
@@ -18,10 +11,6 @@ export function ToolActivityEmptyState({
         className="grid w-full max-w-[42rem] gap-2"
         role="list"
       >
-        <SupportedSidebarTabItem
-          onClick={() => onOpenBrowser?.()}
-          tab={{ id: "browser", icon: Globe, label: "内置浏览器" }}
-        />
         {SUPPORTED_SIDEBAR_TABS.map((tab) => (
           <SupportedSidebarTabItem tab={tab} key={tab.id} />
         ))}
@@ -30,13 +19,7 @@ export function ToolActivityEmptyState({
   );
 }
 
-function SupportedSidebarTabItem({
-  onClick,
-  tab,
-}: {
-  onClick?: () => void;
-  tab: SidebarSupportedTab;
-}) {
+function SupportedSidebarTabItem({ tab }: { tab: SidebarSupportedTab }) {
   const Icon = tab.icon;
 
   const className =
@@ -55,22 +38,6 @@ function SupportedSidebarTabItem({
       ) : null}
     </>
   );
-
-  if (onClick) {
-    return (
-      <button
-        className={cn(
-          className,
-          "text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
-        )}
-        onClick={onClick}
-        role="listitem"
-        type="button"
-      >
-        {content}
-      </button>
-    );
-  }
 
   return (
     <div className={className} role="listitem">

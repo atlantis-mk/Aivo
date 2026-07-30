@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { hasAppBridge } from "@/lib/app-config";
-import { getCodingContext } from "@/services/aivo";
+import { getCodingContext, scanProjectSkills } from "@/services/aivo";
 import type { domain } from "../../../bridge/go/models";
 
 export function useProjectWorkspaceSessionState({
@@ -65,6 +65,11 @@ export function useProjectWorkspaceSessionState({
       cancelled = true;
     };
   }, [activeSession?.projectPath, activeSessionId]);
+
+  useEffect(() => {
+    if (!hasAppBridge() || !activeSessionId || !activeWorkspaceRoot) return;
+    void scanProjectSkills(activeWorkspaceRoot).catch(() => undefined);
+  }, [activeSessionId, activeWorkspaceRoot]);
 
   return {
     activeSession,

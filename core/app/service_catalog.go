@@ -68,6 +68,28 @@ func (s *Service) Catalog(ctx context.Context) (domain.CatalogState, error) {
 	}, nil
 }
 
+// CatalogForProject applies project-scoped provider extensions before building
+// the catalog used by that workspace.
+func (s *Service) CatalogForProject(ctx context.Context, projectPath string) (domain.CatalogState, error) {
+	registry := s.providerRegistryForProject(projectPath)
+	s.modelRefreshMu.Lock()
+	models := make(map[string][]domain.ModelInfo, len(s.refreshedModels))
+	for key, value := range s.refreshedModels {
+		models[key] = append([]domain.ModelInfo{}, value...)
+	}
+	defaults := cloneStringMap(s.refreshedDefault)
+	infos := make(map[string]domain.ProviderInfo, len(s.refreshedInfo))
+	for key, value := range s.refreshedInfo {
+		infos[key] = value
+	}
+	s.modelRefreshMu.Unlock()
+	scoped := &Service{
+		store: s.store, now: s.now, providers: registry,
+		refreshedModels: models, refreshedDefault: defaults, refreshedInfo: infos,
+	}
+	return scoped.Catalog(ctx)
+}
+
 func mergeProviderHealth(providers []domain.ProviderInfo, health []domain.ProviderHealth) []domain.ProviderInfo {
 	if len(health) == 0 {
 		return providers

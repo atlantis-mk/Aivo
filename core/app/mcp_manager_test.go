@@ -26,12 +26,12 @@ func textFromMCPToolContent(result map[string]any) string {
 	return ""
 }
 
-func writeMCPHelperResponse(id string, result map[string]any) {
+func writeMCPHelperResponse(id any, result map[string]any) {
 	raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 	_, _ = os.Stdout.Write(append(raw, '\n'))
 }
 
-func writeMCPHelperError(id string, message string) {
+func writeMCPHelperError(id any, message string) {
 	raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32000, "message": message}})
 	_, _ = os.Stdout.Write(append(raw, '\n'))
 }

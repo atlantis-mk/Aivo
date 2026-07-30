@@ -151,6 +151,7 @@ func (legacyProviderAuthRow) TableName() string { return "provider_auth_old" }
 type projectRow struct {
 	ID            string `gorm:"primaryKey;column:id"`
 	Name          string `gorm:"column:name;not null"`
+	Description   string `gorm:"column:description"`
 	RootPath      string `gorm:"column:root_path;not null;uniqueIndex"`
 	GitBranch     string `gorm:"column:git_branch"`
 	GitDirty      int    `gorm:"column:git_dirty;not null;default:0"`

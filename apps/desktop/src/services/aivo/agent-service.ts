@@ -1,18 +1,7 @@
 import type { domain } from "../../../bridge/go/models";
 import { invoke } from "@/services/aivo/invoke";
 
-export type AgentModeId =
-  | "code"
-  | "assistant"
-  | "build"
-  | "explore"
-  | "plan"
-  | "planner"
-  | "review"
-  | "debug"
-  | "summary"
-  | "title"
-  | "scheduler_worker";
+export type AgentModeId = string;
 
 export type AgentModeDefinition = {
   id: AgentModeId;
@@ -25,6 +14,7 @@ export type AgentModeDefinition = {
   networkAccess?: boolean;
   backgroundTaskAccess?: boolean;
   hidden?: boolean;
+  mode?: "primary" | "subagent" | "all";
 };
 
 export type AgentRun = {
@@ -70,6 +60,14 @@ export type ScheduledJob = {
 
 export function listAgentModes(includeHidden = false) {
   return invoke<AgentModeDefinition[]>("ListAgentModes", includeHidden);
+}
+
+export function listAgentModesForProject(projectPath: string, includeHidden = false) {
+  return invoke<AgentModeDefinition[]>(
+    "ListAgentModesForProject",
+    projectPath,
+    includeHidden,
+  );
 }
 
 export function setSessionAgentMode(sessionId: string, mode: AgentModeId) {

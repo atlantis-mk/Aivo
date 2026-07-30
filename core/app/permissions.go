@@ -86,6 +86,7 @@ func (e *PermissionEngine) Evaluate(ctx context.Context, tool domain.Tool, args 
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
+	sanitizePermissionArguments(spec.Name, arguments)
 	for key, value := range metadata {
 		arguments[key] = value
 	}
@@ -113,6 +114,26 @@ func (e *PermissionEngine) Evaluate(ctx context.Context, tool domain.Tool, args 
 		e.onRequest(request)
 	}
 	return e.waitForDecision(ctx, request.ID, decisionCh)
+}
+
+func sanitizePermissionArguments(toolName string, arguments map[string]any) {
+	if arguments == nil {
+		return
+	}
+	switch toolName {
+	case WriteStdinToolName:
+		value, present := arguments["chars"]
+		delete(arguments, "chars")
+		text, _ := value.(string)
+		pressEnter, _ := arguments["press_enter"].(bool)
+		arguments["stdinPresent"] = (present && text != "") || pressEnter
+	case "bash":
+		if value, present := arguments["stdin"]; present {
+			text, _ := value.(string)
+			arguments["stdinPresent"] = text != ""
+			delete(arguments, "stdin")
+		}
+	}
 }
 
 func (e *PermissionEngine) waitForDecision(ctx context.Context, requestID string, decisionCh <-chan struct{}) PermissionEvaluation {
@@ -152,18 +173,10 @@ func (e *PermissionEngine) savedDecision(ctx context.Context, execCtx domain.Too
 	case domain.PermissionModeRequestApproval:
 		return ""
 	case domain.PermissionModeFullAccess:
-		if action == permissionActionShell {
-			if commandPolicyDecision(metadata) == CommandDecisionAllow && commandPolicyCategoryAllowsFullAccess(metadata) {
-				return domain.PermissionDecisionAllow
-			}
-			return ""
-		}
-		if action == permissionActionTest {
-			if commandPolicyDecision(metadata) == CommandDecisionAllow {
-				return domain.PermissionDecisionAllow
-			}
-			return ""
-		}
+		// Commands that violate non-bypassable safety checks are rejected while
+		// preparing their execution context. Reaching this point means the tool is
+		// allowed to run, so full access must not turn an unclassified shell command
+		// back into an approval request.
 		return domain.PermissionDecisionAllow
 	}
 	for _, rule := range rules {
@@ -204,7 +217,7 @@ func (s *Service) ApprovePermissionRequest(ctx context.Context, input domain.App
 		return domain.PermissionRequest{}, err
 	}
 	if input.Remember {
-		_, _ = s.store.SavePermissionRule(ctx, permissionRuleFromRequest(request, domain.PermissionDecisionAllow))
+		_, _ = s.store.SavePermissionRule(ctx, s.permissionRuleFromRequest(ctx, request, domain.PermissionDecisionAllow))
 	}
 	if s.permissionNotifier != nil {
 		s.permissionNotifier.resolve(request.ID)
@@ -227,7 +240,7 @@ func (s *Service) DenyPermissionRequest(ctx context.Context, input domain.DenyPe
 		return domain.PermissionRequest{}, err
 	}
 	if input.Remember {
-		_, _ = s.store.SavePermissionRule(ctx, permissionRuleFromRequest(request, domain.PermissionDecisionDeny))
+		_, _ = s.store.SavePermissionRule(ctx, s.permissionRuleFromRequest(ctx, request, domain.PermissionDecisionDeny))
 	}
 	if s.permissionNotifier != nil {
 		s.permissionNotifier.resolve(request.ID)
@@ -239,6 +252,25 @@ func (s *Service) DenyPermissionRequest(ctx context.Context, input domain.DenyPe
 		s.onSessionUpdated(request.SessionID, nil)
 	}
 	return request, nil
+}
+
+// permissionRuleFromRequest scopes remembered decisions to the workspace when
+// the originating session is available. Keeping the session fallback preserves
+// approval behavior for requests created without a persisted session.
+func (s *Service) permissionRuleFromRequest(ctx context.Context, request domain.PermissionRequest, decision string) domain.PermissionRule {
+	rule := permissionRuleFromRequest(request, decision)
+	if s.store == nil || strings.TrimSpace(request.SessionID) == "" {
+		return rule
+	}
+	session, err := s.store.GetRuntimeSession(ctx, request.SessionID)
+	if err != nil {
+		return rule
+	}
+	if workspaceRoot := permissionWorkspaceRoot(ctx, s.store, session); workspaceRoot != "" {
+		rule.WorkspaceRoot = workspaceRoot
+		rule.SessionID = ""
+	}
+	return rule
 }
 
 func (s *Service) GetPermissionMode(ctx context.Context, sessionID string) (domain.PermissionModeState, error) {

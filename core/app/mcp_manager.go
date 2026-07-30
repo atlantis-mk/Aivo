@@ -396,18 +396,6 @@ func (m *MCPManager) diagnostic(ctx context.Context, serverID string, level stri
 	_, _ = m.store.SavePluginDiagnostic(ctx, domain.PluginDiagnostic{ServerID: serverID, Level: level, Message: sanitizeMCPError(message), Metadata: metadata})
 }
 
-func mcpInitializeParams(server domain.MCPServerConfig) map[string]any {
-	capabilities := map[string]any{}
-	if len(mcpRootEntries(server)) > 0 {
-		capabilities["roots"] = map[string]any{"listChanged": true}
-	}
-	return map[string]any{
-		"protocolVersion": "2025-03-26",
-		"capabilities":    capabilities,
-		"clientInfo":      map[string]any{"name": "aivo", "version": "phase6"},
-	}
-}
-
 func mcpRootEntries(server domain.MCPServerConfig) []map[string]any {
 	roots := make([]map[string]any, 0, len(server.Roots))
 	seen := map[string]bool{}

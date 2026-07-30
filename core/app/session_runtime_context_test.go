@@ -60,7 +60,7 @@ func TestSessionLifecycleVisibilityAndContextBuilder(t *testing.T) {
 	}
 }
 
-func TestSessionContextAndResumeDoNotInjectProjectInstructions(t *testing.T) {
+func TestSessionContextInjectsProjectInstructionsWithoutReadingUnrelatedFiles(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -75,17 +75,12 @@ func TestSessionContextAndResumeDoNotInjectProjectInstructions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, section := range result.Sections {
-		if section.Name == "project_instructions" {
-			t.Fatalf("project instructions section should not be injected: %q", section.Content)
-		}
-	}
 	joined := ""
 	for _, section := range result.Sections {
 		joined += section.Content
 	}
-	if contains(joined, "project rules") || contains(joined, "SECRET=value") {
-		t.Fatalf("project file content leaked into context: %q", joined)
+	if !contains(joined, "project rules") || contains(joined, "SECRET=value") {
+		t.Fatalf("project instruction handling = %q", joined)
 	}
 	recap, err := service.ResumeRecap(ctx, domain.ResumeSessionRequest{SessionID: session.ID})
 	if err != nil {
@@ -93,6 +88,60 @@ func TestSessionContextAndResumeDoNotInjectProjectInstructions(t *testing.T) {
 	}
 	if recap.ProjectPath != projectRoot {
 		t.Fatalf("resume project path = %q, want %q", recap.ProjectPath, projectRoot)
+	}
+}
+
+func TestSessionContextIncludesLiveTerminalInventory(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{
+		Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: projectRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewAgentPTYRegistry()
+	service.ptyManager = manager
+	defer manager.Shutdown()
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	terminal, err := manager.Start(runCtx, SandboxRequest{
+		WorkspaceRoot: projectRoot, CWD: projectRoot, SessionID: session.ID,
+		Command: `printf 'ready\n'; read answer; printf '%s\n' "$answer"`, EnvAllowlist: defaultEnvAllowlist(),
+	}, 24, 80, time.Second, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.Status != AgentPTYStatusRunning {
+		t.Fatalf("terminal status = %q, want running", terminal.Status)
+	}
+
+	result, err := service.BuildSessionContext(ctx, domain.BuildSessionContextRequest{SessionID: session.ID, CharacterBudget: 8000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var live string
+	for _, section := range result.Sections {
+		if section.Name == "live_terminals" {
+			live = section.Content
+			break
+		}
+	}
+	if !contains(live, terminal.ProcessRef) || !contains(live, "use write_stdin") || !contains(live, "read answer") {
+		t.Fatalf("live terminal context = %q", live)
+	}
+	history, err := service.modelVisibleSessionHistory(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, message := range history {
+		joined += "\n" + message.Text
+	}
+	if !contains(joined, terminal.ProcessRef) || !contains(joined, "Do not call exec_command") {
+		t.Fatalf("model-visible history missing live terminal guidance: %s", joined)
 	}
 }
 
@@ -217,6 +266,61 @@ func TestSummaryCheckpointForkAndResume(t *testing.T) {
 	}
 }
 
+func TestForkSessionCopiesVisibleHistoryAndSettledToolsAtBoundary(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "Parent", ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := service.AppendEvent(ctx, domain.AppendEventRequest{SessionID: session.ID, Type: domain.EventTypeUserMessage, Role: domain.EventRoleUser, Content: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := service.StartTurn(ctx, domain.StartTurnRequest{SessionID: session.ID, UserEventID: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{ID: "fork-tool", SessionID: session.ID, TurnID: turn.ID, Name: "read_file", Status: domain.ToolCallStatusSuccess, ResultSummary: "read"}); err != nil {
+		t.Fatal(err)
+	}
+	assistant, err := service.AppendEvent(ctx, domain.AppendEventRequest{SessionID: session.ID, TurnID: turn.ID, Type: domain.EventTypeAssistantMessage, Role: domain.EventRoleAssistant, Content: "boundary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CompleteTurn(ctx, domain.CompleteTurnRequest{TurnID: turn.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AppendEvent(ctx, domain.AppendEventRequest{SessionID: session.ID, Type: domain.EventTypeUserMessage, Role: domain.EventRoleUser, Content: "after"}); err != nil {
+		t.Fatal(err)
+	}
+
+	fork, err := service.ForkSession(ctx, domain.ForkSessionRequest{SessionID: session.ID, AtEventID: assistant.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := service.ListEvents(ctx, fork.ID, false, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Content != "before" || events[1].Content != "boundary" {
+		t.Fatalf("fork events = %#v", events)
+	}
+	turns, err := service.ListTurns(ctx, fork.ID, 10)
+	if err != nil || len(turns) != 1 || turns[0].ID == turn.ID || turns[0].UserEventID == user.ID {
+		t.Fatalf("fork turns = %#v err = %v", turns, err)
+	}
+	tools, err := service.ListToolCalls(ctx, fork.ID)
+	if err != nil || len(tools) != 1 || tools[0].ID == "fork-tool" || tools[0].Status != domain.ToolCallStatusSuccess {
+		t.Fatalf("fork tools = %#v err = %v", tools, err)
+	}
+	state, err := service.GetSessionExecutionState(ctx, fork.ID)
+	if err != nil || state.Status != domain.ExecutionStatusIdle {
+		t.Fatalf("fork execution state = %#v err = %v", state, err)
+	}
+}
+
 func TestSubmitSessionMessageBuildsModelVisibleContext(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
@@ -278,20 +382,32 @@ func TestSubmitSessionMessageBuildsModelVisibleContext(t *testing.T) {
 	if len(captured) == 0 {
 		t.Fatal("provider did not receive messages")
 	}
-	if captured[0].Role != "system" || !contains(captured[0].Content, "Aivo") {
+	if captured[0].Role != "system" ||
+		!contains(captured[0].Content, "<agent_instructions>") ||
+		!contains(captured[0].Content, `<default name="agent_mode">`) ||
+		!contains(captured[0].Content, `<global name="tool_protocol">`) {
 		t.Fatalf("first message = %#v", captured[0])
+	}
+	if contains(captured[0].Content, "<aivo_context>") {
+		t.Fatalf("runtime context mixed into agent instructions: %#v", captured[0])
 	}
 	joined := ""
 	for _, message := range captured {
 		joined += "\n" + message.Role + ": " + message.Content
+	}
+	if contains(joined, "You are Aivo") {
+		t.Fatalf("removed fixed Aivo system prompt was injected: %s", joined)
+	}
+	if !contains(joined, "<aivo_context>") {
+		t.Fatalf("runtime context missing from model messages: %s", joined)
 	}
 	if !contains(joined, "Durable architecture summary") ||
 		!contains(joined, "Keep the conversation coherent") ||
 		!contains(joined, "current request") {
 		t.Fatalf("context missing expected content: %s", joined)
 	}
-	if contains(joined, "Always run focused tests") {
-		t.Fatalf("project instructions leaked into context: %s", joined)
+	if !contains(joined, "Always run focused tests") {
+		t.Fatalf("project instructions missing from context: %s", joined)
 	}
 	if contains(joined, "SECRET=value") {
 		t.Fatalf("sensitive project file leaked into context: %s", joined)
@@ -301,6 +417,25 @@ func TestSubmitSessionMessageBuildsModelVisibleContext(t *testing.T) {
 	}
 	if len(captured) >= 72 {
 		t.Fatalf("captured %d messages, want bounded context", len(captured))
+	}
+}
+
+func TestAgentPromptBuilderSeparatesDefaultAndGlobalInjections(t *testing.T) {
+	prompt := buildAgentSystemPrompt(domain.AgentModeDefinition{
+		DisplayName: "Code",
+		Prompt:      "Default mode behavior.",
+	})
+	if !contains(prompt, "<agent_instructions>") {
+		t.Fatalf("prompt missing wrapper: %q", prompt)
+	}
+	if !contains(prompt, `<default name="agent_mode">`) || !contains(prompt, "Default mode behavior.") {
+		t.Fatalf("prompt missing default mode injection: %q", prompt)
+	}
+	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "tool_resolve") {
+		t.Fatalf("prompt missing global tool protocol injection: %q", prompt)
+	}
+	if contains(prompt, "<aivo_context>") || contains(prompt, "You are Aivo") {
+		t.Fatalf("agent prompt included runtime or removed fixed prompt: %q", prompt)
 	}
 }
 

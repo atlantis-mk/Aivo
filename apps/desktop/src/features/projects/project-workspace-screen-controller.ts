@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { useProjectAgentRuntimeState } from "@/features/projects/project-agent-runtime-state";
 import { useProjectAssistantDeltaBuffer } from "@/features/projects/project-assistant-delta-buffer";
 import { useProjectComposerTransitionState } from "@/features/projects/project-composer-transition-state";
@@ -23,6 +25,7 @@ import { useProjectWorkspaceScreenState } from "@/features/projects/project-work
 import { useProjectWorkspaceToolActivityController } from "@/features/projects/project-workspace-tool-activity-controller";
 import { useProjectWorkspaceUiActions } from "@/features/projects/project-workspace-ui-actions";
 import { useAppConfig } from "@/lib/app-config";
+import { getProviderCatalogForProject } from "@/services/aivo";
 
 export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenViewProps {
   const {
@@ -57,12 +60,9 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setHiddenTodoPlanKeyForSession,
     setPinnedConversationIds,
   } = useProjectWorkspacePreferencesState();
-  const { catalog, config } = useAppConfig();
+  const { catalog, config, setCatalog } = useAppConfig();
   const { activeProjectPage, navigateToProjectChat } =
-    useProjectWorkspaceRouteState({
-      activeSessionId,
-      setPinnedSummaryOpen,
-    });
+    useProjectWorkspaceRouteState();
   const {
     cancel: cancelPendingAssistantDelta,
     enqueue: enqueueAssistantDelta,
@@ -103,6 +103,18 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     sessions,
     turns,
   });
+  useEffect(() => {
+    if (!activeWorkspaceRoot || !window.aivo?.invoke) return;
+    let cancelled = false;
+    void getProviderCatalogForProject(activeWorkspaceRoot)
+      .then((nextCatalog) => {
+        if (!cancelled) setCatalog(nextCatalog);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceRoot, setCatalog]);
   const {
     activeParentSessionId,
     activeRunningSubagentRun,
@@ -174,15 +186,8 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     closeToolActivityTab,
     closedToolActivityItemIdsRef,
     activeToolActivityTabId,
-    builtinBrowserInitialUrls,
-    builtinBrowserReadyTokens,
-    builtinBrowserTabIds,
-    closeBuiltinBrowser,
-    handleBuiltinBrowserReady,
-    isBrowserRevealReady,
     isRightSidebarOpen,
     mergeToolActivityFromCall,
-    openBuiltinBrowser,
     restoreToolActivitySessionState,
     saveCurrentToolActivitySessionState,
     setActiveToolActivityTabId,
@@ -190,11 +195,9 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setToolActivityTabs,
     toolActivityTabs,
   } = useProjectWorkspaceToolActivityController({
-    activeProjectPage,
     activeSessionId,
     activeSessionIdRef,
     loadConversationTurns,
-    navigateToProjectChat,
   });
   const {
     clearPendingPermissionCountForSession,
@@ -210,15 +213,12 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setTurns,
   });
   const {
-    canToggleEnvironmentSummaryPanel,
     canUseTerminalPanel,
     hasPendingInteractionRequest,
     hasPendingPermissionRequest,
     hasPendingQuestionRequest,
     shouldShowEnvironmentSummaryPanel,
   } = getProjectWorkspacePanelViewState({
-    activeProjectPage,
-    activeSessionId,
     isPinnedSummaryOpen,
     pendingPermissionRequests,
     pendingQuestionRequests,
@@ -424,12 +424,13 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     },
     mainTopBar: {
       activeProjectPage,
-      canToggleEnvironmentSummaryPanel,
       conversationTitle,
       hasConversation: Boolean(activeSessionId),
       isPinnedSummaryOpen,
       isRightSidebarOpen,
       onTogglePinnedSummary: togglePinnedSummary,
+      repositoryPath: composerProjectPath,
+      sessionId: activeSessionId,
     },
     main: {
       activeProjectPage,
@@ -510,17 +511,11 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     rightSidebar: {
       activeProjectPage,
       activeTabId: activeToolActivityTabId,
-      browserInitialUrls: builtinBrowserInitialUrls,
-      browserReadyTokens: builtinBrowserReadyTokens,
-      browserTabIds: builtinBrowserTabIds,
-      browserVisible: isBrowserRevealReady,
       onActiveTabChange: setActiveToolActivityTabId,
       onApplyFileState: applyToolActivityFileStateFromSidebar,
-      onBrowserReady: handleBuiltinBrowserReady,
-      onCloseBrowser: closeBuiltinBrowser,
       onCloseTab: closeToolActivityTab,
-      onOpenBrowser: openBuiltinBrowser,
       tabs: toolActivityTabs,
+      workspaceRoot: activeWorkspaceRoot,
     },
   });
 }

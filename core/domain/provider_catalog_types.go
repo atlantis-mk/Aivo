@@ -80,6 +80,20 @@ type ProviderModelRefresh struct {
 	Stale       bool   `json:"stale,omitempty"`
 }
 
+type ProviderEcosystemRefreshInput struct {
+	URL   string `json:"url,omitempty"`
+	Force bool   `json:"force,omitempty"`
+}
+
+type ProviderEcosystemRefreshResult struct {
+	Source           string `json:"source"`
+	CachePath        string `json:"cachePath"`
+	RefreshedAt      string `json:"refreshedAt"`
+	ProviderCount    int    `json:"providerCount"`
+	ModelCount       int    `json:"modelCount"`
+	UnsupportedCount int    `json:"unsupportedCount,omitempty"`
+}
+
 type ProviderHealth struct {
 	ProviderID       string `json:"providerId"`
 	Status           string `json:"status"`

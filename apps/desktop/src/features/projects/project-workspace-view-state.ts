@@ -1,5 +1,4 @@
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
-import type { ProjectWorkspacePage } from "@/features/projects/project-workspace-derived-state";
 
 export function getProjectConversationViewState({
   isOpeningConversationFromEmpty,
@@ -21,33 +20,25 @@ export function getProjectConversationViewState({
 }
 
 export function getProjectWorkspacePanelViewState({
-  activeProjectPage,
-  activeSessionId,
   isPinnedSummaryOpen,
   pendingPermissionRequests,
   pendingQuestionRequests,
 }: {
-  activeProjectPage: ProjectWorkspacePage;
-  activeSessionId: string;
   isPinnedSummaryOpen: boolean;
   pendingPermissionRequests: readonly unknown[];
   pendingQuestionRequests: readonly unknown[];
 }) {
-  const canToggleEnvironmentSummaryPanel =
-    activeProjectPage === "chat" && Boolean(activeSessionId);
   const hasPendingPermissionRequest = pendingPermissionRequests.length > 0;
   const hasPendingQuestionRequest = pendingQuestionRequests.length > 0;
   const hasPendingInteractionRequest =
     hasPendingPermissionRequest || hasPendingQuestionRequest;
 
   return {
-    canToggleEnvironmentSummaryPanel,
     canUseTerminalPanel: !hasPendingInteractionRequest,
     hasPendingInteractionRequest,
     hasPendingPermissionRequest,
     hasPendingQuestionRequest,
-    shouldShowEnvironmentSummaryPanel:
-      canToggleEnvironmentSummaryPanel && isPinnedSummaryOpen,
+    shouldShowEnvironmentSummaryPanel: isPinnedSummaryOpen,
   };
 }
 

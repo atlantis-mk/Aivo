@@ -242,6 +242,41 @@ func TestPermissionModeRequestApprovalOverridesFullAccess(t *testing.T) {
 	}
 }
 
+func TestRememberedPermissionAppliesToNewSessionInWorkspace(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firstSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, runtime := service.toolsForWorkspace(root)
+	firstResult := make(chan domain.ToolResult, 1)
+	go func() {
+		firstResult <- runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "first_edit", Name: "edit_file", Arguments: json.RawMessage(`{"path":"README.md","oldString":"old","newString":"new"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: firstSession.ID, TurnID: "t1"})
+	}()
+	request := waitForPermissionRequest(t, service, firstSession.ID)
+	if _, err := service.ApprovePermissionRequest(ctx, domain.ApprovePermissionRequestInput{RequestID: request.ID, Remember: true}); err != nil {
+		t.Fatal(err)
+	}
+	if result := waitForToolResult(t, firstResult); !result.OK {
+		t.Fatalf("first edit result = %#v, want success", result)
+	}
+
+	secondSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "second_edit", Name: "edit_file", Arguments: json.RawMessage(`{"path":"README.md","oldString":"new","newString":"newer"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: secondSession.ID, TurnID: "t2"})
+	if !second.OK || second.PermissionRequested {
+		t.Fatalf("second edit result = %#v, want remembered workspace permission", second)
+	}
+}
+
 func TestApplyPatchRejectsLegacyPatchArgument(t *testing.T) {
 	root := t.TempDir()
 	tool := NewApplyPatchTool(root)

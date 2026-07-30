@@ -31,6 +31,38 @@ func TestSessionRuntimeMigrationEmptyDatabase(t *testing.T) {
 	}
 }
 
+func TestProjectDescriptionAndSessionProjectSwitchPersist(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "aivo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	first := t.TempDir()
+	second := t.TempDir()
+	if _, err := store.UpsertProject(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.UpdateProjectDescription(ctx, first, "A test project for project search.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Description != "A test project for project search." {
+		t.Fatalf("description = %q", project.Description)
+	}
+	session, err := store.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.SetRuntimeSessionProject(ctx, session.ID, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ProjectPath != second {
+		t.Fatalf("project path = %q, want %q", updated.ProjectPath, second)
+	}
+}
+
 func TestWebSearchConfigPersistsInAppConfig(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "aivo.db")
 	store, err := Open(dbPath)

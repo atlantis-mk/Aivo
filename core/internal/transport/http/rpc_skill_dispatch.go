@@ -32,6 +32,13 @@ func (api *API) callSkillRPC(ctx context.Context, method string, args []json.Raw
 		}
 		result, err := api.service.ImportSkill(ctx, input)
 		return result, true, err
+	case "IgnoreSkillCandidatesByName":
+		input, err := arg[domain.SkillIgnoreCandidatesInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.IgnoreSkillCandidatesByName(ctx, input)
+		return result, true, err
 	case "SetSkillEnabled":
 		input, err := arg[domain.SkillEnabledInput](args, 0)
 		if err != nil {

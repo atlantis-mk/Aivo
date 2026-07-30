@@ -38,7 +38,39 @@ func (s *Service) UpsertProject(ctx context.Context, path string) (domain.Assist
 	if err != nil {
 		return domain.AssistantProject{}, err
 	}
-	return s.store.UpsertProject(ctx, abs)
+	project, err := s.store.UpsertProject(ctx, abs)
+	if err != nil || strings.TrimSpace(project.Description) != "" {
+		return project, err
+	}
+	// Always provide a useful searchable description immediately. A configured
+	// auxiliary model refines it asynchronously without delaying project selection.
+	description := fallbackProjectDescription(abs)
+	project, _ = s.store.UpdateProjectDescription(ctx, abs, description)
+	go s.refineProjectDescription(abs)
+	return project, nil
+}
+
+func (s *Service) SwitchSessionProject(ctx context.Context, sessionID string, projectPath string) (domain.Session, error) {
+	abs, err := s.SelectProjectDirectory(projectPath)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if _, err := s.UpsertProject(ctx, abs); err != nil {
+		return domain.Session{}, err
+	}
+	session, err := s.store.SetRuntimeSessionProject(ctx, sessionID, abs)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if session.Type == domain.SessionTypeCoding {
+		if _, err := s.CreateOrUpdateCodingContext(ctx, sessionID, abs); err != nil {
+			return domain.Session{}, err
+		}
+	}
+	if s.onSessionUpdated != nil {
+		s.onSessionUpdated(sessionID, &session)
+	}
+	return session, nil
 }
 
 func (s *Service) SetProjectSidebarHidden(ctx context.Context, path string, hidden bool) (domain.AssistantProject, error) {

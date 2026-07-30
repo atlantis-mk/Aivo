@@ -19,8 +19,12 @@ import type { ModelInfo } from "@/lib/provider-catalog";
 import {
   cancelSessionTurn,
   createSession,
+  invokeCommand,
+  listCommandCatalog,
+  parseCommandArgumentLine,
   listSessions,
   setPermissionMode,
+  setSessionAgentMode,
   setSessionActiveTools,
   submitSessionMessage,
   type AgentModeId,
@@ -40,7 +44,7 @@ export function useProjectSubmitPromptAction({
   loadConversationTurns,
   modelOptions,
   pendingStopRequestedRef,
-  permissionMode,
+  permissionModeRef,
   prompt,
   reasoningEffort,
   refreshPendingPermissionRequests,
@@ -68,7 +72,7 @@ export function useProjectSubmitPromptAction({
   ) => Promise<void>;
   modelOptions: ModelInfo[];
   pendingStopRequestedRef: { current: boolean };
-  permissionMode: PermissionMode;
+  permissionModeRef: { current: PermissionMode };
   prompt: string;
   reasoningEffort: string;
   refreshPendingPermissionRequests: (sessionId?: string) => Promise<void>;
@@ -170,11 +174,63 @@ export function useProjectSubmitPromptAction({
         }
       }
       submittedSessionId = sessionId;
-      await setPermissionMode(sessionId, permissionMode);
+      let providerPrompt = nextPrompt;
+      let providerAgentMode = agentMode;
+      let providerModelRef = activeModelRef;
+      const commandMatch = nextPrompt.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+      if (commandMatch) {
+        const [, commandName, argumentLine = ""] = commandMatch;
+        const catalog = await listCommandCatalog(selectedProjectPath);
+        const command = catalog.find(
+          (entry) => entry.name === commandName || entry.id === commandName,
+        );
+        if (!command) {
+          throw new Error(`未知命令 /${commandName}`);
+        }
+        const tokens = parseCommandArgumentLine(argumentLine);
+        const args: Record<string, string> = { ARGUMENTS: argumentLine };
+        command.arguments?.forEach((argument, index) => {
+          if (tokens[index] !== undefined) args[argument.name] = tokens[index];
+        });
+        const expanded = await invokeCommand({
+          sessionId,
+          projectPath: selectedProjectPath,
+          commandId: command.id,
+          arguments: args,
+        });
+        if (expanded.subtask) {
+          setTurns((currentTurns) =>
+            currentTurns.map((turn) =>
+              turn.id === localTurnId
+                ? {
+                    ...turn,
+                    responseCompletedAt: new Date(),
+                    responseText:
+                      expanded.response || "子任务已完成，但没有返回文本。",
+                    responseVisible: true,
+                    thinkingSeconds: getTurnElapsedSeconds({ startedAt }),
+                  }
+                : turn,
+            ),
+          );
+          setSessions((await listSessions(50)) ?? []);
+          return;
+        }
+        providerPrompt = expanded.prompt;
+        if (expanded.agent) {
+          providerAgentMode = expanded.agent;
+          await setSessionAgentMode(sessionId, expanded.agent);
+        }
+        if (expanded.model) providerModelRef = expanded.model;
+        if (expanded.toolsets?.length) {
+          await setSessionActiveTools(sessionId, expanded.toolsets);
+        }
+      }
+      await setPermissionMode(sessionId, permissionModeRef.current);
       setConversationRunning(sessionId, true);
       const run = await submitSessionMessage({
         sessionId,
-        text: nextPrompt,
+        text: providerPrompt,
         attachments: submittedAttachments.map((attachment) => ({
           id: attachment.id,
           name: attachment.name,
@@ -183,12 +239,12 @@ export function useProjectSubmitPromptAction({
           data: attachment.data,
           size: attachment.size,
         })),
-        model: activeModelRef,
-        agentMode,
+        model: providerModelRef,
+        agentMode: providerAgentMode,
         reasoningEffort,
         serviceTier:
-          activeModelRef &&
-          providerSupportsServiceTier(activeModelRef.providerId)
+          providerModelRef &&
+          providerSupportsServiceTier(providerModelRef.providerId)
             ? serviceTier
             : "default",
       } as domain.SubmitSessionMessageRequest & {
@@ -227,15 +283,17 @@ export function useProjectSubmitPromptAction({
           return;
         }
       }
-      if (run.turn?.status !== "running") {
-        await loadConversationTurns(sessionId, {
-          pendingTurnId: localTurnId,
-          pendingPrompt: displayPrompt,
-          pendingAttachments: submittedTimelineAttachments,
-          pendingStartedAt: startedAt,
-          fallbackAssistantEvent: run.assistantEvent,
-        });
-      }
+      // The streaming RPC returns the initially prepared turn while execution
+      // continues in the background. Always reconcile once after binding the
+      // real ids so an immediate failure cannot be lost before the SSE turn
+      // event is associated with the optimistic local turn.
+      await loadConversationTurns(sessionId, {
+        pendingTurnId: localTurnId,
+        pendingPrompt: displayPrompt,
+        pendingAttachments: submittedTimelineAttachments,
+        pendingStartedAt: startedAt,
+        fallbackAssistantEvent: run.assistantEvent,
+      });
       setSessions((await listSessions(50)) ?? []);
     } catch (err) {
       setComposerAttachments((current) => [

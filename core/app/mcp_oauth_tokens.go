@@ -31,7 +31,6 @@ func refreshMCPOAuthToken(ctx context.Context, endpoint string, clientID string,
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("MCP-Protocol-Version", "2025-03-26")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return mcpOAuthTokenResponse{}, err
@@ -68,7 +67,6 @@ func registerMCPOAuthClient(ctx context.Context, endpoint string, redirectURI st
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("MCP-Protocol-Version", "2025-03-26")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err
@@ -131,7 +129,6 @@ func exchangeMCPOAuthCode(ctx context.Context, flow *mcpOAuthFlow, code string) 
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("MCP-Protocol-Version", "2025-03-26")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return mcpOAuthTokenResponse{}, err

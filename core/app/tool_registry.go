@@ -207,11 +207,6 @@ func NewReadOnlyToolRegistry(workspaceRoot string) (*Registry, error) {
 			return nil, err
 		}
 	}
-	for _, tool := range NewBrowserTools() {
-		if err := registry.Register(tool); err != nil {
-			return nil, err
-		}
-	}
 	if workspaceHasGit(workspaceRoot) {
 		for _, tool := range []domain.Tool{
 			NewGitStatusTool(workspaceRoot),
@@ -251,6 +246,8 @@ func NewCodingToolRegistryWithShellOutputSink(workspaceRoot string, outputSink S
 		NewReadDiagnosticsTool(workspaceRoot, runner, outputSink),
 		NewRunTestsTool(workspaceRoot, runner, outputSink),
 		NewBashTool(workspaceRoot, runner, outputSink),
+		NewExecCommandTool(workspaceRoot, defaultAgentPTYRegistry, outputSink),
+		NewWriteStdinTool(workspaceRoot, defaultAgentPTYRegistry),
 	} {
 		if err := registry.Register(tool); err != nil {
 			return nil, err

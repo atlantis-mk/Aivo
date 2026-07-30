@@ -16,6 +16,17 @@ func (api *API) callAgentRPC(ctx context.Context, method string, args []json.Raw
 		}
 		result, err := api.service.ListAgentModes(ctx, includeHidden)
 		return result, true, err
+	case "ListAgentModesForProject":
+		projectPath, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		includeHidden, err := arg[bool](args, 1)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.ListAgentModesForProject(ctx, projectPath, includeHidden)
+		return result, true, err
 	case "SetSessionAgentMode":
 		input, err := arg[domain.SetSessionAgentModeInput](args, 0)
 		if err != nil {

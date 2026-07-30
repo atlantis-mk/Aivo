@@ -10,19 +10,34 @@ import (
 )
 
 func (s *Service) resolveAgentModeForRequest(ctx context.Context, sessionID string, requested string) (domain.AgentModeDefinition, error) {
-	if s.agentCatalog == nil {
-		s.agentCatalog = NewAgentCatalog()
-	}
 	mode := strings.TrimSpace(requested)
+	projectPath := ""
+	parentSessionID := ""
 	if mode == "" && strings.TrimSpace(sessionID) != "" {
 		session, err := s.store.GetRuntimeSession(ctx, sessionID)
 		if err == nil {
 			mode = session.AgentMode
+			projectPath = session.ProjectPath
+			parentSessionID = session.ParentSessionID
+		}
+	} else if strings.TrimSpace(sessionID) != "" {
+		if session, err := s.store.GetRuntimeSession(ctx, sessionID); err == nil {
+			projectPath = session.ProjectPath
+			parentSessionID = session.ParentSessionID
 		}
 	}
-	def, err := s.agentCatalog.Get(mode)
+	catalog := NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(projectPath).Config)
+	def, err := catalog.Get(mode)
 	if err != nil {
 		return domain.AgentModeDefinition{}, err
+	}
+	if def.Mode == "subagent" && parentSessionID == "" {
+		return domain.AgentModeDefinition{}, errors.New("subagent-only mode cannot be used by a primary session")
+	}
+	if def.Revision != "" {
+		if err := s.validateAgentToolsets(projectPath, def); err != nil {
+			return domain.AgentModeDefinition{}, err
+		}
 	}
 	if strings.TrimSpace(requested) != "" && strings.TrimSpace(sessionID) != "" && !def.Hidden {
 		if session, err := s.store.GetRuntimeSession(ctx, sessionID); err == nil && session.AgentMode != def.ID {
@@ -82,6 +97,36 @@ func defaultPermissionScopeForMode(mode string) string {
 	}
 }
 
+func permissionScopeForAgent(mode domain.AgentModeDefinition) string {
+	if strings.TrimSpace(mode.PermissionScope) != "" {
+		return strings.TrimSpace(mode.PermissionScope)
+	}
+	return defaultPermissionScopeForMode(mode.ID)
+}
+
+func (s *Service) validateAgentToolsets(projectPath string, mode domain.AgentModeDefinition) error {
+	for _, toolset := range mode.Toolsets {
+		if strings.TrimSpace(toolset) == "*" {
+			return nil
+		}
+	}
+	registry, _ := s.toolsForWorkspace(strings.TrimSpace(projectPath))
+	available := map[string]bool{"safe": true}
+	if registry != nil {
+		for _, spec := range registry.Specs() {
+			for _, toolset := range spec.Toolsets {
+				available[toolset] = true
+			}
+		}
+	}
+	for _, toolset := range mode.Toolsets {
+		if !available[strings.TrimSpace(toolset)] {
+			return errors.New("agent references unavailable toolset: " + strings.TrimSpace(toolset))
+		}
+	}
+	return nil
+}
+
 func (s *Service) ListAgentModes(ctx context.Context, includeHidden bool) ([]domain.AgentModeDefinition, error) {
 	if s.agentCatalog == nil {
 		s.agentCatalog = NewAgentCatalog()
@@ -89,15 +134,19 @@ func (s *Service) ListAgentModes(ctx context.Context, includeHidden bool) ([]dom
 	return s.agentCatalog.List(includeHidden), nil
 }
 
+func (s *Service) ListAgentModesForProject(_ context.Context, projectPath string, includeHidden bool) ([]domain.AgentModeDefinition, error) {
+	return NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(projectPath).Config).List(includeHidden), nil
+}
+
 func (s *Service) SetSessionAgentMode(ctx context.Context, input domain.SetSessionAgentModeInput) (domain.Session, error) {
 	if strings.TrimSpace(input.SessionID) == "" {
 		return domain.Session{}, errors.New("sessionId is required")
 	}
-	mode, err := domain.NormalizeAgentMode(input.Mode)
+	definition, err := s.resolveAgentModeForRequest(ctx, input.SessionID, input.Mode)
 	if err != nil {
 		return domain.Session{}, err
 	}
-	session, err := s.store.SetRuntimeSessionAgentMode(ctx, input.SessionID, mode)
+	session, err := s.store.SetRuntimeSessionAgentMode(ctx, input.SessionID, definition.ID)
 	if err == nil && s.onSessionUpdated != nil {
 		s.onSessionUpdated(session.ID, &session)
 	}

@@ -42,6 +42,10 @@ func (s *Service) ImportSkill(ctx context.Context, input domain.SkillImportInput
 	return s.ensureSkillManager().Import(ctx, input)
 }
 
+func (s *Service) IgnoreSkillCandidatesByName(ctx context.Context, input domain.SkillIgnoreCandidatesInput) ([]domain.SkillImportCandidate, error) {
+	return s.ensureSkillManager().IgnoreCandidatesByName(ctx, input)
+}
+
 func (s *Service) SetSkillEnabled(ctx context.Context, input domain.SkillEnabledInput) (domain.SkillEntry, error) {
 	return s.ensureSkillManager().SetEnabled(ctx, input)
 }
@@ -53,6 +57,21 @@ func (s *Service) DeleteManagedSkill(ctx context.Context, skillID string) error 
 func (s *Service) LoadSkillIntoSession(ctx context.Context, input domain.LoadSkillIntoSessionInput) (domain.SessionEvent, error) {
 	result, err := s.loadSkillIntoSession(ctx, input)
 	return result.Event, err
+}
+
+func (s *Service) loadOrImportSkillIntoSession(ctx context.Context, input domain.LoadSkillIntoSessionInput) (loadedSkillResult, error) {
+	manager := s.ensureSkillManager()
+	skill, err := manager.Resolve(ctx, input.SkillID, input.Name, input.Scope)
+	if err != nil && strings.TrimSpace(input.SkillID) == "" && strings.TrimSpace(input.Name) != "" {
+		skill, err = manager.ImportByName(ctx, input.Name, input.Scope)
+	}
+	if err != nil {
+		return loadedSkillResult{}, err
+	}
+	input.SkillID = skill.ID
+	input.Name = ""
+	input.Scope = ""
+	return s.loadSkillIntoSession(ctx, input)
 }
 
 func (s *Service) loadSkillIntoSession(ctx context.Context, input domain.LoadSkillIntoSessionInput) (loadedSkillResult, error) {
@@ -233,7 +252,7 @@ func (s *Service) availableSkillsContext(ctx context.Context, workspaceRoot stri
 	if s == nil || s.store == nil {
 		return ""
 	}
-	result, err := s.ListSkills(ctx, domain.SkillListInput{WorkspaceRoot: workspaceRoot})
+	result, err := s.ListSkills(ctx, domain.SkillListInput{WorkspaceRoot: workspaceRoot, IncludeCandidates: true})
 	if err != nil {
 		return ""
 	}
@@ -244,16 +263,23 @@ func (s *Service) availableSkillsContext(ctx context.Context, workspaceRoot stri
 		}
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
-	return renderAvailableSkills(skills)
+	candidates := make([]domain.SkillImportCandidate, 0, len(result.Candidates))
+	for _, candidate := range result.Candidates {
+		if candidate.Status == domain.SkillCandidateStatusPending && strings.TrimSpace(candidate.Description) != "" {
+			candidates = append(candidates, candidate)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Name < candidates[j].Name })
+	return renderAvailableSkills(skills, candidates)
 }
 
-func renderAvailableSkills(skills []domain.SkillEntry) string {
-	if len(skills) == 0 {
+func renderAvailableSkills(skills []domain.SkillEntry, candidates []domain.SkillImportCandidate) string {
+	if len(skills) == 0 && len(candidates) == 0 {
 		return ""
 	}
 	lines := []string{
 		"Skills provide specialized instructions and workflows for specific tasks.",
-		"Use the skill tool to load a skill when a task matches its description.",
+		"Use the skill tool to load a skill when a task matches its description. Pending import candidates can be loaded by name; ignored candidates are not listed.",
 	}
 	lines = append(lines, "<available_skills>")
 	for _, skill := range skills {
@@ -261,6 +287,16 @@ func renderAvailableSkills(skills []domain.SkillEntry) string {
 			"  <skill>",
 			fmt.Sprintf("    <name>%s</name>", xmlEscape(skill.Name)),
 			fmt.Sprintf("    <description>%s</description>", xmlEscape(skill.Description)),
+			"    <status>imported</status>",
+			"  </skill>",
+		)
+	}
+	for _, candidate := range candidates {
+		lines = append(lines,
+			"  <skill>",
+			fmt.Sprintf("    <name>%s</name>", xmlEscape(candidate.Name)),
+			fmt.Sprintf("    <description>%s</description>", xmlEscape(candidate.Description)),
+			"    <status>pending_import</status>",
 			"  </skill>",
 		)
 	}
@@ -279,16 +315,20 @@ func renderSkillModelOutput(skill domain.SkillEntry, content string, files []str
 		"",
 		strings.TrimSpace(content),
 		"",
-		"Base directory for this skill: " + directory,
-		"Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
-		"Note: file list is sampled.",
+		"Skill directory: " + directory,
+		"Relative paths in this skill are relative to the skill directory.",
+		"Bundled resources are listed but not loaded. Read only the specific resources required by the instructions. The resource list may be incomplete.",
 		"",
-		"<skill_files>",
+		"<skill_resources>",
 	}
 	for _, file := range files {
-		lines = append(lines, fmt.Sprintf("<file>%s</file>", xmlEscape(file)))
+		relative := file
+		if rel, err := filepath.Rel(directory, file); err == nil {
+			relative = filepath.ToSlash(rel)
+		}
+		lines = append(lines, fmt.Sprintf("<file>%s</file>", xmlEscape(relative)))
 	}
-	lines = append(lines, "</skill_files>", "</skill_content>")
+	lines = append(lines, "</skill_resources>", "</skill_content>")
 	return strings.Join(lines, "\n")
 }
 

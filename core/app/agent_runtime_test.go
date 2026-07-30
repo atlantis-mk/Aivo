@@ -5,11 +5,65 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"aivo/core/domain"
 )
+
+func TestConfiguredAgentOverridesAreResolvedPerProject(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	t.Setenv("HOME", t.TempDir())
+	ctx := context.Background()
+	root := t.TempDir()
+	writeRuntimeConfigTestFile(t, filepath.Join(root, ".aivo", "config.json"), `{
+  "agents": {
+    "researcher": {
+      "description": "Project researcher",
+      "prompt": "Inspect this project carefully.",
+      "toolsets": ["safe"],
+      "permissionScope": "read_only",
+      "maxSteps": 3,
+      "model": {"providerId": "openai", "modelId": "gpt-5.5"}
+    }
+  }
+}`)
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := service.resolveAgentModeForRequest(ctx, session.ID, "researcher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.Prompt != "Inspect this project carefully." || definition.MaxSteps != 3 || definition.PermissionScope != "read_only" || definition.Model == nil || definition.Revision == "" {
+		t.Fatalf("definition = %#v", definition)
+	}
+	updated, err := service.SetSessionAgentMode(ctx, domain.SetSessionAgentModeInput{SessionID: session.ID, Mode: "researcher"})
+	if err != nil || updated.AgentMode != "researcher" {
+		t.Fatalf("updated session = %#v err = %v", updated, err)
+	}
+}
+
+func TestConfiguredAgentRejectsUnavailableToolsetBeforeExecution(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	t.Setenv("HOME", t.TempDir())
+	ctx := context.Background()
+	root := t.TempDir()
+	writeRuntimeConfigTestFile(t, filepath.Join(root, "aivo.json"), `{
+  "agents": {"broken": {"prompt": "Broken", "toolsets": ["does-not-exist"]}}
+}`)
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.resolveAgentModeForRequest(ctx, session.ID, "broken"); err == nil {
+		t.Fatal("configured agent with unavailable toolset resolved")
+	}
+}
 
 type agentSpecTool struct {
 	spec domain.ToolSpec

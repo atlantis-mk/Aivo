@@ -63,12 +63,17 @@ export function listSkills(input: {
   workspaceRoot?: string;
   includeCandidates?: boolean;
   includeDisabled?: boolean;
+  includeIgnored?: boolean;
 } = {}) {
   return invoke<SkillListResult>("ListSkills", input);
 }
 
 export function importSkill(candidateId: string, targetScope?: string) {
   return invoke<SkillEntry>("ImportSkill", { candidateId, targetScope });
+}
+
+export function ignoreSkillCandidatesByName(name: string) {
+  return invoke<SkillImportCandidate[]>("IgnoreSkillCandidatesByName", { name });
 }
 
 export function setSkillEnabled(skillId: string, enabled: boolean) {

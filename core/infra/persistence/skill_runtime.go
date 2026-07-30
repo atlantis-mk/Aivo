@@ -170,6 +170,27 @@ func (s *Store) MarkSkillImportCandidateStatus(ctx context.Context, id string, s
 	return s.GetSkillImportCandidate(ctx, id)
 }
 
+func (s *Store) MarkSkillImportCandidatesByNameStatus(ctx context.Context, name string, status string, errText string) ([]domain.SkillImportCandidate, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("skill name is required")
+	}
+	if err := s.db.WithContext(ctx).Model(&skillImportCandidateRow{}).Where("name = ?", name).Updates(map[string]any{
+		"status": status, "conflict_id": "", "error": errText,
+	}).Error; err != nil {
+		return nil, err
+	}
+	var rows []skillImportCandidateRow
+	if err := s.db.WithContext(ctx).Where("name = ?", name).Order("last_seen_at DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.SkillImportCandidate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, skillCandidateFromRow(row))
+	}
+	return out, nil
+}
+
 func skillFromRow(row skillRow) domain.SkillEntry {
 	return domain.SkillEntry{
 		ID: row.ID, Name: row.Name, Description: row.Description, Scope: row.Scope, Source: row.Source,

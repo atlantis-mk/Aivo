@@ -3,6 +3,8 @@ package app
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,7 +111,7 @@ func parseLSPLocations(workspaceRoot string, raw json.RawMessage, limit int) []d
 		if !ok {
 			continue
 		}
-		rel, err := filepath.Rel(workspaceRoot, path)
+		rel, err := filepath.Rel(canonicalLSPPath(workspaceRoot), canonicalLSPPath(path))
 		if err != nil || strings.HasPrefix(rel, "..") {
 			continue
 		}
@@ -139,7 +141,7 @@ func lspSymbolToDomain(workspaceRoot string, item lspSymbolInformation) (domain.
 	if !ok {
 		return domain.CodeSymbol{}, false
 	}
-	rel, err := filepath.Rel(workspaceRoot, path)
+	rel, err := filepath.Rel(canonicalLSPPath(workspaceRoot), canonicalLSPPath(path))
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return domain.CodeSymbol{}, false
 	}
@@ -151,6 +153,13 @@ func lspSymbolToDomain(workspaceRoot string, item lspSymbolInformation) (domain.
 		Language: symbolLanguage(strings.ToLower(filepath.Ext(path))),
 		Source:   "lsp",
 	}, true
+}
+
+func canonicalLSPPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return filepath.Clean(path)
 }
 
 func codeSymbolPreviewLine(workspaceRoot string, symbol domain.CodeSymbol) string {
@@ -194,13 +203,54 @@ func cleanWorkspaceRoot(root string) (string, error) {
 }
 
 func detectWorkspaceLSPLanguage(ctx context.Context, root string) (string, string, bool) {
-	if fileExists(filepath.Join(root, "go.mod")) || hasWorkspaceFile(ctx, root, ".go") {
-		return "go", "", true
-	}
-	if fileExists(filepath.Join(root, "tsconfig.json")) || fileExists(filepath.Join(root, "jsconfig.json")) || fileExists(filepath.Join(root, "package.json")) || hasWorkspaceFile(ctx, root, ".ts", ".tsx", ".js", ".jsx") {
-		return "typescript", "", true
+	for _, resolved := range resolvedLSPCatalog(root) {
+		if resolved.Definition.Disabled || resolved.Definition.StrictRoot {
+			continue
+		}
+		// Root markers select a server root after a language has been detected;
+		// generic markers such as .git must not classify every repository as shell.
+		if hasWorkspaceLSPFile(ctx, root, resolved.Definition) {
+			language := firstLSPDefinitionLanguage(resolved.Definition)
+			if language != "" {
+				return language, resolved.Name, true
+			}
+		}
 	}
 	return "", "", false
+}
+
+func hasWorkspaceLSPFile(ctx context.Context, root string, definition domain.LanguageServerDefinition) bool {
+	extensions := map[string]bool{}
+	filenames := map[string]bool{}
+	for _, extension := range definition.Extensions {
+		extensions[strings.ToLower(extension)] = true
+	}
+	for _, filename := range definition.Filenames {
+		filenames[strings.ToLower(filename)] = true
+	}
+	ignore := loadWorkspaceIgnore(ctx, root)
+	found := false
+	_ = filepath.WalkDir(root, func(current string, entry os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if shouldSkipWorkspaceEntry(root, current, entry, ignore) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel := filepath.ToSlash(mustRel(root, current))
+		if !isSensitiveRelPath(rel) && (extensions[strings.ToLower(filepath.Ext(current))] || filenames[strings.ToLower(entry.Name())]) {
+			found = true
+			return errStopWalk
+		}
+		return ctx.Err()
+	})
+	return found
 }
 
 func hasWorkspaceFile(ctx context.Context, root string, exts ...string) bool {
@@ -237,6 +287,13 @@ func hasWorkspaceFile(ctx context.Context, root string, exts ...string) bool {
 }
 
 func lspLanguageForPath(path string) string {
+	if resolved, ok := resolveLSPDefinitionForPath(filepath.Dir(path), path); ok {
+		return languageIDForLSPDefinition(resolved.Definition, path)
+	}
+	return builtinLSPLanguageForPath(path)
+}
+
+func builtinLSPLanguageForPath(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go":
 		return "go"
@@ -244,6 +301,26 @@ func lspLanguageForPath(path string) string {
 		return "typescript"
 	case ".js", ".jsx":
 		return "javascript"
+	case ".py", ".pyi":
+		return "python"
+	case ".rs":
+		return "rust"
+	case ".java":
+		return "java"
+	case ".c", ".h":
+		return "c"
+	case ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx":
+		return "cpp"
+	case ".cs":
+		return "csharp"
+	case ".rb":
+		return "ruby"
+	case ".php":
+		return "php"
+	case ".lua":
+		return "lua"
+	case ".sh", ".bash", ".zsh":
+		return "shellscript"
 	default:
 		return ""
 	}
@@ -258,23 +335,176 @@ func languageID(language string, path string) string {
 			return "javascriptreact"
 		}
 		return "javascript"
-	default:
+	case "typescript", "typescriptreact":
 		if strings.EqualFold(filepath.Ext(path), ".tsx") {
 			return "typescriptreact"
 		}
 		return "typescript"
+	default:
+		return language
 	}
 }
 
 func lspCommandForLanguage(language string) (string, []string, string, bool) {
-	switch language {
-	case "go":
-		return "gopls", nil, "gopls", true
-	case "typescript", "javascript":
-		return "typescript-language-server", []string{"--stdio"}, "typescript-language-server", true
-	default:
-		return "", nil, "", false
+	if resolved, ok := resolveLSPDefinitionForLanguage("", language); ok {
+		return resolved.Definition.Command, resolved.Definition.Args, resolved.Name, true
 	}
+	return "", nil, "", false
+}
+
+type resolvedLSPDefinition struct {
+	Name       string
+	Definition domain.LanguageServerDefinition
+	Revision   string
+}
+
+func resolvedLSPCatalog(root string) []resolvedLSPDefinition {
+	definitions := builtInLSPDefinitions()
+	if strings.TrimSpace(root) != "" {
+		for name, definition := range loadEffectiveRuntimeConfig(root).Config.LanguageServers {
+			definitions[name] = definition
+		}
+	}
+	names := make([]string, 0, len(definitions))
+	for name := range definitions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]resolvedLSPDefinition, 0, len(names))
+	for _, name := range names {
+		definition := definitions[name]
+		raw, _ := json.Marshal(definition)
+		sum := sha256.Sum256(raw)
+		out = append(out, resolvedLSPDefinition{Name: name, Definition: definition, Revision: hex.EncodeToString(sum[:])})
+	}
+	return out
+}
+
+func builtInLSPDefinitions() map[string]domain.LanguageServerDefinition {
+	return map[string]domain.LanguageServerDefinition{
+		"astro-ls":                   {LanguageIDs: []string{"astro"}, Extensions: []string{".astro"}, RootMarkers: []string{"astro.config.mjs", "astro.config.ts", "package.json"}, Command: "astro-ls", Args: []string{"--stdio"}},
+		"bash-language-server":       {LanguageIDs: []string{"shellscript"}, Extensions: []string{".sh", ".bash", ".zsh"}, RootMarkers: []string{".git"}, Command: "bash-language-server", Args: []string{"start"}},
+		"basedpyright":               {LanguageIDs: []string{"python"}, Extensions: []string{".py", ".pyi"}, RootMarkers: []string{"pyproject.toml", "setup.py", "requirements.txt"}, Command: "basedpyright-langserver", Args: []string{"--stdio"}},
+		"clangd":                     {LanguageIDs: []string{"c", "cpp"}, Extensions: []string{".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"}, RootMarkers: []string{"compile_commands.json", "CMakeLists.txt"}, Command: "clangd"},
+		"clojure-lsp":                {LanguageIDs: []string{"clojure"}, Extensions: []string{".clj", ".cljs", ".cljc", ".edn"}, RootMarkers: []string{"deps.edn", "project.clj", "shadow-cljs.edn"}, Command: "clojure-lsp"},
+		"csharp-ls":                  {LanguageIDs: []string{"csharp"}, Extensions: []string{".cs"}, RootMarkers: []string{"*.sln", "*.csproj"}, Command: "csharp-ls"},
+		"dart-language-server":       {LanguageIDs: []string{"dart"}, Extensions: []string{".dart"}, RootMarkers: []string{"pubspec.yaml"}, Command: "dart", Args: []string{"language-server", "--protocol=lsp"}},
+		"deno":                       {LanguageIDs: []string{"typescript", "typescriptreact", "javascript", "javascriptreact"}, Extensions: []string{".ts", ".tsx", ".js", ".jsx", ".mjs"}, RootMarkers: []string{"deno.json", "deno.jsonc"}, StrictRoot: true, Command: "deno", Args: []string{"lsp"}},
+		"dockerfile-language-server": {LanguageIDs: []string{"dockerfile"}, Filenames: []string{"Dockerfile", "Containerfile"}, RootMarkers: []string{".git"}, Command: "docker-langserver", Args: []string{"--stdio"}},
+		"elixir-ls":                  {LanguageIDs: []string{"elixir"}, Extensions: []string{".ex", ".exs"}, RootMarkers: []string{"mix.exs"}, Command: "elixir-ls"},
+		"fsautocomplete":             {LanguageIDs: []string{"fsharp"}, Extensions: []string{".fs", ".fsi", ".fsx", ".fsscript"}, RootMarkers: []string{"*.sln", "*.fsproj"}, Command: "fsautocomplete", Args: []string{"--adaptive-lsp-server-enabled"}},
+		"gleam":                      {LanguageIDs: []string{"gleam"}, Extensions: []string{".gleam"}, RootMarkers: []string{"gleam.toml"}, Command: "gleam", Args: []string{"lsp"}},
+		"gopls":                      {LanguageIDs: []string{"go"}, Extensions: []string{".go"}, RootMarkers: []string{"go.mod", "go.work"}, Command: "gopls"},
+		"haskell-language-server":    {LanguageIDs: []string{"haskell"}, Extensions: []string{".hs", ".lhs"}, RootMarkers: []string{"hie.yaml", "stack.yaml", "cabal.project", "*.cabal"}, Command: "haskell-language-server-wrapper", Args: []string{"--lsp"}},
+		"intelephense":               {LanguageIDs: []string{"php"}, Extensions: []string{".php"}, RootMarkers: []string{"composer.json"}, Command: "intelephense", Args: []string{"--stdio"}},
+		"jdtls":                      {LanguageIDs: []string{"java"}, Extensions: []string{".java"}, RootMarkers: []string{"pom.xml", "build.gradle", "build.gradle.kts"}, Command: "jdtls"},
+		"julia-language-server":      {LanguageIDs: []string{"julia"}, Extensions: []string{".jl"}, RootMarkers: []string{"Project.toml", "JuliaProject.toml"}, Command: "julia", Args: []string{"--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"}},
+		"kotlin-language-server":     {LanguageIDs: []string{"kotlin"}, Extensions: []string{".kt", ".kts"}, RootMarkers: []string{"settings.gradle", "settings.gradle.kts", "pom.xml"}, Command: "kotlin-language-server"},
+		"lua-language-server":        {LanguageIDs: []string{"lua"}, Extensions: []string{".lua"}, RootMarkers: []string{".luarc.json", ".luarc.jsonc"}, Command: "lua-language-server"},
+		"nixd":                       {LanguageIDs: []string{"nix"}, Extensions: []string{".nix"}, RootMarkers: []string{"flake.nix", "shell.nix", ".git"}, Command: "nixd"},
+		"ocamllsp":                   {LanguageIDs: []string{"ocaml"}, Extensions: []string{".ml", ".mli"}, RootMarkers: []string{"dune-project", "dune-workspace", "*.opam"}, Command: "ocamllsp"},
+		"prisma-language-server":     {LanguageIDs: []string{"prisma"}, Extensions: []string{".prisma"}, RootMarkers: []string{"schema.prisma", "package.json"}, Command: "prisma-language-server", Args: []string{"--stdio"}},
+		"razor-language-server":      {LanguageIDs: []string{"razor"}, Extensions: []string{".razor", ".cshtml"}, RootMarkers: []string{"*.sln", "*.csproj"}, Command: "rzls"},
+		"ruby-lsp":                   {LanguageIDs: []string{"ruby"}, Extensions: []string{".rb"}, RootMarkers: []string{"Gemfile", ".ruby-version"}, Command: "ruby-lsp"},
+		"rust-analyzer":              {LanguageIDs: []string{"rust"}, Extensions: []string{".rs"}, RootMarkers: []string{"Cargo.toml"}, Command: "rust-analyzer"},
+		"sourcekit-lsp":              {LanguageIDs: []string{"swift"}, Extensions: []string{".swift"}, RootMarkers: []string{"Package.swift", "*.xcodeproj", "*.xcworkspace"}, Command: "sourcekit-lsp"},
+		"svelte-language-server":     {LanguageIDs: []string{"svelte"}, Extensions: []string{".svelte"}, RootMarkers: []string{"svelte.config.js", "svelte.config.ts", "package.json"}, Command: "svelteserver", Args: []string{"--stdio"}},
+		"terraform-ls":               {LanguageIDs: []string{"terraform"}, Extensions: []string{".tf", ".tfvars"}, RootMarkers: []string{".terraform", ".git"}, Command: "terraform-ls", Args: []string{"serve"}},
+		"texlab":                     {LanguageIDs: []string{"latex"}, Extensions: []string{".tex", ".bib"}, RootMarkers: []string{".latexmkrc", "latexmkrc", ".git"}, Command: "texlab"},
+		"tinymist":                   {LanguageIDs: []string{"typst"}, Extensions: []string{".typ"}, RootMarkers: []string{"typst.toml", ".git"}, Command: "tinymist"},
+		"typescript-language-server": {LanguageIDs: []string{"typescript", "typescriptreact", "javascript", "javascriptreact"}, Extensions: []string{".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"}, RootMarkers: []string{"tsconfig.json", "jsconfig.json", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"}, Command: "typescript-language-server", Args: []string{"--stdio"}},
+		"vue-language-server":        {LanguageIDs: []string{"vue"}, Extensions: []string{".vue"}, RootMarkers: []string{"package.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock"}, Command: "vue-language-server", Args: []string{"--stdio"}},
+		"yaml-language-server":       {LanguageIDs: []string{"yaml"}, Extensions: []string{".yaml", ".yml"}, RootMarkers: []string{".git"}, Command: "yaml-language-server", Args: []string{"--stdio"}},
+		"zls":                        {LanguageIDs: []string{"zig"}, Extensions: []string{".zig", ".zon"}, RootMarkers: []string{"build.zig", "build.zig.zon"}, Command: "zls"},
+	}
+}
+
+func resolveLSPDefinitionForLanguage(root string, language string) (resolvedLSPDefinition, bool) {
+	for _, resolved := range resolvedLSPCatalog(root) {
+		if resolved.Definition.Disabled || resolved.Definition.StrictRoot {
+			continue
+		}
+		for _, candidate := range resolved.Definition.LanguageIDs {
+			if candidate == language || (language == "javascript" && candidate == "typescript") {
+				return resolved, true
+			}
+		}
+	}
+	return resolvedLSPDefinition{}, false
+}
+
+func resolveLSPDefinitionForPath(root string, path string) (resolvedLSPDefinition, bool) {
+	ext := strings.ToLower(filepath.Ext(path))
+	filename := strings.ToLower(filepath.Base(path))
+	var fallback resolvedLSPDefinition
+	var best resolvedLSPDefinition
+	bestDepth := -1
+	for _, resolved := range resolvedLSPCatalog(root) {
+		if resolved.Definition.Disabled {
+			continue
+		}
+		matchedFile := false
+		for _, candidate := range resolved.Definition.Extensions {
+			if strings.EqualFold(candidate, ext) {
+				matchedFile = true
+				break
+			}
+		}
+		if !matchedFile {
+			for _, candidate := range resolved.Definition.Filenames {
+				if strings.EqualFold(candidate, filename) {
+					matchedFile = true
+					break
+				}
+			}
+		}
+		if !matchedFile {
+			continue
+		}
+		if strings.TrimSpace(root) != "" {
+			if markerRoot, ok := nearestLSPRootMatch(root, path, resolved.Definition.RootMarkers); ok {
+				depth := len(strings.Split(filepath.Clean(markerRoot), string(os.PathSeparator)))
+				if depth > bestDepth {
+					best, bestDepth = resolved, depth
+				}
+				continue
+			}
+		}
+		if !resolved.Definition.StrictRoot && fallback.Name == "" {
+			fallback = resolved
+		}
+	}
+	if best.Name != "" {
+		return best, true
+	}
+	if fallback.Name != "" {
+		return fallback, true
+	}
+	return resolvedLSPDefinition{}, false
+}
+
+func firstLSPDefinitionLanguage(definition domain.LanguageServerDefinition) string {
+	if len(definition.LanguageIDs) == 0 {
+		return ""
+	}
+	return definition.LanguageIDs[0]
+}
+
+func languageIDForLSPDefinition(definition domain.LanguageServerDefinition, path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".hh" || ext == ".hpp" || ext == ".hxx" {
+		for _, language := range definition.LanguageIDs {
+			if language == "cpp" {
+				return language
+			}
+		}
+	}
+	for _, language := range definition.LanguageIDs {
+		if ext == ".tsx" && language == "typescriptreact" || ext == ".jsx" && language == "javascriptreact" {
+			return language
+		}
+	}
+	return firstLSPDefinitionLanguage(definition)
 }
 
 func lspReadyStatus(root string, language string, source string, startedAt time.Time, now time.Time) domain.CodeIntelligenceStatus {

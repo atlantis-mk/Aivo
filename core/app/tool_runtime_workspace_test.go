@@ -71,6 +71,26 @@ func TestReadFileToolAllowsUTF8ProbeEndingMidRune(t *testing.T) {
 	}
 }
 
+func TestReadFileToolAddsNestedInstructionsOnlyToModelContent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "pkg"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pkg", "AGENTS.md"), []byte("Use package rules."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pkg", "file.go"), []byte("package pkg"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := NewReadFileTool(root).Execute(context.Background(), json.RawMessage(`{"path":"pkg/file.go"}`), domain.ToolExecutionContext{})
+	if result.Content != "package pkg" {
+		t.Fatalf("content = %q", result.Content)
+	}
+	if !strings.Contains(result.ModelContent, "Use package rules.") || !strings.Contains(result.ModelContent, "pkg/AGENTS.md") {
+		t.Fatalf("model content = %q", result.ModelContent)
+	}
+}
+
 func TestListFilesIgnoresGeneratedDirectories(t *testing.T) {
 	root := t.TempDir()
 	for _, dir := range []string{"node_modules", ".git", "dist", "build", "src"} {
@@ -91,6 +111,52 @@ func TestListFilesIgnoresGeneratedDirectories(t *testing.T) {
 	for _, ignored := range []string{"node_modules", ".git", "dist/file.txt", "build/file.txt"} {
 		if strings.Contains(result.Content, ignored) {
 			t.Fatalf("content = %q, should ignore %s", result.Content, ignored)
+		}
+	}
+}
+
+func TestListFilesSkipsHiddenEntriesUnlessIncluded(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"README.md":                "visible",
+		".env.local":               "hidden file",
+		".config/settings.json":    "hidden dir",
+		"src/.generated/config.ts": "hidden nested dir",
+		"src/visible.ts":           "visible nested",
+	}
+	for rel, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tool := NewListFilesTool(root)
+	result := tool.Execute(context.Background(), json.RawMessage(`{}`), domain.ToolExecutionContext{})
+	if !result.OK {
+		t.Fatalf("list failed: %#v", result)
+	}
+	for _, want := range []string{"README.md", "src/visible.ts"} {
+		if !strings.Contains(result.Content, want) {
+			t.Fatalf("content = %q, want %s", result.Content, want)
+		}
+	}
+	for _, hidden := range []string{".env.local", ".config/settings.json", "src/.generated/config.ts"} {
+		if strings.Contains(result.Content, hidden) {
+			t.Fatalf("content = %q, should hide %s by default", result.Content, hidden)
+		}
+	}
+
+	withHidden := tool.Execute(context.Background(), json.RawMessage(`{"includeHidden":true}`), domain.ToolExecutionContext{})
+	if !withHidden.OK {
+		t.Fatalf("list with hidden failed: %#v", withHidden)
+	}
+	for _, want := range []string{".env.local", ".config/settings.json", "src/.generated/config.ts"} {
+		if !strings.Contains(withHidden.Content, want) {
+			t.Fatalf("content = %q, want hidden entry %s", withHidden.Content, want)
 		}
 	}
 }

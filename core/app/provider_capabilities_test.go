@@ -83,6 +83,29 @@ func TestValidateModelCapabilitiesUsesPersistedModelCache(t *testing.T) {
 	}
 }
 
+func TestValidateModelCapabilitiesAllowsCacheWithoutCapabilityMetadata(t *testing.T) {
+	service := NewService(&memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"deepseek": {
+			ProviderID: "deepseek",
+			Models: []domain.ModelInfo{{
+				ID: "deepseek-v4-flash", ProviderID: "deepseek", Name: "DeepSeek V4 Flash",
+			}},
+		},
+	}})
+	route := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "deepseek"},
+		Model:    domain.ModelRef{ProviderID: "deepseek", ModelID: "deepseek-v4-flash"},
+		Definition: ProviderDefinition{
+			ID: "deepseek", Models: nil,
+		},
+	}
+
+	err := service.validateModelCapabilities(context.Background(), route, modelRequirement{Tools: true, Streaming: true})
+	if err != nil {
+		t.Fatalf("validateModelCapabilities returned error for unknown metadata: %v", err)
+	}
+}
+
 func TestValidateModelCapabilitiesAllowsUnknownModelForCompatibility(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	route := ResolvedModelRoute{

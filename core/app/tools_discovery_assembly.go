@@ -89,11 +89,11 @@ func isDeferrableToolSpec(spec domain.ToolSpec, identity domain.ToolRegistration
 		return true
 	}
 	switch spec.Category {
-	case "mcp", "plugin", "agent", "automation", "admin", "browser":
+	case "mcp", "plugin", "agent", "automation", "admin":
 		return true
 	}
 	for _, toolset := range spec.Toolsets {
-		if toolset == "mcp" || toolset == "plugin" || toolset == "admin" || toolset == "browser" ||
+		if toolset == "mcp" || toolset == "plugin" || toolset == "admin" ||
 			strings.HasPrefix(toolset, "mcp:") || strings.HasPrefix(toolset, "plugin:") {
 			return true
 		}

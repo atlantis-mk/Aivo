@@ -39,8 +39,6 @@ export function useProjectToolActivitySessionPersistence({
   activeSessionId,
   activeToolActivityTabId,
   activeToolActivityTabIdRef,
-  builtinBrowserInitialUrls,
-  builtinBrowserTabIds,
   closedToolActivityItemIdsRef,
   isRightSidebarOpen,
   isRightSidebarOpenRef,
@@ -51,8 +49,6 @@ export function useProjectToolActivitySessionPersistence({
   activeSessionId: string;
   activeToolActivityTabId: string;
   activeToolActivityTabIdRef: { current: string };
-  builtinBrowserInitialUrls: Record<string, string>;
-  builtinBrowserTabIds: string[];
   closedToolActivityItemIdsRef: { current: Set<string> };
   isRightSidebarOpen: boolean;
   isRightSidebarOpenRef: { current: boolean };
@@ -71,8 +67,6 @@ export function useProjectToolActivitySessionPersistence({
       activeSessionId,
       buildToolActivitySessionState({
         activeTabId: activeToolActivityTabId,
-        browserInitialUrls: builtinBrowserInitialUrls,
-        browserTabIds: builtinBrowserTabIds,
         closedItemIds: closedToolActivityItemIdsRef.current,
         isOpen: isRightSidebarOpen,
         tabs: toolActivityTabs,
@@ -82,8 +76,6 @@ export function useProjectToolActivitySessionPersistence({
     activeSessionId,
     activeToolActivityTabId,
     activeToolActivityTabIdRef,
-    builtinBrowserInitialUrls,
-    builtinBrowserTabIds,
     closedToolActivityItemIdsRef,
     isRightSidebarOpen,
     isRightSidebarOpenRef,

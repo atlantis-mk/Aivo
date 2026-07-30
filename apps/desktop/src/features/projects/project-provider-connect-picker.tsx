@@ -1,5 +1,6 @@
-import { Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -12,26 +13,53 @@ import type { ProviderPickOption } from "@/features/projects/project-provider-pi
 
 export function ProviderPickerDialog({
   filteredProviders,
+  onCatalogRefresh,
   onOpenChange,
   onProviderSelect,
   onQueryChange,
   open,
   query,
+  refreshMessage,
+  refreshing,
 }: {
   filteredProviders: ProviderPickOption[];
+  onCatalogRefresh: () => void;
   onOpenChange: (open: boolean) => void;
   onProviderSelect: (provider: ProviderPickOption) => void;
   onQueryChange: (query: string) => void;
   open: boolean;
   query: string;
+  refreshMessage: string;
+  refreshing: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <div className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>选择提供商</DialogTitle>
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle>选择提供商</DialogTitle>
+              <Button
+                disabled={refreshing}
+                onClick={onCatalogRefresh}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <RefreshCw className={refreshing ? "animate-spin" : ""} />
+                {refreshing ? "刷新中" : "刷新目录"}
+              </Button>
+            </div>
           </DialogHeader>
+          {refreshMessage ? (
+            <p
+              aria-live="polite"
+              className="text-sm text-muted-foreground"
+              role="status"
+            >
+              {refreshMessage}
+            </p>
+          ) : null}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input

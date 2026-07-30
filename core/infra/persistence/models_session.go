@@ -203,6 +203,24 @@ type codingContextRow struct {
 
 func (codingContextRow) TableName() string { return "coding_contexts" }
 
+type gitWorktreeRow struct {
+	ID             string `gorm:"primaryKey;column:id"`
+	RepositoryRoot string `gorm:"column:repository_root;not null;index:git_worktrees_repo_status_idx"`
+	Path           string `gorm:"column:path;not null;uniqueIndex"`
+	Branch         string `gorm:"column:branch"`
+	BaseRef        string `gorm:"column:base_ref"`
+	Head           string `gorm:"column:head"`
+	Status         string `gorm:"column:status;not null;index:git_worktrees_repo_status_idx"`
+	Managed        int    `gorm:"column:managed;not null;default:1"`
+	OwnsBranch     int    `gorm:"column:owns_branch;not null;default:0"`
+	Detached       int    `gorm:"column:detached;not null;default:0"`
+	Error          string `gorm:"column:error"`
+	TimeCreated    string `gorm:"column:time_created;not null"`
+	TimeUpdated    string `gorm:"column:time_updated;not null"`
+}
+
+func (gitWorktreeRow) TableName() string { return "git_worktrees" }
+
 type agentRunRow struct {
 	ID              string `gorm:"primaryKey;column:id"`
 	ParentSessionID string `gorm:"column:parent_session_id;index:agent_runs_parent_session_idx"`

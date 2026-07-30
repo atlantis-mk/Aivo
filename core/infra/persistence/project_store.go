@@ -79,6 +79,25 @@ func (s *Store) ListProjects(ctx context.Context, limit int) ([]domain.Assistant
 	return projects, nil
 }
 
+func (s *Store) UpdateProjectDescription(ctx context.Context, rootPath string, description string) (domain.AssistantProject, error) {
+	rootPath = strings.TrimSpace(rootPath)
+	description = strings.TrimSpace(description)
+	if rootPath == "" {
+		return domain.AssistantProject{}, errors.New("project path is required")
+	}
+	if err := s.db.WithContext(ctx).Model(&projectRow{}).Where("root_path = ?", rootPath).Updates(map[string]any{
+		"description":  description,
+		"time_updated": domain.NowString(time.Now()),
+	}).Error; err != nil {
+		return domain.AssistantProject{}, err
+	}
+	var saved projectRow
+	if err := s.db.WithContext(ctx).Where("root_path = ?", rootPath).First(&saved).Error; err != nil {
+		return domain.AssistantProject{}, err
+	}
+	return projectFromRow(saved), nil
+}
+
 func projectFromRow(row projectRow) domain.AssistantProject {
-	return domain.AssistantProject{ID: row.ID, Name: row.Name, RootPath: row.RootPath, GitBranch: row.GitBranch, GitDirty: row.GitDirty == 1, GitAvailable: row.GitAvailable == 1, SidebarHidden: row.SidebarHidden == 1, TimeOpened: row.TimeOpened, TimeUpdated: row.TimeUpdated}
+	return domain.AssistantProject{ID: row.ID, Name: row.Name, Description: row.Description, RootPath: row.RootPath, GitBranch: row.GitBranch, GitDirty: row.GitDirty == 1, GitAvailable: row.GitAvailable == 1, SidebarHidden: row.SidebarHidden == 1, TimeOpened: row.TimeOpened, TimeUpdated: row.TimeUpdated}
 }

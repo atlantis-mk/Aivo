@@ -98,6 +98,18 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
           ...visibleToolArgs(args, ["name", "arguments"]),
         ]),
       };
+    case "skill":
+      return {
+        label: "技能",
+        detail: joinCommandParts([
+          stringArg(args, "intent"),
+          stringArg(args, "mode") ? `mode=${stringArg(args, "mode")}` : "",
+          scalarArg(args, "maxSkills")
+            ? `maxSkills=${scalarArg(args, "maxSkills")}`
+            : "",
+          ...visibleToolArgs(args, ["intent", "mode", "maxSkills", "names"]),
+        ]),
+      };
     case "apply_patch":
       return {
         label: "补丁",

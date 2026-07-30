@@ -1,6 +1,7 @@
 import type { domain } from "../../../bridge/go/models";
 import {
   OUTPUT_PREVIEW_CHARS,
+  type AgentTerminalInputRequest,
   type ToolActivityCommandEntry,
   type ToolActivityCommandTab,
 } from "./tool-activity-types";
@@ -54,9 +55,36 @@ function commandEntryFromStructured(
     toolCallId: toolCall.id,
     turnId: toolCall.turnId,
     toolName: toolCall.name,
+    processRef: stringValue(structured?.processRef) || undefined,
+    inputMode:
+      structured?.inputMode === "ask" ||
+      structured?.inputMode === "agent_once" ||
+      structured?.inputMode === "user_once" ||
+      structured?.inputMode === "agent_always"
+        ? structured.inputMode
+        : undefined,
+    inputRequest: agentTerminalInputRequest(structured?.inputRequest),
+    attention:
+      structured?.attention === "possibly_waiting" || structured?.attention === "interactive"
+        ? structured.attention
+        : "none",
+    inputOwner:
+      structured?.inputOwner === "user" || structured?.inputOwner === "agent"
+        ? structured.inputOwner
+        : "none",
+    leaseMode:
+      structured?.leaseMode === "once" || structured?.leaseMode === "always"
+        ? structured.leaseMode
+        : "none",
+    leaseVersion: numberValue(structured?.leaseVersion),
     command: stringValue(structured?.command) || fallbackCommand,
     cwd: stringValue(structured?.cwd) || stringArg(args, "cwd"),
-    status: normalizeToolStatus(toolCall.status),
+    status:
+      structured?.status === "running" || structured?.status === "waiting_input"
+        ? "running"
+        : structured?.status === "exited"
+          ? "success"
+          : normalizeToolStatus(toolCall.status),
     stdout: previewText(stringValue(structured?.stdout), OUTPUT_PREVIEW_CHARS),
     stderr: previewText(stringValue(structured?.stderr), OUTPUT_PREVIEW_CHARS),
     exitCode: numberValue(structured?.exitCode),
@@ -66,6 +94,25 @@ function commandEntryFromStructured(
     error: toolCall.error || stringValue(toolCall.result?.error),
     timeCreated: toolCall.timeCreated,
     timeUpdated: toolCall.timeUpdated,
+  };
+}
+
+function agentTerminalInputRequest(value: unknown): AgentTerminalInputRequest | undefined {
+  const request = recordValue(value);
+  const mode = request?.mode;
+  if (
+    typeof request?.id !== "string" ||
+    typeof request.cursor !== "number" ||
+    (mode !== "ask" && mode !== "agent_once" && mode !== "user_once" && mode !== "agent_always")
+  ) return undefined;
+  return {
+    id: request.id,
+    cursor: request.cursor,
+    mode: mode as AgentTerminalInputRequest["mode"],
+    resolved: request.resolved === true,
+    createdAt: typeof request.createdAt === "string" ? request.createdAt : "",
+    prompt: typeof request.prompt === "string" ? request.prompt : undefined,
+    secret: request.secret === true,
   };
 }
 

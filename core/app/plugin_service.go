@@ -20,14 +20,22 @@ func (s *Service) InstallPluginFromPath(ctx context.Context, input domain.Instal
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}
-	return s.pluginManager.InstallFromPath(ctx, input.Path, input.Enable)
+	installed, err := s.pluginManager.InstallFromPath(ctx, input.Path, input.Enable)
+	if err == nil {
+		s.refreshProviderExtensions("")
+	}
+	return installed, err
 }
 
 func (s *Service) SetPluginEnabled(ctx context.Context, input domain.SetPluginEnabledInput) (domain.PluginInstall, error) {
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}
-	return s.pluginManager.SetEnabled(ctx, input)
+	plugin, err := s.pluginManager.SetEnabled(ctx, input)
+	if err == nil {
+		s.refreshProviderExtensions("")
+	}
+	return plugin, err
 }
 
 func (s *Service) ReloadPlugins(ctx context.Context) ([]domain.PluginListItem, error) {
@@ -44,7 +52,11 @@ func (s *Service) ReloadPlugins(ctx context.Context) ([]domain.PluginListItem, e
 			_ = s.pluginManager.ensurePluginStarted(ctx, item.Plugin)
 		}
 	}
-	return s.pluginManager.List(ctx, domain.PluginListInput{IncludeDisabled: true, IncludeDiagnostics: true})
+	result, err := s.pluginManager.List(ctx, domain.PluginListInput{IncludeDisabled: true, IncludeDiagnostics: true})
+	if err == nil {
+		s.refreshProviderExtensions("")
+	}
+	return result, err
 }
 
 func (s *Service) ListMCPServers(ctx context.Context, input domain.MCPServerListInput) ([]domain.MCPServerListItem, error) {
@@ -214,15 +226,12 @@ func (s *Service) globalToolCatalogRegistry(ctx context.Context) *Registry {
 	} {
 		_ = registry.Register(tool)
 	}
-	for _, tool := range NewBrowserTools() {
-		_ = registry.Register(tool)
-	}
 	for _, tool := range newAgentRuntimeTools(s) {
 		if !tool.Spec().RequiresWorkspace {
 			_ = registry.Register(tool)
 		}
 	}
-	_ = registry.Register(NewSkillLoadTool(s))
+	_ = registry.Register(NewSkillLoadTool(s, s.resolveSkillsWithAuxiliaryModel))
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}
@@ -251,7 +260,7 @@ func (s *Service) workspaceToolCatalogRegistry(ctx context.Context, workspaceRoo
 	for _, tool := range newAgentRuntimeTools(s) {
 		_ = registry.Register(tool)
 	}
-	_ = registry.Register(NewSkillLoadTool(s))
+	_ = registry.Register(NewSkillLoadTool(s, s.resolveSkillsWithAuxiliaryModel))
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}

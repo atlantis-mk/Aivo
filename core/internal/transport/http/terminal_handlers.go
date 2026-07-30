@@ -19,12 +19,27 @@ func (api *API) handleTerminalConnectToken(w http.ResponseWriter, r *http.Reques
 	}
 	terminalID := strings.TrimSpace(r.PathValue("id"))
 	workspaceRoot := strings.TrimSpace(r.URL.Query().Get("workspaceRoot"))
+	var input struct {
+		WorkspaceRoot string `json:"workspaceRoot"`
+		SessionID     string `json:"sessionId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
 	if workspaceRoot == "" {
-		var input struct {
-			WorkspaceRoot string `json:"workspaceRoot"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&input)
 		workspaceRoot = strings.TrimSpace(input.WorkspaceRoot)
+	}
+	if sessionID := strings.TrimSpace(input.SessionID); sessionID != "" {
+		attach := coreapp.AgentTerminalAttachInput{WorkspaceRoot: workspaceRoot, SessionID: sessionID, ProcessRef: terminalID}
+		if err := api.service.ValidateAgentTerminalOwner(attach); err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		ticket, err := api.terminalTickets.createAgent(workspaceRoot, sessionID, terminalID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ticket": ticket.Token, "expiresAt": ticket.ExpiresAt})
+		return
 	}
 	if _, err := api.service.GetTerminal(r.Context(), workspaceRoot, terminalID); err != nil {
 		writeError(w, http.StatusNotFound, err)
@@ -39,6 +54,11 @@ func (api *API) handleTerminalConnectToken(w http.ResponseWriter, r *http.Reques
 }
 
 func (api *API) handleTerminalConnect(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(r.URL.Query().Get("sessionId")) != "" {
+		r.SetPathValue("ref", strings.TrimSpace(r.PathValue("id")))
+		api.handleAgentTerminalConnect(w, r)
+		return
+	}
 	if !validTerminalOrigin(r.Header.Get("Origin")) {
 		writeError(w, http.StatusForbidden, errors.New("invalid websocket origin"))
 		return

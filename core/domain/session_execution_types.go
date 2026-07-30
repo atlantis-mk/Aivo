@@ -37,6 +37,7 @@ type ResumeSessionExecutionInput struct {
 type CompactSessionContextInput struct {
 	SessionID       string `json:"sessionId"`
 	CharacterBudget int    `json:"characterBudget,omitempty"`
+	Automatic       bool   `json:"automatic,omitempty"`
 }
 
 type CompactSessionContextResult struct {

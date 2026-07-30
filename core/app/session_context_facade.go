@@ -67,11 +67,24 @@ func (s *Service) CompactSessionContext(ctx context.Context, input domain.Compac
 	if sessionID == "" {
 		return domain.CompactSessionContextResult{}, errors.New("sessionId is required")
 	}
-	compacting, err := s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusCompacting, Reason: "manual compaction requested"})
+	compactionKind := "manual"
+	if input.Automatic {
+		compactionKind = "automatic"
+	}
+	compacting, err := s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusCompacting, Reason: compactionKind + " compaction requested"})
 	if err != nil {
 		return domain.CompactSessionContextResult{}, err
 	}
-	summary, err := s.CreateSummary(ctx, domain.CreateSummaryRequest{SessionID: sessionID})
+	eventsBefore, _ := s.store.ListSessionEvents(ctx, sessionID, false, 500)
+	fromEventID := ""
+	if latest, _ := s.store.LatestSummary(ctx, sessionID); latest != nil {
+		fromEventID = latest.ToEventID
+	}
+	toEventID := ""
+	if len(eventsBefore) > 0 {
+		toEventID = eventsBefore[len(eventsBefore)-1].ID
+	}
+	summary, err := s.CreateSummary(ctx, domain.CreateSummaryRequest{SessionID: sessionID, FromEventID: fromEventID, ToEventID: toEventID})
 	if err != nil {
 		_, _ = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusFailed, Reason: err.Error()})
 		return domain.CompactSessionContextResult{}, err
@@ -88,7 +101,7 @@ func (s *Service) CompactSessionContext(ctx context.Context, input domain.Compac
 	event, _ := s.AppendEvent(ctx, domain.AppendEventRequest{
 		SessionID: sessionID, Type: domain.EventTypeSystemNote, Role: domain.EventRoleSystem,
 		Visibility: domain.EventVisibilityNormal, Content: "Session context compacted",
-		Payload: map[string]any{"kind": "context_compacted", "summaryId": summary.ID, "sectionCount": len(contextResult.Sections)},
+		Payload: map[string]any{"kind": "context_compacted", "mode": compactionKind, "summaryId": summary.ID, "sectionCount": len(contextResult.Sections)},
 	})
 	state, err := s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusIdle, Reason: "compaction complete", LastEventID: event.ID})
 	if err != nil {

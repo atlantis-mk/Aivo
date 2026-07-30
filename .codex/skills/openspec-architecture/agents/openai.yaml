@@ -1,4 +1,0 @@
-interface:
-  display_name: "OpenSpec Architecture"
-  short_description: "Define global architecture context"
-  default_prompt: "Use $openspec-architecture to discuss and define the global architecture document."

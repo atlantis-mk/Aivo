@@ -21,7 +21,7 @@ export function isToggleableCatalogTool(tool: ToolCatalogEntry) {
   if (!tool.enabled || isBridgeCatalogTool(tool)) return false;
   if (tool.source === "plugin" || tool.source === "mcp") return true;
   if (
-    ["mcp", "plugin", "agent", "automation", "admin", "browser"].includes(
+    ["mcp", "plugin", "agent", "automation", "admin"].includes(
       tool.category ?? "",
     )
   ) {
@@ -32,7 +32,6 @@ export function isToggleableCatalogTool(tool: ToolCatalogEntry) {
       toolset === "mcp" ||
       toolset === "plugin" ||
       toolset === "admin" ||
-      toolset === "browser" ||
       toolset.startsWith("mcp:") ||
       toolset.startsWith("plugin:"),
   );

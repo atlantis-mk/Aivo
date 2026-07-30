@@ -20,6 +20,14 @@ import (
 func (m *SkillManager) scan(ctx context.Context, roots []skillScanRoot, scope string) (domain.SkillScanResult, error) {
 	result := domain.SkillScanResult{}
 	now := domain.NowString(time.Now())
+	ignoredNames := map[string]bool{}
+	if candidates, err := m.store.ListSkillImportCandidates(ctx, true); err == nil {
+		for _, candidate := range candidates {
+			if candidate.Status == domain.SkillCandidateStatusIgnored {
+				ignoredNames[normalizeSkillName(candidate.Name)] = true
+			}
+		}
+	}
 	for _, root := range roots {
 		for _, dir := range discoverSkillDirectories(root.Path) {
 			result.Scanned++
@@ -43,17 +51,29 @@ func (m *SkillManager) scan(ctx context.Context, roots []skillScanRoot, scope st
 				RootPath: parsed.RootPath, SkillPath: parsed.SkillPath, ContentHash: parsed.ContentHash,
 				Status: domain.SkillCandidateStatusPending, LastSeenAt: now,
 			}
+			if previous, err := m.store.GetSkillImportCandidate(ctx, candidate.ID); err == nil && previous.ID != "" {
+				candidate.Status = previous.Status
+				candidate.ConflictID = previous.ConflictID
+				candidate.Error = previous.Error
+			}
+			if ignoredNames[normalizeSkillName(parsed.Name)] {
+				candidate.Status = domain.SkillCandidateStatusIgnored
+			}
 			if existing, err := m.store.GetSkillByName(ctx, parsed.Name, scope); err == nil && existing.ID != "" {
 				if existing.ContentHash == parsed.ContentHash {
 					_, _ = m.store.SaveSkillSource(ctx, domain.SkillSource{
 						ID: sourceIDForPath(existing.ID, parsed.SkillPath), SkillID: existing.ID, Source: root.Source, Scope: scope,
 						RootPath: parsed.RootPath, SkillPath: parsed.SkillPath, ContentHash: parsed.ContentHash, LastSeenAt: now,
 					})
-					candidate.Status = domain.SkillCandidateStatusImported
+					if candidate.Status != domain.SkillCandidateStatusIgnored {
+						candidate.Status = domain.SkillCandidateStatusImported
+						candidate.ConflictID = ""
+						candidate.Error = ""
+					}
 				} else {
-					candidate.Status = domain.SkillCandidateStatusConflict
+					candidate.Status = domain.SkillCandidateStatusIgnored
 					candidate.ConflictID = existing.ID
-					result.Conflicts++
+					candidate.Error = "skill name already exists with different content"
 				}
 			}
 			saved, err := m.store.SaveSkillImportCandidate(ctx, candidate)
@@ -98,6 +118,7 @@ func globalSkillScanRoots(home string) []skillScanRoot {
 		{Path: filepath.Join(home, ".aivo", "skills"), Source: domain.SkillSourceAivo},
 		{Path: filepath.Join(home, ".claude", "skills"), Source: domain.SkillSourceClaude},
 		{Path: filepath.Join(home, ".agents", "skills"), Source: domain.SkillSourceAgents},
+		{Path: filepath.Join(home, ".codex", "skills"), Source: domain.SkillSourceCodex},
 		{Path: filepath.Join(home, ".config", "opencode", "skills"), Source: domain.SkillSourceOpenCode},
 		{Path: filepath.Join(home, ".config", "opencode", "skill"), Source: domain.SkillSourceOpenCode},
 		{Path: filepath.Join(home, ".opencode", "skills"), Source: domain.SkillSourceOpenCode},
@@ -110,6 +131,7 @@ func projectSkillScanRoots(root string) []skillScanRoot {
 		{Path: filepath.Join(root, ".aivo", "skills"), Source: domain.SkillSourceAivo},
 		{Path: filepath.Join(root, ".claude", "skills"), Source: domain.SkillSourceClaude},
 		{Path: filepath.Join(root, ".agents", "skills"), Source: domain.SkillSourceAgents},
+		{Path: filepath.Join(root, ".codex", "skills"), Source: domain.SkillSourceCodex},
 		{Path: filepath.Join(root, ".opencode", "skills"), Source: domain.SkillSourceOpenCode},
 		{Path: filepath.Join(root, ".opencode", "skill"), Source: domain.SkillSourceOpenCode},
 	}
@@ -172,7 +194,9 @@ func parseSkillMarkdown(raw string) (string, string, map[string]string, string, 
 	fm := rest[:end]
 	content := strings.TrimSpace(rest[end+len("\n---"):])
 	values := map[string]string{}
-	for _, line := range strings.Split(fm, "\n") {
+	lines := strings.Split(fm, "\n")
+	for index := 0; index < len(lines); index++ {
+		line := lines[index]
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -181,7 +205,25 @@ func parseSkillMarkdown(raw string) (string, string, map[string]string, string, 
 		if !ok {
 			continue
 		}
-		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if value == ">" || value == ">-" || value == ">+" || value == "|" || value == "|-" || value == "|+" {
+			blockLines := []string{}
+			for index+1 < len(lines) {
+				next := lines[index+1]
+				if strings.TrimSpace(next) != "" && next == strings.TrimLeft(next, " \t") {
+					break
+				}
+				index++
+				blockLines = append(blockLines, strings.TrimSpace(next))
+			}
+			if strings.HasPrefix(value, ">") {
+				value = strings.Join(blockLines, " ")
+			} else {
+				value = strings.Join(blockLines, "\n")
+			}
+		}
+		values[key] = strings.Trim(strings.TrimSpace(value), `"'`)
 	}
 	name := normalizeSkillName(values["name"])
 	description := strings.TrimSpace(values["description"])

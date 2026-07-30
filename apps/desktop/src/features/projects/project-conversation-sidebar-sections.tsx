@@ -38,7 +38,7 @@ export function ConversationSidebarPrimaryNav({
       <SidebarMenu className="gap-2">
         <SidebarMenuItem>
           <SidebarMenuButton
-            className="h-7 gap-2.5 px-3 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+            className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
             onClick={onNewConversation}
             tooltip="新对话"
             type="button"
@@ -50,7 +50,7 @@ export function ConversationSidebarPrimaryNav({
         <SidebarMenuItem>
           <SidebarMenuButton
             asChild
-            className="h-7 gap-2.5 px-3 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+            className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
             isActive={activeProjectPage === "plugins"}
             tooltip="插件"
           >

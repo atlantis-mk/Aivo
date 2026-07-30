@@ -52,6 +52,7 @@ type projectStore interface {
 	UpsertProject(context.Context, string) (domain.AssistantProject, error)
 	SetProjectSidebarHidden(context.Context, string, bool) (domain.AssistantProject, error)
 	ListProjects(context.Context, int) ([]domain.AssistantProject, error)
+	UpdateProjectDescription(context.Context, string, string) (domain.AssistantProject, error)
 }
 
 type sessionStore interface {
@@ -61,6 +62,7 @@ type sessionStore interface {
 	UpdateRuntimeSession(context.Context, domain.UpdateSessionRequest) (domain.Session, error)
 	SetRuntimeSessionStatus(context.Context, string, string) (domain.Session, error)
 	SetRuntimeSessionAgentMode(context.Context, string, string) (domain.Session, error)
+	SetRuntimeSessionProject(context.Context, string, string) (domain.Session, error)
 	AppendSessionEvent(context.Context, domain.SessionEvent) error
 	GetSessionEvent(context.Context, string) (domain.SessionEvent, error)
 	ListSessionEvents(context.Context, string, bool, int) ([]domain.SessionEvent, error)

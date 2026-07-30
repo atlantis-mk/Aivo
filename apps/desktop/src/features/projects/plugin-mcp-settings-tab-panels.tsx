@@ -21,6 +21,7 @@ import type {
 export function PluginMcpSettingsTabPanels({
   loading,
   onDeleteSkill,
+  onIgnoreSkillCandidate,
   onImportSkillCandidate,
   onInstallPlugin,
   onPluginPathChange,
@@ -37,6 +38,7 @@ export function PluginMcpSettingsTabPanels({
 }: {
   loading: boolean;
   onDeleteSkill: (skill: SkillEntry) => void;
+  onIgnoreSkillCandidate: (candidate: SkillImportCandidate) => void;
   onImportSkillCandidate: (candidate: SkillImportCandidate) => void;
   onInstallPlugin: () => void;
   onPluginPathChange: (path: string) => void;
@@ -120,6 +122,7 @@ export function PluginMcpSettingsTabPanels({
               candidates={visibleSkillCandidates}
               loading={loading}
               onDelete={onDeleteSkill}
+              onIgnore={onIgnoreSkillCandidate}
               onImport={onImportSkillCandidate}
               onToggleEnabled={onToggleSkillEnabled}
               skills={visibleSkills}

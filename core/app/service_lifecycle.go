@@ -28,9 +28,12 @@ type Service struct {
 	permissionNotifier    *permissionNotifier
 	questionNotifier      *permissionNotifier
 	terminals             *DefaultTerminalService
+	ptyManager            *AgentPTYRegistry
 	titleGenerator        func(context.Context, string, *domain.ModelRef) (string, error)
 	secrets               SecretStore
 	providers             *ProviderRegistry
+	providersMu           sync.RWMutex
+	providerContributions map[string]ProviderDefinition
 	agentCatalog          *AgentCatalog
 	rateLimiter           *providerRateLimiter
 	modelRefreshMu        sync.Mutex
@@ -49,24 +52,27 @@ type Service struct {
 
 func NewService(store Store) *Service {
 	service := &Service{
-		store:                store,
-		now:                  time.Now,
-		secrets:              NewDefaultSecretStore(),
-		providers:            NewDefaultProviderRegistry(),
-		agentCatalog:         NewAgentCatalog(),
-		rateLimiter:          newProviderRateLimiter(),
-		permissionNotifier:   newPermissionNotifier(),
-		questionNotifier:     newPermissionNotifier(),
-		terminals:            NewTerminalService(),
-		refreshedModels:      map[string][]domain.ModelInfo{},
-		refreshedDefault:     map[string]string{},
-		refreshedInfo:        map[string]domain.ProviderInfo{},
-		activeAgentRunCancel: map[string]context.CancelFunc{},
-		activeTurnCancel:     map[string]context.CancelFunc{},
+		store:                 store,
+		now:                   time.Now,
+		secrets:               NewDefaultSecretStore(),
+		providers:             NewDefaultProviderRegistry(),
+		providerContributions: map[string]ProviderDefinition{},
+		agentCatalog:          NewAgentCatalog(),
+		rateLimiter:           newProviderRateLimiter(),
+		permissionNotifier:    newPermissionNotifier(),
+		questionNotifier:      newPermissionNotifier(),
+		terminals:             NewTerminalService(),
+		ptyManager:            defaultAgentPTYRegistry,
+		refreshedModels:       map[string][]domain.ModelInfo{},
+		refreshedDefault:      map[string]string{},
+		refreshedInfo:         map[string]domain.ProviderInfo{},
+		activeAgentRunCancel:  map[string]context.CancelFunc{},
+		activeTurnCancel:      map[string]context.CancelFunc{},
 	}
 	service.pluginManager = NewPluginManager(store)
 	service.mcpManager = NewMCPManager(store, service.secrets)
 	service.skillManager = NewSkillManager(store)
+	service.refreshProviderExtensions("")
 	service.authFlows = NewProviderAuthManager(service)
 	service.startSchedulerLoop()
 	service.terminals.SetEventHook(func(name string, info TerminalInfo) {
@@ -80,10 +86,19 @@ func NewService(store Store) *Service {
 }
 
 func (s *Service) RegisterProviderDefinition(def ProviderDefinition) error {
+	s.providersMu.Lock()
+	defer s.providersMu.Unlock()
 	if s.providers == nil {
 		s.providers = NewDefaultProviderRegistry()
 	}
-	return s.providers.RegisterDefinition(def)
+	if err := s.providers.RegisterDefinition(def); err != nil {
+		return err
+	}
+	if s.providerContributions == nil {
+		s.providerContributions = map[string]ProviderDefinition{}
+	}
+	s.providerContributions[normalizeProviderKey(def.ID)] = def
+	return nil
 }
 
 func (s *Service) RegisterProviderAuthDriver(driver ProviderAuthDriver) {
@@ -113,4 +128,5 @@ func (s *Service) Shutdown() {
 	}
 	defaultShellProcessRegistry.Shutdown()
 	defaultAgentShellRegistry.Shutdown()
+	defaultAgentPTYRegistry.Shutdown()
 }

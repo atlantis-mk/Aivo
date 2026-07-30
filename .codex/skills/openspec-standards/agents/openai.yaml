@@ -1,4 +1,0 @@
-interface:
-  display_name: "OpenSpec Standards"
-  short_description: "Define engineering standards by stack"
-  default_prompt: "Use $openspec-standards to define stack-specific engineering standards before implementation."

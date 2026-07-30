@@ -18,19 +18,20 @@ const (
 )
 
 type PluginManifest struct {
-	ID          string                  `json:"id"`
-	Name        string                  `json:"name"`
-	Version     string                  `json:"version,omitempty"`
-	DisplayName string                  `json:"displayName,omitempty"`
-	Description string                  `json:"description,omitempty"`
-	Author      string                  `json:"author,omitempty"`
-	Keywords    []string                `json:"keywords,omitempty"`
-	Entrypoint  PluginEntrypoint        `json:"entrypoint,omitempty"`
-	MCPServers  []MCPServerConfig       `json:"mcpServers,omitempty"`
-	Hooks       []string                `json:"hooks,omitempty"`
-	Tools       []PluginDeclaredTool    `json:"tools,omitempty"`
-	Permissions PluginPermissionSummary `json:"permissions,omitempty"`
-	Interface   map[string]any          `json:"interface,omitempty"`
+	ID          string                                 `json:"id"`
+	Name        string                                 `json:"name"`
+	Version     string                                 `json:"version,omitempty"`
+	DisplayName string                                 `json:"displayName,omitempty"`
+	Description string                                 `json:"description,omitempty"`
+	Author      string                                 `json:"author,omitempty"`
+	Keywords    []string                               `json:"keywords,omitempty"`
+	Entrypoint  PluginEntrypoint                       `json:"entrypoint,omitempty"`
+	MCPServers  []MCPServerConfig                      `json:"mcpServers,omitempty"`
+	Hooks       []string                               `json:"hooks,omitempty"`
+	Tools       []PluginDeclaredTool                   `json:"tools,omitempty"`
+	Providers   map[string]ProviderExtensionDefinition `json:"providers,omitempty"`
+	Permissions PluginPermissionSummary                `json:"permissions,omitempty"`
+	Interface   map[string]any                         `json:"interface,omitempty"`
 }
 
 type PluginEntrypoint struct {

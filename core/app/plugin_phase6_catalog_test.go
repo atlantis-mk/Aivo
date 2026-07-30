@@ -104,78 +104,6 @@ func TestToolAssemblyCanExplicitlyActivateMatchedTools(t *testing.T) {
 	}
 }
 
-func TestBrowserToolsStayDeferredAfterSearch(t *testing.T) {
-	registry := NewRegistry()
-	for _, tool := range NewBrowserTools() {
-		if err := registry.Register(tool); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var runtime *ToolRuntime
-	if err := registry.RegisterScoped(NewToolSearchTool(registry), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterScoped(NewToolDetailTool(registry), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterScoped(NewToolCallTool(registry, func() *ToolRuntime { return runtime }), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	runtime = NewToolRuntime(registry, t.TempDir())
-
-	assembly := AssembleToolSpecs(registry, registry.Specs())
-	names := map[string]int{}
-	for _, spec := range assembly.Specs {
-		names[spec.Name]++
-	}
-	if names["browser_state"] != 0 || names["browser_click"] != 0 {
-		t.Fatalf("browser tools were directly visible before search: %#v", assembly.Specs)
-	}
-	if names[ToolResolveName] != 1 || names[ToolSearchName] != 0 || names[ToolListName] != 0 || names[ToolDetailName] != 0 || names[ToolCallName] != 0 {
-		t.Fatalf("bridge tools missing for deferred browser tools: %#v", assembly.Specs)
-	}
-
-	activated := map[string]bool{}
-	search := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{ID: "search", Name: ToolSearchName, Arguments: json.RawMessage(`{"query":"browser state","limit":1}`)}, domain.ToolExecutionContext{AllowedToolsets: []string{"safe", "browser"}})
-	if !search.OK || !strings.Contains(search.Content, "browser_") {
-		t.Fatalf("search = %#v, want a browser tool match", search)
-	}
-
-	assembly = AssembleToolSpecsWithActivated(registry, registry.Specs(), activated)
-	names = map[string]int{}
-	for _, spec := range assembly.Specs {
-		names[spec.Name]++
-	}
-	for _, name := range []string{"browser_state", "browser_navigate", "browser_snapshot", "browser_click", "browser_fill", "browser_press_key", "browser_evaluate", "browser_screenshot", "browser_console_messages", "browser_network_requests"} {
-		if names[name] != 0 {
-			t.Fatalf("browser tool %s became directly visible after search; specs = %#v", name, assembly.Specs)
-		}
-	}
-}
-
-func TestBrowserToolUseRemembersGroup(t *testing.T) {
-	registry := NewRegistry()
-	for _, tool := range NewBrowserTools() {
-		if err := registry.Register(tool); err != nil {
-			t.Fatal(err)
-		}
-	}
-	call := domain.ChatToolCall{ID: "call", Name: "browser_state", Arguments: json.RawMessage(`{}`)}
-	result := domain.ToolResult{Name: "browser_state", OK: true}
-	used := deferredToolNameUsedByCall(registry, call, result)
-	if used != deferredBrowserToolGroupKey {
-		t.Fatalf("used = %q, want browser group", used)
-	}
-	assembly := AssembleToolSpecsWithActivated(registry, registry.Specs(), map[string]bool{used: true})
-	names := map[string]int{}
-	for _, spec := range assembly.Specs {
-		names[spec.Name]++
-	}
-	if names["browser_state"] != 1 || names["browser_click"] != 1 || names["browser_network_requests"] != 1 {
-		t.Fatalf("remembered browser group did not inject all browser tools: %#v", assembly.Specs)
-	}
-}
-
 func TestListToolCatalogWithoutWorkspaceIncludesGlobalTools(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	entries, err := service.ListToolCatalog(context.Background(), domain.ToolCatalogInput{})
@@ -186,9 +114,14 @@ func TestListToolCatalogWithoutWorkspaceIncludesGlobalTools(t *testing.T) {
 	for _, entry := range entries {
 		names[entry.Name] = true
 	}
-	for _, name := range []string{"web_fetch", "web_search", "browser_state", "browser_navigate", "browser_snapshot", "agent_mode_list", ToolResolveName} {
+	for _, name := range []string{"web_fetch", "web_search", "agent_mode_list", ToolResolveName} {
 		if !names[name] {
 			t.Fatalf("global tool catalog missing %s; entries = %#v", name, entries)
+		}
+	}
+	for _, name := range []string{"browser_state", "browser_navigate", "browser_snapshot"} {
+		if names[name] {
+			t.Fatalf("global tool catalog still exposes removed tool %s; entries = %#v", name, entries)
 		}
 	}
 }

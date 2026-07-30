@@ -116,6 +116,41 @@ func renderPendingPermissions(requests []domain.PermissionRequest, limit int) st
 	return strings.Join(lines, "\n")
 }
 
+func (s *Service) liveSessionTerminalsContext(session domain.Session, cc domain.CodingContext) string {
+	workspaceRoot := firstNonEmpty(strings.TrimSpace(cc.ProjectPath), strings.TrimSpace(session.ProjectPath))
+	if workspaceRoot == "" {
+		return ""
+	}
+	manager := s.ptyManager
+	if manager == nil {
+		manager = defaultAgentPTYRegistry
+	}
+	terminals, err := manager.List(workspaceRoot, session.ID)
+	if err != nil {
+		return ""
+	}
+	lines := []string{
+		"The following PTY processes are alive and persist across agent turns. A tool wait ending or being cancelled does not mean these processes exited.",
+		"If the user asks to continue, answer, type into, stop, or exit a previous command, use write_stdin with its existing processRef. Do not call exec_command merely to regain access. Start another instance only when the user explicitly requests one or no suitable live terminal exists.",
+		"For normal line input, send plain chars with press_enter=true in the same write_stdin call; never type escaped \\r, \\n, or \\u000a text into the terminal.",
+	}
+	for _, terminal := range terminals {
+		if terminal.Status == AgentPTYStatusExited {
+			continue
+		}
+		command := bounded(strings.Join(strings.Fields(redactCommandOutput(terminal.Command)), " "), 240)
+		lines = append(lines, fmt.Sprintf(
+			"- processRef=%s status=%s cursor=%d command=%q cwd=%q attention=%s inputOwner=%s leaseVersion=%d",
+			terminal.ProcessRef, terminal.Status, terminal.ProcessCursor, command, terminal.CWD,
+			terminal.Attention, terminal.InputOwner, terminal.LeaseVersion,
+		))
+	}
+	if len(lines) == 3 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
 func renderRecentToolsForContext(tools []domain.ToolCall, limit int) string {
 	if limit <= 0 || limit > len(tools) {
 		limit = len(tools)

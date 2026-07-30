@@ -4,54 +4,55 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/creack/pty"
-	"github.com/google/uuid"
 )
 
 const (
-	TerminalStatusRunning = "running"
-	TerminalStatusExited  = "exited"
+	TerminalStatusRunning = AgentPTYStatusRunning
+	TerminalStatusExited  = AgentPTYStatusExited
 	TerminalStatusRemoved = "removed"
-	terminalBufferCap     = 256 * 1024
+	userTerminalSessionID = "__workspace_terminal__"
 )
 
 type TerminalService interface {
-	List(ctx context.Context, workspaceRoot string) ([]TerminalInfo, error)
-	Create(ctx context.Context, input TerminalCreateInput) (TerminalInfo, error)
-	Get(ctx context.Context, workspaceRoot string, terminalID string) (TerminalInfo, error)
-	Update(ctx context.Context, input TerminalUpdateInput) (TerminalInfo, error)
-	Remove(ctx context.Context, workspaceRoot string, terminalID string) error
-	Attach(ctx context.Context, input TerminalAttachInput) (TerminalAttachment, error)
+	List(context.Context, string) ([]TerminalInfo, error)
+	Create(context.Context, TerminalCreateInput) (TerminalInfo, error)
+	Get(context.Context, string, string) (TerminalInfo, error)
+	Update(context.Context, TerminalUpdateInput) (TerminalInfo, error)
+	Remove(context.Context, string, string) error
+	Attach(context.Context, TerminalAttachInput) (TerminalAttachment, error)
 }
 
 type TerminalInfo struct {
 	ID            string    `json:"id"`
 	WorkspaceRoot string    `json:"workspaceRoot"`
+	SessionID     string    `json:"sessionId,omitempty"`
+	Origin        string    `json:"origin"`
 	Title         string    `json:"title"`
 	Command       string    `json:"command"`
 	Args          []string  `json:"args,omitempty"`
 	CWD           string    `json:"cwd"`
 	Status        string    `json:"status"`
+	Attention     string    `json:"attention"`
+	InputOwner    string    `json:"inputOwner"`
+	LeaseMode     string    `json:"leaseMode"`
+	LeaseVersion  int64     `json:"leaseVersion"`
 	PID           int       `json:"pid"`
 	ExitCode      *int      `json:"exitCode,omitempty"`
 	Rows          int       `json:"rows"`
 	Cols          int       `json:"cols"`
 	Cursor        int64     `json:"cursor"`
+	Truncated     bool      `json:"truncated,omitempty"`
 	TimeCreated   time.Time `json:"timeCreated"`
 	TimeUpdated   time.Time `json:"timeUpdated"`
 }
 
 type TerminalCreateInput struct {
 	WorkspaceRoot string            `json:"workspaceRoot"`
+	SessionID     string            `json:"sessionId,omitempty"`
 	CWD           string            `json:"cwd,omitempty"`
 	Title         string            `json:"title,omitempty"`
 	Shell         string            `json:"shell,omitempty"`
@@ -83,257 +84,148 @@ type TerminalAttachment interface {
 	Detach()
 }
 
-type terminalRecord struct {
-	mu          sync.Mutex
-	info        TerminalInfo
-	cmd         *exec.Cmd
-	ptyFile     *os.File
-	buffer      []byte
-	baseCursor  int64
-	nextCursor  int64
-	subscribers map[chan []byte]struct{}
-	removed     bool
-}
-
 type DefaultTerminalService struct {
+	registry *AgentPTYRegistry
 	mu       sync.Mutex
-	records  map[string]*terminalRecord
 	onEvent  func(string, TerminalInfo)
-	shutdown bool
 }
 
 func NewTerminalService() *DefaultTerminalService {
-	return &DefaultTerminalService{records: map[string]*terminalRecord{}}
+	return &DefaultTerminalService{registry: defaultAgentPTYRegistry}
 }
 
 func (s *DefaultTerminalService) SetEventHook(hook func(string, TerminalInfo)) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.onEvent = hook
+	s.mu.Unlock()
 }
 
 func (s *DefaultTerminalService) List(_ context.Context, workspaceRoot string) ([]TerminalInfo, error) {
-	root, err := terminalWorkspaceRoot(workspaceRoot)
+	results, err := s.registry.List(workspaceRoot, userTerminalSessionID)
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	records := make([]*terminalRecord, 0)
-	for _, record := range s.records {
-		record.mu.Lock()
-		matches := record.info.WorkspaceRoot == root && !record.removed
-		record.mu.Unlock()
-		if matches {
-			records = append(records, record)
-		}
+	infos := make([]TerminalInfo, 0, len(results))
+	for _, result := range results {
+		infos = append(infos, terminalInfoFromPTY(workspaceRoot, result))
 	}
-	s.mu.Unlock()
-	out := make([]TerminalInfo, 0, len(records))
-	for _, record := range records {
-		out = append(out, record.snapshot())
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].TimeCreated.Before(out[j].TimeCreated) })
-	return out, nil
+	return infos, nil
 }
 
-func (s *DefaultTerminalService) Create(_ context.Context, input TerminalCreateInput) (TerminalInfo, error) {
+func (s *DefaultTerminalService) Create(ctx context.Context, input TerminalCreateInput) (TerminalInfo, error) {
 	root, cwd, err := normalizeTerminalCWD(input.WorkspaceRoot, input.CWD)
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	rows, cols := normalizeTerminalSize(input.Rows, input.Cols)
 	shell := firstNonEmpty(strings.TrimSpace(input.Shell), defaultShell())
-	title := strings.TrimSpace(input.Title)
-	if title == "" {
-		title = filepath.Base(shell)
-	}
-	cmd, ptmx, shell, err := startTerminalPTY(shell, cwd, terminalEnvironment(root, input.Env), rows, cols)
-	if err != nil {
+	command := "exec " + shellSingleQuote(shell)
+	result, err := s.registry.Start(ctx, SandboxRequest{
+		WorkspaceRoot: root, CWD: cwd, SessionID: userTerminalSessionID, Command: command,
+		Shell: shell, EnvAllowlist: append(defaultEnvAllowlist(), "AIVO_TERMINAL"), EnvOverrides: input.Env,
+	}, input.Rows, input.Cols, 100*time.Millisecond, agentPTYDefaultMaxChunk)
+	if err != nil && result.ProcessRef == "" {
 		return TerminalInfo{}, err
 	}
-	now := time.Now()
-	record := &terminalRecord{
-		info: TerminalInfo{
-			ID: uuid.NewString(), WorkspaceRoot: root, Title: title, Command: shell, CWD: cwd,
-			Status: TerminalStatusRunning, PID: cmd.Process.Pid, Rows: rows, Cols: cols,
-			TimeCreated: now, TimeUpdated: now,
-		},
-		cmd:         cmd,
-		ptyFile:     ptmx,
-		subscribers: map[chan []byte]struct{}{},
+	session, ownErr := s.registry.owned(root, userTerminalSessionID, result.ProcessRef)
+	if ownErr != nil {
+		return TerminalInfo{}, ownErr
 	}
-	s.mu.Lock()
-	if s.shutdown {
-		s.mu.Unlock()
-		_ = killTerminalProcess(cmd.Process)
-		_ = ptmx.Close()
-		return TerminalInfo{}, errors.New("terminal service is shutting down")
-	}
-	s.records[record.info.ID] = record
-	s.mu.Unlock()
-	go s.readPTY(record)
-	go s.waitTerminal(record)
-	info := record.snapshot()
+	session.mu.Lock()
+	session.origin = "user"
+	session.command = shell
+	session.title = firstNonEmpty(strings.TrimSpace(input.Title), filepath.Base(shell))
+	result = session.snapshotLocked(-1, agentPTYDefaultMaxChunk)
+	session.mu.Unlock()
+	info := terminalInfoFromPTY(root, result)
 	s.emit("terminal.created", info)
+	go func() {
+		<-session.done
+		exited := terminalInfoFromPTY(root, session.snapshot(-1, 0))
+		s.emit("terminal.exited", exited)
+	}()
 	return info, nil
 }
 
-func (s *DefaultTerminalService) Get(_ context.Context, workspaceRoot string, terminalID string) (TerminalInfo, error) {
-	record, err := s.record(workspaceRoot, terminalID)
+func (s *DefaultTerminalService) Get(_ context.Context, workspaceRoot, terminalID string) (TerminalInfo, error) {
+	session, err := s.registry.owned(workspaceRoot, userTerminalSessionID, terminalID)
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	return record.snapshot(), nil
+	return terminalInfoFromPTY(workspaceRoot, session.snapshot(-1, 0)), nil
 }
 
 func (s *DefaultTerminalService) Update(_ context.Context, input TerminalUpdateInput) (TerminalInfo, error) {
-	record, err := s.record(input.WorkspaceRoot, input.TerminalID)
+	session, err := s.registry.owned(input.WorkspaceRoot, userTerminalSessionID, input.TerminalID)
 	if err != nil {
 		return TerminalInfo{}, err
 	}
-	record.mu.Lock()
-	if strings.TrimSpace(input.Title) != "" {
-		record.info.Title = strings.TrimSpace(input.Title)
-	}
-	if input.Rows > 0 && input.Cols > 0 {
-		record.info.Rows, record.info.Cols = normalizeTerminalSize(input.Rows, input.Cols)
-		if record.ptyFile != nil && record.info.Status == TerminalStatusRunning {
-			_ = pty.Setsize(record.ptyFile, &pty.Winsize{Rows: uint16(record.info.Rows), Cols: uint16(record.info.Cols)})
+	if input.Rows > 0 || input.Cols > 0 {
+		if input.Rows <= 0 || input.Cols <= 0 {
+			return TerminalInfo{}, errors.New("rows and cols must be provided together")
+		}
+		if err := session.resize(input.Rows, input.Cols); err != nil {
+			return TerminalInfo{}, err
 		}
 	}
-	record.info.TimeUpdated = time.Now()
-	info := record.info
-	record.mu.Unlock()
+	session.mu.Lock()
+	if title := strings.TrimSpace(input.Title); title != "" {
+		session.title = title
+	}
+	session.updatedAt = time.Now()
+	result := session.snapshotLocked(-1, 0)
+	session.mu.Unlock()
+	info := terminalInfoFromPTY(input.WorkspaceRoot, result)
 	s.emit("terminal.updated", info)
 	return info, nil
 }
 
-func (s *DefaultTerminalService) Remove(_ context.Context, workspaceRoot string, terminalID string) error {
-	record, err := s.record(workspaceRoot, terminalID)
+func (s *DefaultTerminalService) Remove(_ context.Context, workspaceRoot, terminalID string) error {
+	session, err := s.registry.owned(workspaceRoot, userTerminalSessionID, terminalID)
 	if err != nil {
 		return err
 	}
-	record.mu.Lock()
-	record.removed = true
-	record.info.Status = TerminalStatusRemoved
-	record.info.TimeUpdated = time.Now()
-	info := record.info
-	if record.cmd != nil && record.cmd.Process != nil {
-		_ = killTerminalProcess(record.cmd.Process)
+	if err := s.registry.Remove(workspaceRoot, userTerminalSessionID, terminalID); err != nil {
+		return err
 	}
-	if record.ptyFile != nil {
-		_ = record.ptyFile.Close()
-	}
-	for ch := range record.subscribers {
-		close(ch)
-		delete(record.subscribers, ch)
-	}
-	record.mu.Unlock()
+	info := terminalInfoFromPTY(workspaceRoot, session.snapshot(-1, 0))
+	info.Status = TerminalStatusRemoved
 	s.emit("terminal.removed", info)
 	return nil
 }
 
 func (s *DefaultTerminalService) Attach(_ context.Context, input TerminalAttachInput) (TerminalAttachment, error) {
-	record, err := s.record(input.WorkspaceRoot, input.TerminalID)
+	attachment, err := s.registry.Attach(input.WorkspaceRoot, userTerminalSessionID, input.TerminalID, input.Cursor)
 	if err != nil {
 		return nil, err
 	}
-	record.mu.Lock()
-	if record.info.Status != TerminalStatusRunning {
-		record.mu.Unlock()
-		return nil, fmt.Errorf("terminal %s is not running", input.TerminalID)
-	}
-	ch := make(chan []byte, 64)
-	record.subscribers[ch] = struct{}{}
-	replay := record.replayLocked(input.Cursor)
-	cursor := record.nextCursor
-	record.mu.Unlock()
-	return &terminalAttachment{record: record, replay: replay, cursor: cursor, data: ch}, nil
+	data := make(chan []byte, 64)
+	done := make(chan struct{})
+	go func() {
+		defer close(data)
+		for {
+			select {
+			case <-done:
+				return
+			case event, ok := <-attachment.Events():
+				if !ok {
+					return
+				}
+				if event.Type == "output" {
+					select {
+					case data <- event.Data:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	return &unifiedTerminalAttachment{service: s, input: input, attachment: attachment, replay: []byte(attachment.Snapshot.Output), cursor: attachment.Snapshot.ProcessCursor, data: data, done: done}, nil
 }
 
 func (s *DefaultTerminalService) Shutdown() {
-	s.mu.Lock()
-	s.shutdown = true
-	records := make([]*terminalRecord, 0, len(s.records))
-	for _, record := range s.records {
-		records = append(records, record)
+	if s != nil && s.registry != nil {
+		s.registry.CleanupSession(userTerminalSessionID)
 	}
-	s.mu.Unlock()
-	for _, record := range records {
-		record.mu.Lock()
-		if record.info.Status == TerminalStatusRunning && record.cmd != nil && record.cmd.Process != nil {
-			_ = killTerminalProcess(record.cmd.Process)
-		}
-		if record.ptyFile != nil {
-			_ = record.ptyFile.Close()
-		}
-		record.mu.Unlock()
-	}
-}
-
-func (s *DefaultTerminalService) readPTY(record *terminalRecord) {
-	buf := make([]byte, 4096)
-	for {
-		n, err := record.ptyFile.Read(buf)
-		if n > 0 {
-			chunk := append([]byte(nil), buf[:n]...)
-			record.append(chunk)
-		}
-		if err != nil {
-			if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "input/output error") {
-				record.append([]byte("\r\n[aivo terminal read error: " + err.Error() + "]\r\n"))
-			}
-			return
-		}
-	}
-}
-
-func (s *DefaultTerminalService) waitTerminal(record *terminalRecord) {
-	err := record.cmd.Wait()
-	exitCode := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		} else {
-			exitCode = -1
-		}
-	}
-	record.mu.Lock()
-	if !record.removed {
-		record.info.Status = TerminalStatusExited
-		record.info.ExitCode = &exitCode
-		record.info.TimeUpdated = time.Now()
-	}
-	info := record.info
-	for ch := range record.subscribers {
-		close(ch)
-		delete(record.subscribers, ch)
-	}
-	record.mu.Unlock()
-	if !record.removed {
-		s.emit("terminal.exited", info)
-	}
-}
-
-func (s *DefaultTerminalService) record(workspaceRoot string, terminalID string) (*terminalRecord, error) {
-	root, err := terminalWorkspaceRoot(workspaceRoot)
-	if err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	record := s.records[strings.TrimSpace(terminalID)]
-	s.mu.Unlock()
-	if record == nil {
-		return nil, fmt.Errorf("terminal %s not found", terminalID)
-	}
-	record.mu.Lock()
-	ok := record.info.WorkspaceRoot == root && !record.removed
-	record.mu.Unlock()
-	if !ok {
-		return nil, fmt.Errorf("terminal %s not found", terminalID)
-	}
-	return record, nil
 }
 
 func (s *DefaultTerminalService) emit(name string, info TerminalInfo) {
@@ -345,58 +237,53 @@ func (s *DefaultTerminalService) emit(name string, info TerminalInfo) {
 	}
 }
 
-func (record *terminalRecord) append(chunk []byte) {
-	record.mu.Lock()
-	record.buffer = append(record.buffer, chunk...)
-	record.nextCursor += int64(len(chunk))
-	if len(record.buffer) > terminalBufferCap {
-		drop := len(record.buffer) - terminalBufferCap
-		record.buffer = append([]byte(nil), record.buffer[drop:]...)
-		record.baseCursor += int64(drop)
-	}
-	record.info.Cursor = record.nextCursor
-	record.info.TimeUpdated = time.Now()
-	subscribers := make([]chan []byte, 0, len(record.subscribers))
-	for ch := range record.subscribers {
-		subscribers = append(subscribers, ch)
-	}
-	record.mu.Unlock()
-	for _, ch := range subscribers {
-		select {
-		case ch <- chunk:
-		default:
-		}
-	}
+type unifiedTerminalAttachment struct {
+	service    *DefaultTerminalService
+	input      TerminalAttachInput
+	attachment *AgentPTYAttachment
+	replay     []byte
+	cursor     int64
+	data       <-chan []byte
+	done       chan struct{}
+	once       sync.Once
 }
 
-func (record *terminalRecord) snapshot() TerminalInfo {
-	record.mu.Lock()
-	defer record.mu.Unlock()
-	info := record.info
-	info.Cursor = record.nextCursor
-	return info
+func (a *unifiedTerminalAttachment) Replay() []byte      { return append([]byte(nil), a.replay...) }
+func (a *unifiedTerminalAttachment) Cursor() int64       { return a.cursor }
+func (a *unifiedTerminalAttachment) Data() <-chan []byte { return a.data }
+func (a *unifiedTerminalAttachment) Write(data []byte) error {
+	_, err := a.service.registry.WriteUserNow(AgentPTYWriteInput{WorkspaceRoot: a.input.WorkspaceRoot, SessionID: userTerminalSessionID, ProcessRef: a.input.TerminalID, Chars: string(data), Cursor: a.cursor})
+	return err
+}
+func (a *unifiedTerminalAttachment) Resize(rows, cols int) error {
+	session, err := a.service.registry.owned(a.input.WorkspaceRoot, userTerminalSessionID, a.input.TerminalID)
+	if err != nil {
+		return err
+	}
+	return session.resize(rows, cols)
+}
+func (a *unifiedTerminalAttachment) Detach() {
+	a.once.Do(func() { close(a.done); a.attachment.Detach() })
 }
 
-func (record *terminalRecord) replayLocked(cursor int64) []byte {
-	if cursor < 0 || cursor > record.nextCursor {
-		return nil
+func terminalInfoFromPTY(workspaceRoot string, result AgentPTYResult) TerminalInfo {
+	created, _ := time.Parse(time.RFC3339Nano, result.CreatedAt)
+	updated, _ := time.Parse(time.RFC3339Nano, result.UpdatedAt)
+	return TerminalInfo{
+		ID: result.ProcessRef, WorkspaceRoot: workspaceRoot, SessionID: result.SessionID, Origin: result.Origin,
+		Title: result.Title, Command: result.Command, CWD: result.CWD, Status: result.Status, Attention: result.Attention,
+		InputOwner: result.InputOwner, LeaseMode: result.LeaseMode, LeaseVersion: result.LeaseVersion,
+		PID: result.PID, ExitCode: result.ExitCode, Rows: result.Rows, Cols: result.Cols, Cursor: result.ProcessCursor,
+		Truncated: result.OutputTruncated || result.BaseCursor > 0, TimeCreated: created, TimeUpdated: updated,
 	}
-	if cursor < record.baseCursor {
-		cursor = record.baseCursor
-	}
-	offset := int(cursor - record.baseCursor)
-	if offset < 0 || offset > len(record.buffer) {
-		return nil
-	}
-	return append([]byte(nil), record.buffer[offset:]...)
-}
-
-type terminalAttachment struct {
-	record *terminalRecord
-	replay []byte
-	cursor int64
-	data   chan []byte
-	once   sync.Once
 }
 
 var _ TerminalService = (*DefaultTerminalService)(nil)
+var _ TerminalAttachment = (*unifiedTerminalAttachment)(nil)
+
+func (s *DefaultTerminalService) validate() error {
+	if s == nil || s.registry == nil {
+		return fmt.Errorf("terminal service is not configured")
+	}
+	return nil
+}

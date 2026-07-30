@@ -1,4 +1,5 @@
 export * from "@/services/aivo/agent-service";
+export * from "@/services/aivo/command-service";
 export * from "@/services/aivo/execution-service";
 export * from "@/services/aivo/interaction-service";
 export * from "@/services/aivo/mcp-service";

@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,88 +10,69 @@ import {
   ToolActivationToolList,
 } from "@/features/projects/project-tool-activation-lists";
 import type { ToolCatalogGroup } from "@/features/projects/project-tool-activation-model";
-import type { SkillEntry, SkillImportCandidate } from "@/services/aivo";
+import type { SkillEntry } from "@/services/aivo";
 
 export function ToolActivationDialogTabs({
   activeSkillSet,
   activeToolSet,
-  activeToolCount,
-  candidates,
   disabled,
   groupedTools,
-  inactiveToolCount,
   loading,
-  onImportCandidate,
-  onLoadSkill,
   onToggleSkill,
   onToggleTool,
-  skillCount,
   skills,
   toggleableToolCount,
-  usedToolCount,
   usedToolSet,
 }: {
   activeSkillSet: Set<string>;
   activeToolSet: Set<string>;
-  activeToolCount: number;
-  candidates: SkillImportCandidate[];
   disabled: boolean;
   groupedTools: ToolCatalogGroup[];
-  inactiveToolCount: number;
   loading: boolean;
-  onImportCandidate: (candidate: SkillImportCandidate) => void;
-  onLoadSkill: (skill: SkillEntry, reload?: boolean) => void;
   onToggleSkill: (id: string, enabled: boolean) => void;
   onToggleTool: (name: string, enabled: boolean) => void;
-  skillCount: number;
   skills: SkillEntry[];
   toggleableToolCount: number;
-  usedToolCount: number;
   usedToolSet: Set<string>;
 }) {
   return (
     <Tabs defaultValue="tools" className="flex min-h-0 flex-1 flex-col gap-0">
-      <ToolActivationDialogStatusBar
-        activeToolCount={activeToolCount}
-        inactiveToolCount={inactiveToolCount}
-        skillCount={skillCount}
-        toggleableToolCount={toggleableToolCount}
-        usedToolCount={usedToolCount}
-      />
+      <ToolActivationDialogStatusBar toggleableToolCount={toggleableToolCount} />
 
       <Separator />
 
       <TabsContent className="min-h-0 flex-1 p-0" value="tools">
-        <ScrollArea className="h-full px-5 py-4 [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
-          {loading ? (
-            <ToolActivationDialogSkeleton />
-          ) : (
-            <ToolActivationToolList
-              activeToolSet={activeToolSet}
-              disabled={disabled}
-              groupedTools={groupedTools}
-              onToggleTool={onToggleTool}
-              usedToolSet={usedToolSet}
-            />
-          )}
+        <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
+          <div className="px-5 py-4">
+            {loading ? (
+              <ToolActivationDialogSkeleton />
+            ) : (
+              <ToolActivationToolList
+                activeToolSet={activeToolSet}
+                disabled={disabled}
+                groupedTools={groupedTools}
+                onToggleTool={onToggleTool}
+                usedToolSet={usedToolSet}
+              />
+            )}
+          </div>
         </ScrollArea>
       </TabsContent>
 
       <TabsContent className="min-h-0 flex-1 p-0" value="skills">
-        <ScrollArea className="h-full px-5 py-4 [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
-          {loading ? (
-            <ToolActivationDialogSkeleton />
-          ) : (
-            <SkillActivationList
-              activeSkillSet={activeSkillSet}
-              candidates={candidates}
-              disabled={disabled}
-              onImportCandidate={onImportCandidate}
-              onLoadSkill={onLoadSkill}
-              onToggleSkill={onToggleSkill}
-              skills={skills}
-            />
-          )}
+        <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
+          <div className="px-5 py-4">
+            {loading ? (
+              <ToolActivationDialogSkeleton />
+            ) : (
+              <SkillActivationList
+                activeSkillSet={activeSkillSet}
+                disabled={disabled}
+                onToggleSkill={onToggleSkill}
+                skills={skills}
+              />
+            )}
+          </div>
         </ScrollArea>
       </TabsContent>
     </Tabs>
@@ -139,26 +119,12 @@ export function ToolActivationDialogFooter({
 }
 
 function ToolActivationDialogStatusBar({
-  activeToolCount,
-  inactiveToolCount,
-  skillCount,
   toggleableToolCount,
-  usedToolCount,
 }: {
-  activeToolCount: number;
-  inactiveToolCount: number;
-  skillCount: number;
   toggleableToolCount: number;
-  usedToolCount: number;
 }) {
   return (
     <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary">激活 {activeToolCount}</Badge>
-        <Badge variant="outline">未激活 {inactiveToolCount}</Badge>
-        <Badge variant="outline">已使用 {usedToolCount}</Badge>
-        <Badge variant="outline">技能 {skillCount}</Badge>
-      </div>
       <TabsList>
         <TabsTrigger value="tools">工具</TabsTrigger>
         <TabsTrigger value="skills">技能</TabsTrigger>

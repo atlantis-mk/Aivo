@@ -7,6 +7,7 @@ const (
 	SkillSourceAivo     = "aivo"
 	SkillSourceClaude   = "claude"
 	SkillSourceAgents   = "agents"
+	SkillSourceCodex    = "codex"
 	SkillSourceOpenCode = "opencode"
 
 	SkillCandidateStatusPending  = "pending"
@@ -73,6 +74,7 @@ type SkillListInput struct {
 	WorkspaceRoot     string `json:"workspaceRoot,omitempty"`
 	IncludeCandidates bool   `json:"includeCandidates,omitempty"`
 	IncludeDisabled   bool   `json:"includeDisabled,omitempty"`
+	IncludeIgnored    bool   `json:"includeIgnored,omitempty"`
 }
 
 type SkillListResult struct {
@@ -83,6 +85,10 @@ type SkillListResult struct {
 type SkillImportInput struct {
 	CandidateID string `json:"candidateId"`
 	TargetScope string `json:"targetScope,omitempty"`
+}
+
+type SkillIgnoreCandidatesInput struct {
+	Name string `json:"name"`
 }
 
 type SkillEnabledInput struct {

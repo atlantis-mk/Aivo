@@ -51,6 +51,13 @@ export type ToolActivityCommandEntry = {
   toolCallId: string;
   turnId?: string;
   toolName: string;
+  processRef?: string;
+  inputMode?: AgentTerminalInputMode;
+  inputRequest?: AgentTerminalInputRequest;
+  attention?: "none" | "possibly_waiting" | "interactive";
+  inputOwner?: "none" | "user" | "agent";
+  leaseMode?: "none" | "once" | "always";
+  leaseVersion?: number;
   command: string;
   cwd?: string;
   status: ToolActivityStatus;
@@ -62,6 +69,22 @@ export type ToolActivityCommandEntry = {
   error?: string;
   timeCreated: string;
   timeUpdated: string;
+};
+
+export type AgentTerminalInputMode =
+  | "ask"
+  | "agent_once"
+  | "user_once"
+  | "agent_always";
+
+export type AgentTerminalInputRequest = {
+  id: string;
+  cursor: number;
+  mode: AgentTerminalInputMode;
+  resolved: boolean;
+  createdAt: string;
+  prompt?: string;
+  secret?: boolean;
 };
 
 export type ToolActivityCommandTab = ToolActivityCommandEntry & {
@@ -79,6 +102,9 @@ export type ShellOutputPayload = {
   stream?: string;
   chunk?: string;
   sequence?: number;
+  cursor?: number;
+  status?: "running" | "waiting_input" | "exited";
+  truncated?: boolean;
   timeCreated?: string;
 };
 

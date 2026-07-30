@@ -93,7 +93,6 @@ func fetchMCPDiscoveryJSON(ctx context.Context, client *http.Client, rawURL stri
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("MCP-Protocol-Version", "2025-03-26")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

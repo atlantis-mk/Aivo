@@ -88,9 +88,30 @@ export function mergeRuntimeTurn(
   runtimeTurn: domain.Turn,
 ) {
   if (!runtimeTurn.id) return turns;
+
+  const exactIndex = turns.findIndex(
+    (turn) =>
+      turn.turnId === runtimeTurn.id ||
+      (Boolean(runtimeTurn.userEventId) &&
+        turn.userEventId === runtimeTurn.userEventId),
+  );
+  const runtimeStartedAt = Date.parse(runtimeTurn.timeCreated || "");
+  const targetIndex =
+    exactIndex >= 0
+      ? exactIndex
+      : turns.findLastIndex(
+          (turn) =>
+            !turn.turnId &&
+            !turn.stopped &&
+            !turn.responseCompletedAt &&
+            (!Number.isFinite(runtimeStartedAt) ||
+              turn.submittedAt.getTime() <= runtimeStartedAt + 1_000),
+        );
+  if (targetIndex < 0) return turns;
+
   let changed = false;
-  const nextTurns = turns.map((turn) => {
-    if (turn.turnId !== runtimeTurn.id) return turn;
+  const nextTurns = turns.map((turn, index) => {
+    if (index !== targetIndex) return turn;
     const finalized = finalizeOpenTurnFromRuntime(
       {
         ...turn,

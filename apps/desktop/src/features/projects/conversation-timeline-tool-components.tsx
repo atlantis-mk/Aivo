@@ -94,14 +94,14 @@ const ToolCallGroupView = memo(function ToolCallGroupView({
     <div className="border-0 bg-transparent data-open:bg-transparent">
       <button
         aria-expanded={open}
-        className="group/accordion-trigger relative flex flex-none items-start justify-between gap-2 border border-transparent px-0 py-1 text-left text-sm text-muted-foreground transition-all outline-none hover:no-underline disabled:pointer-events-none disabled:opacity-50"
+        className="group/accordion-trigger relative flex flex-none items-center justify-between gap-0.5 border border-transparent px-0 py-1 text-left text-sm text-muted-foreground transition-all outline-none hover:no-underline disabled:pointer-events-none disabled:opacity-50"
         onClick={() => onToggle(group.id)}
         type="button"
       >
         <span>{group.title}</span>
         <ChevronDown
           className={cn(
-            "mt-0.5 shrink-0 text-muted-foreground transition-transform",
+            "size-5 shrink-0 text-muted-foreground transition-transform",
             open && "rotate-180",
           )}
         />

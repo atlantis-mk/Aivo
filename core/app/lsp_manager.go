@@ -94,32 +94,38 @@ func (m *boundedLSPManager) Status(ctx context.Context, workspaceRoot string) (d
 }
 
 func (m *boundedLSPManager) Diagnostics(ctx context.Context, workspaceRoot string, path string) ([]domain.CodeDiagnostic, domain.CodeIntelligenceStatus, error) {
-	root, target, language, status, err := m.clientForPath(ctx, workspaceRoot, path)
-	if err != nil || status.Status != domain.CodeIntelligenceStatusReady {
-		return nil, status, err
+	selection, err := m.clientForPath(ctx, workspaceRoot, path)
+	if err != nil || selection.status.Status != domain.CodeIntelligenceStatusReady {
+		return nil, selection.status, err
 	}
-	client, _, err := m.client(ctx, root, language)
+	client, _, err := m.clientWithDefinition(ctx, selection.serverRoot, selection.language, selection.resolved)
 	if err != nil {
-		return nil, status, nil
+		return nil, selection.status, nil
 	}
-	if err := client.openDocument(ctx, target, language, m.requestTimeout); err != nil {
-		return nil, lspUnavailableStatus(root, language, "language server document open failed", err.Error()), nil
+	if err := client.openDocument(ctx, selection.target, selection.language, m.requestTimeout); err != nil {
+		return nil, lspUnavailableStatus(selection.workspaceRoot, selection.language, "language server document open failed", err.Error()), nil
 	}
 	deadline := time.NewTimer(m.diagWait)
 	defer deadline.Stop()
 	select {
 	case <-ctx.Done():
-		return nil, status, ctx.Err()
+		return nil, selection.status, ctx.Err()
 	case <-deadline.C:
 	}
-	diagnostics := client.diagnosticsFor(target)
+	diagnostics := client.diagnosticsFor(selection.target)
+	for index := range diagnostics {
+		absolute := filepath.Join(selection.serverRoot, filepath.FromSlash(diagnostics[index].Path))
+		if rel, relErr := filepath.Rel(selection.workspaceRoot, absolute); relErr == nil && !strings.HasPrefix(rel, "..") {
+			diagnostics[index].Path = filepath.ToSlash(rel)
+		}
+	}
 	sort.Slice(diagnostics, func(i, j int) bool {
 		if diagnostics[i].Path != diagnostics[j].Path {
 			return diagnostics[i].Path < diagnostics[j].Path
 		}
 		return diagnostics[i].Range.Start.Line < diagnostics[j].Range.Start.Line
 	})
-	return diagnostics, status, nil
+	return diagnostics, selection.status, nil
 }
 
 func (m *boundedLSPManager) Symbols(ctx context.Context, workspaceRoot string, query string, path string, kind string, limit int) ([]domain.CodeSymbol, domain.CodeIntelligenceStatus, error) {
@@ -128,13 +134,19 @@ func (m *boundedLSPManager) Symbols(ctx context.Context, workspaceRoot string, q
 		return nil, lspUnavailableStatus(workspaceRoot, "", "invalid workspace root", "workspace root is invalid"), err
 	}
 	language := ""
+	serverRoot := root
+	var resolved resolvedLSPDefinition
 	if strings.TrimSpace(path) != "" {
 		target, joinErr := safeJoin(root, path)
 		if joinErr != nil {
 			return nil, lspUnavailableStatus(root, "", "invalid workspace path", joinErr.Error()), joinErr
 		}
 		if info, statErr := os.Stat(target); statErr == nil && !info.IsDir() {
-			language = lspLanguageForPath(target)
+			if selected, ok := resolveLSPDefinitionForPath(root, target); ok {
+				resolved = selected
+				language = languageIDForLSPDefinition(selected.Definition, target)
+				serverRoot = nearestLSPRoot(root, target, selected.Definition.RootMarkers)
+			}
 		}
 	}
 	if language == "" {
@@ -144,7 +156,11 @@ func (m *boundedLSPManager) Symbols(ctx context.Context, workspaceRoot string, q
 		}
 		language = detected
 	}
-	client, status, err := m.client(ctx, root, language)
+	if resolved.Name == "" {
+		resolved, _ = resolveLSPDefinitionForLanguage(root, language)
+	}
+	client, status, err := m.clientWithDefinition(ctx, serverRoot, language, resolved)
+	status.WorkspaceRoot = root
 	if err != nil {
 		return nil, status, nil
 	}
@@ -186,19 +202,19 @@ func (m *boundedLSPManager) References(ctx context.Context, workspaceRoot string
 }
 
 func (m *boundedLSPManager) locations(ctx context.Context, workspaceRoot string, path string, position domain.SourcePosition, limit int, method string, contextValue map[string]any) ([]domain.CodeLocation, domain.CodeIntelligenceStatus, error) {
-	root, target, language, status, err := m.clientForPath(ctx, workspaceRoot, path)
-	if err != nil || status.Status != domain.CodeIntelligenceStatusReady {
-		return nil, status, err
+	selection, err := m.clientForPath(ctx, workspaceRoot, path)
+	if err != nil || selection.status.Status != domain.CodeIntelligenceStatusReady {
+		return nil, selection.status, err
 	}
-	client, _, err := m.client(ctx, root, language)
+	client, _, err := m.clientWithDefinition(ctx, selection.serverRoot, selection.language, selection.resolved)
 	if err != nil {
-		return nil, status, nil
+		return nil, selection.status, nil
 	}
-	if err := client.openDocument(ctx, target, language, m.requestTimeout); err != nil {
-		return nil, lspUnavailableStatus(root, language, "language server document open failed", err.Error()), nil
+	if err := client.openDocument(ctx, selection.target, selection.language, m.requestTimeout); err != nil {
+		return nil, lspUnavailableStatus(selection.workspaceRoot, selection.language, "language server document open failed", err.Error()), nil
 	}
 	params := map[string]any{
-		"textDocument": map[string]any{"uri": fileURI(target)},
+		"textDocument": map[string]any{"uri": fileURI(selection.target)},
 		"position":     map[string]any{"line": position.Line - 1, "character": position.Character},
 	}
 	if contextValue != nil {
@@ -208,53 +224,75 @@ func (m *boundedLSPManager) locations(ctx context.Context, workspaceRoot string,
 	defer cancel()
 	var raw json.RawMessage
 	if err := client.request(ctx, method, params, &raw); err != nil {
-		return nil, lspUnavailableStatus(root, language, "language server location request failed", err.Error()), nil
+		return nil, lspUnavailableStatus(selection.workspaceRoot, selection.language, "language server location request failed", err.Error()), nil
 	}
-	locations := parseLSPLocations(root, raw, limit)
-	return locations, status, nil
+	locations := parseLSPLocations(selection.workspaceRoot, raw, limit)
+	return locations, selection.status, nil
 }
 
-func (m *boundedLSPManager) clientForPath(ctx context.Context, workspaceRoot string, relPath string) (string, string, string, domain.CodeIntelligenceStatus, error) {
+type lspClientSelection struct {
+	workspaceRoot string
+	serverRoot    string
+	target        string
+	language      string
+	resolved      resolvedLSPDefinition
+	status        domain.CodeIntelligenceStatus
+}
+
+func (m *boundedLSPManager) clientForPath(ctx context.Context, workspaceRoot string, relPath string) (lspClientSelection, error) {
 	root, err := cleanWorkspaceRoot(workspaceRoot)
 	if err != nil {
 		status := lspUnavailableStatus(workspaceRoot, "", "invalid workspace root", "workspace root is invalid")
-		return "", "", "", status, err
+		return lspClientSelection{status: status}, err
 	}
 	target, err := safeJoin(root, relPath)
 	if err != nil {
 		status := lspUnavailableStatus(root, "", "invalid workspace path", err.Error())
-		return root, "", "", status, err
+		return lspClientSelection{workspaceRoot: root, status: status}, err
 	}
-	language := lspLanguageForPath(target)
+	resolved, ok := resolveLSPDefinitionForPath(root, target)
+	if !ok {
+		return lspClientSelection{workspaceRoot: root, target: target, status: lspUnavailableStatus(root, "", "unsupported source language", "")}, nil
+	}
+	language := languageIDForLSPDefinition(resolved.Definition, target)
 	if language == "" {
-		return root, target, "", lspUnavailableStatus(root, "", "unsupported source language", ""), nil
+		return lspClientSelection{workspaceRoot: root, target: target, status: lspUnavailableStatus(root, "", "unsupported source language", "")}, nil
 	}
-	_, status, err := m.client(ctx, root, language)
+	serverRoot := nearestLSPRoot(root, target, resolved.Definition.RootMarkers)
+	_, status, err := m.clientWithDefinition(ctx, serverRoot, language, resolved)
+	status.WorkspaceRoot = root
 	if err != nil {
-		return root, target, language, status, nil
+		return lspClientSelection{workspaceRoot: root, serverRoot: serverRoot, target: target, language: language, resolved: resolved, status: status}, nil
 	}
-	return root, target, language, status, nil
+	return lspClientSelection{workspaceRoot: root, serverRoot: serverRoot, target: target, language: language, resolved: resolved, status: status}, nil
 }
 
 func (m *boundedLSPManager) client(ctx context.Context, workspaceRoot string, language string) (*boundedLSPClient, domain.CodeIntelligenceStatus, error) {
-	key := workspaceRoot + "\x00" + language
+	resolved, ok := resolveLSPDefinitionForLanguage(workspaceRoot, language)
+	if !ok {
+		status := lspUnavailableStatus(workspaceRoot, language, "unsupported source language", "")
+		return nil, status, errors.New("unsupported source language")
+	}
+	return m.clientWithDefinition(ctx, workspaceRoot, language, resolved)
+}
+
+func (m *boundedLSPManager) clientWithDefinition(ctx context.Context, workspaceRoot string, language string, resolved resolvedLSPDefinition) (*boundedLSPClient, domain.CodeIntelligenceStatus, error) {
+	key := workspaceRoot + "\x00" + resolved.Name + "\x00" + language
 	now := m.now()
 	m.mu.Lock()
 	m.evictIdleLocked(now)
-	if client := m.clients[key]; client != nil && client.isRunning() {
+	if client := m.clients[key]; client != nil && client.isRunning() && client.revision == resolved.Revision {
 		client.touch(now)
 		status := lspReadyStatus(workspaceRoot, language, client.source, client.startedAt, now)
 		m.statuses[key] = status
 		m.mu.Unlock()
 		return client, status, nil
 	}
-	command, args, source, ok := lspCommandForLanguage(language)
-	if !ok {
-		status := lspUnavailableStatus(workspaceRoot, language, "unsupported source language", "")
-		m.statuses[key] = status
-		m.mu.Unlock()
-		return nil, status, errors.New("unsupported source language")
+	if client := m.clients[key]; client != nil {
+		client.close()
+		delete(m.clients, key)
 	}
+	command, source := resolved.Definition.Command, resolved.Name
 	if _, err := exec.LookPath(command); err != nil {
 		status := lspUnavailableStatus(workspaceRoot, language, fmt.Sprintf("%s not found on PATH", command), "")
 		m.statuses[key] = status
@@ -266,9 +304,13 @@ func (m *boundedLSPManager) client(ctx context.Context, workspaceRoot string, la
 	}
 	m.mu.Unlock()
 
-	startCtx, cancel := context.WithTimeout(ctx, m.startupTimeout)
+	startupTimeout := m.startupTimeout
+	if resolved.Definition.TimeoutSeconds > 0 {
+		startupTimeout = time.Duration(resolved.Definition.TimeoutSeconds) * time.Second
+	}
+	startCtx, cancel := context.WithTimeout(ctx, startupTimeout)
 	defer cancel()
-	client, err := startBoundedLSPClient(startCtx, workspaceRoot, language, command, args, source)
+	client, err := startBoundedLSPClientWithDefinition(startCtx, workspaceRoot, language, resolved)
 	if err != nil {
 		status := lspUnavailableStatus(workspaceRoot, language, "language server startup failed", err.Error())
 		m.mu.Lock()
@@ -285,6 +327,46 @@ func (m *boundedLSPManager) client(ctx context.Context, workspaceRoot string, la
 	m.statuses[key] = status
 	m.mu.Unlock()
 	return client, status, nil
+}
+
+func nearestLSPRoot(workspaceRoot string, target string, markers []string) string {
+	if root, ok := nearestLSPRootMatch(workspaceRoot, target, markers); ok {
+		return root
+	}
+	return canonicalLSPPath(workspaceRoot)
+}
+
+func nearestLSPRootMatch(workspaceRoot string, target string, markers []string) (string, bool) {
+	workspaceRoot = canonicalLSPPath(workspaceRoot)
+	current := canonicalLSPPath(filepath.Dir(target))
+	if !pathWithinRoot(workspaceRoot, current) {
+		return workspaceRoot, false
+	}
+	for {
+		for _, marker := range markers {
+			marker = strings.TrimSpace(marker)
+			if marker == "" {
+				continue
+			}
+			candidate := filepath.Join(current, marker)
+			if strings.ContainsAny(marker, "*?[") {
+				if matches, _ := filepath.Glob(candidate); len(matches) > 0 {
+					return current, true
+				}
+			} else if _, err := os.Stat(candidate); err == nil {
+				return current, true
+			}
+		}
+		if current == workspaceRoot {
+			break
+		}
+		parent := filepath.Dir(current)
+		if parent == current || !pathWithinRoot(workspaceRoot, parent) {
+			break
+		}
+		current = parent
+	}
+	return workspaceRoot, false
 }
 
 func (m *boundedLSPManager) evictIdleLocked(now time.Time) {

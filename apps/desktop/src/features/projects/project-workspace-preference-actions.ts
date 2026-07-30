@@ -25,6 +25,7 @@ export function useProjectWorkspacePreferenceActions({
   activeRunningSubagentRun,
   activeSessionId,
   activeSessionIdRef,
+  permissionModeRef,
   reasoningEffort,
   refreshAgentRuntimeState,
   serviceTier,
@@ -40,6 +41,7 @@ export function useProjectWorkspacePreferenceActions({
   activeRunningSubagentRun: AgentRun | undefined;
   activeSessionId: string;
   activeSessionIdRef: { current: string };
+  permissionModeRef: { current: PermissionMode };
   reasoningEffort: string;
   refreshAgentRuntimeState: (sessionId?: string) => Promise<void>;
   serviceTier: string;
@@ -97,6 +99,7 @@ export function useProjectWorkspacePreferenceActions({
 
   function selectPermissionMode(nextMode: PermissionMode) {
     const normalized = normalizePermissionMode(nextMode);
+    permissionModeRef.current = normalized;
     setLocalPermissionMode(normalized);
     const sessionId = activeSessionIdRef.current;
     if (!sessionId || !hasAppBridge()) return;

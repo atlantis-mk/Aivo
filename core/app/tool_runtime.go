@@ -16,7 +16,6 @@ const (
 	defaultToolTimeout    = 10 * time.Second
 	defaultToolMaxRetries = 2
 	defaultMaxOutputChars = 16000
-	defaultAgentMaxSteps  = 8
 )
 
 type ToolRuntime struct {
@@ -170,6 +169,13 @@ func (r *ToolRuntime) executeToolAttempt(ctx context.Context, call domain.ChatTo
 	}()
 	select {
 	case <-callCtx.Done():
+		if isLongRunningInteractionSpec(tool.Spec()) {
+			select {
+			case result := <-resultCh:
+				return result
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(callCtx.Err(), context.Canceled) {
 			return toolFailure(call.ID, name, "cancelled", "tool execution was cancelled")
 		}
@@ -310,7 +316,8 @@ func isShellPermissionSpec(spec domain.ToolSpec) bool {
 }
 
 func isLongRunningInteractionSpec(spec domain.ToolSpec) bool {
-	return spec.Category == "interaction" && spec.Capability == "user.question"
+	return (spec.Category == "interaction" && spec.Capability == "user.question") ||
+		spec.Name == ExecCommandToolName || spec.Name == WriteStdinToolName
 }
 
 func (r *ToolRuntime) finish(call domain.ChatToolCall, start time.Time, result domain.ToolResult, truncated bool) domain.ToolResult {

@@ -24,9 +24,6 @@ const (
 	dynamicContextHeaderChars = 1200
 )
 
-const aivoConversationSystemPrompt = `You are Aivo, a coding assistant running inside a local desktop app.
-Use the session context and recent conversation to answer the user. Treat tool results as authoritative. Be explicit about files changed, commands run, and verification status. If local context is insufficient, say what is missing instead of inventing details.`
-
 const compactedContextNotice = `Reference-only background: the latest user message is the active task, and it wins over older context.`
 
 type conversationContextOptions struct {
@@ -37,6 +34,7 @@ type conversationContextOptions struct {
 	TailMessageLimit   int
 	IncludeChatTail    bool
 	IncludeToolContext bool
+	TargetPaths        []string
 }
 
 type conversationContextAssembly struct {
@@ -85,6 +83,7 @@ func (s *Service) buildSessionContextSections(ctx context.Context, input domain.
 		TailMessageLimit:   30,
 		IncludeChatTail:    false,
 		IncludeToolContext: true,
+		TargetPaths:        input.TargetPaths,
 	})
 	if err != nil {
 		return domain.BuildSessionContextResult{}, err
@@ -119,14 +118,17 @@ func (s *Service) assembleConversationContext(ctx context.Context, sessionID str
 		tools, _ = s.store.ListToolCalls(ctx, session.ID)
 	}
 	pendingPermissions, _ := s.store.ListPermissionRequests(ctx, session.ID, domain.PermissionRequestStatusPending)
-	availableSkills := s.availableSkillsContext(ctx, session.ProjectPath)
 	activeSkills := s.activeSkillsContext(ctx, session.ID)
-
-	sections := s.contextSectionCandidates(session, summary, checkpoint, codingContext, tools, pendingPermissions, availableSkills, activeSkills, older, tail, opts)
-	applied := applyConversationSectionBudget(sections, opts.SectionBudget)
-	messages := []domain.ChatMessage{
-		{Role: domain.EventRoleSystem, Text: aivoConversationSystemPrompt},
+	projectInstructions := resolveProjectInstructions(session.ProjectPath, opts.TargetPaths)
+	configuredInstructions := resolveConfiguredRuntimeInstructions(ctx, session.ProjectPath)
+	if configuredInstructions != "" {
+		projectInstructions = strings.TrimSpace(projectInstructions + "\n\n" + configuredInstructions)
 	}
+	liveTerminals := s.liveSessionTerminalsContext(session, codingContext)
+
+	sections := s.contextSectionCandidates(session, summary, checkpoint, codingContext, tools, pendingPermissions, activeSkills, projectInstructions, liveTerminals, older, tail, opts)
+	applied := applyConversationSectionBudget(sections, opts.SectionBudget)
+	var messages []domain.ChatMessage
 	if text := renderDynamicContext(applied.Sections); text != "" {
 		messages = append(messages, domain.ChatMessage{Role: domain.EventRoleSystem, Text: text})
 	}
@@ -150,8 +152,9 @@ func (s *Service) contextSectionCandidates(
 	cc domain.CodingContext,
 	tools []domain.ToolCall,
 	pendingPermissions []domain.PermissionRequest,
-	availableSkills string,
 	activeSkills string,
+	projectInstructions string,
+	liveTerminals string,
 	older []domain.ChatMessage,
 	tail []domain.ChatMessage,
 	opts conversationContextOptions,
@@ -166,8 +169,11 @@ func (s *Service) contextSectionCandidates(
 	if text := strings.TrimSpace(session.Goal); text != "" {
 		sections = append(sections, contextSectionCandidate{Name: "goal", Content: text, MaxChars: sectionDefaultMaxChars, Required: true})
 	}
-	if strings.TrimSpace(availableSkills) != "" {
-		sections = append(sections, contextSectionCandidate{Name: "skill_guidance", Content: availableSkills, MaxChars: sectionSummaryMaxChars, Required: true})
+	if strings.TrimSpace(liveTerminals) != "" {
+		sections = append(sections, contextSectionCandidate{Name: "live_terminals", Content: liveTerminals, MaxChars: sectionToolMaxChars, Required: true})
+	}
+	if strings.TrimSpace(projectInstructions) != "" {
+		sections = append(sections, contextSectionCandidate{Name: "project_instructions", Content: projectInstructions, MaxChars: projectInstructionsMaxChars, Required: true})
 	}
 	if summary != nil {
 		sections = append(sections, contextSectionCandidate{Name: "latest_summary", Content: renderSummaryForContext(*summary), MaxChars: sectionSummaryMaxChars, Required: true})

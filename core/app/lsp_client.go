@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ type boundedLSPClient struct {
 	root      string
 	language  string
 	source    string
+	revision  string
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
 	cancel    context.CancelFunc
@@ -39,9 +41,16 @@ type boundedLSPClient struct {
 }
 
 func startBoundedLSPClient(ctx context.Context, workspaceRoot string, language string, command string, args []string, source string) (*boundedLSPClient, error) {
+	return startBoundedLSPClientWithDefinition(ctx, workspaceRoot, language, resolvedLSPDefinition{
+		Name: source, Definition: domain.LanguageServerDefinition{Command: command, Args: args, LanguageIDs: []string{language}},
+	})
+}
+
+func startBoundedLSPClientWithDefinition(ctx context.Context, workspaceRoot string, language string, resolved resolvedLSPDefinition) (*boundedLSPClient, error) {
 	processCtx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(processCtx, command, args...)
+	cmd := exec.CommandContext(processCtx, resolved.Definition.Command, resolved.Definition.Args...)
 	cmd.Dir = workspaceRoot
+	cmd.Env = append(os.Environ(), resolvedLSPEnvironment(resolved.Definition.Env)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
@@ -62,7 +71,7 @@ func startBoundedLSPClient(ctx context.Context, workspaceRoot string, language s
 		return nil, err
 	}
 	client := &boundedLSPClient{
-		root: workspaceRoot, language: language, source: source, cmd: cmd, stdin: stdin, cancel: cancel,
+		root: workspaceRoot, language: language, source: resolved.Name, revision: resolved.Revision, cmd: cmd, stdin: stdin, cancel: cancel,
 		startedAt: time.Now(), pending: map[int]chan lspResponse{}, opened: map[string]bool{}, diagnostics: map[string][]domain.CodeDiagnostic{},
 		lastUsedAt: time.Now(), running: true,
 	}
@@ -81,7 +90,7 @@ func startBoundedLSPClient(ctx context.Context, workspaceRoot string, language s
 	initCtx, cancelInit := context.WithTimeout(ctx, lspStartupTimeout)
 	defer cancelInit()
 	var result map[string]any
-	if err := client.request(initCtx, "initialize", map[string]any{
+	initializeParams := map[string]any{
 		"processId": os.Getpid(),
 		"rootUri":   fileURI(workspaceRoot),
 		"capabilities": map[string]any{
@@ -93,12 +102,36 @@ func startBoundedLSPClient(ctx context.Context, workspaceRoot string, language s
 			},
 			"workspace": map[string]any{"symbol": map[string]any{}},
 		},
-	}, &result); err != nil {
+	}
+	if len(resolved.Definition.InitializationOptions) > 0 {
+		initializeParams["initializationOptions"] = resolved.Definition.InitializationOptions
+	}
+	if err := client.request(initCtx, "initialize", initializeParams, &result); err != nil {
 		client.close()
 		return nil, err
 	}
 	_ = client.notify("initialized", map[string]any{})
 	return client, nil
+}
+
+func resolvedLSPEnvironment(configured map[string]string) []string {
+	keys := make([]string, 0, len(configured))
+	for key := range configured {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(configured[key])
+		reference := strings.TrimPrefix(value, "$")
+		reference = strings.TrimPrefix(reference, "{")
+		reference = strings.TrimSuffix(reference, "}")
+		if strings.HasPrefix(value, "$") {
+			value = os.Getenv(reference)
+		}
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 func (c *boundedLSPClient) touch(now time.Time) {

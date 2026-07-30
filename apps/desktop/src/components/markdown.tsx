@@ -15,7 +15,7 @@ import {
 import { CanvasRenderer } from "echarts/renderers";
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Streamdown, type AnimateOptions, type Components, type ControlsConfig, type CustomRendererProps } from "streamdown";
+import { Streamdown, type Components, type ControlsConfig, type CustomRendererProps } from "streamdown";
 
 import { cn } from "@/lib/utils";
 
@@ -96,14 +96,6 @@ const markdownControls = {
  table: true,
 } satisfies ControlsConfig;
 
-const markdownAnimation = {
- animation: "fadeIn",
- duration: 150,
- easing: "ease-out",
- sep: "word",
- stagger: 20,
-} satisfies AnimateOptions;
-
 export function Markdown(props: MarkdownProps) {
  const isStreamSource = typeof props.stream === "function";
  const stream = isStreamSource ? props.stream : undefined;
@@ -161,7 +153,7 @@ function MarkdownViewer({ content, isFinished, className }: MarkdownContentProps
 
  return (
  <Streamdown
- animated={isFinished ? markdownAnimation : false}
+ animated={false}
  className={cn("aivo-markdown break-words text-sm/relaxed", className)}
  components={streamdownComponents}
  controls={markdownControls}

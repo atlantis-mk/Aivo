@@ -12,6 +12,7 @@ import {
 import { AnimatedTitle } from "@/components/animated-title";
 import { ProjectTopBarIconButton } from "@/features/projects/project-workspace-layout";
 import { cn } from "@/lib/utils";
+import { ProjectWorktreeDialog } from "@/features/projects/project-worktree-dialog";
 
 export { SubagentSessionActionBar } from "@/features/projects/project-subagent-session-action-bar";
 export function ProjectTopBar({
@@ -80,8 +81,9 @@ export function ProjectMainTopBar({
   onToggleLayoutPanel,
   pageIcon,
   pageTitle,
+  repositoryPath,
   rightOpen,
-  showLayoutButton,
+  sessionId,
   showTerminalButton,
 }: {
   conversationTitle: string;
@@ -90,16 +92,15 @@ export function ProjectMainTopBar({
   onToggleLayoutPanel?: () => void;
   pageIcon?: React.ReactNode;
   pageTitle?: string;
+  repositoryPath?: string;
   rightOpen?: boolean;
-  showLayoutButton?: boolean;
+  sessionId?: string;
   showTerminalButton?: boolean;
 }) {
   const title = pageTitle || (hasConversation ? conversationTitle : "");
   const floatingActionsInset = showTerminalButton ? 76 : 40;
   const layoutActionRight = rightOpen ? 0 : floatingActionsInset;
-  const actionsInset = showLayoutButton
-    ? `${layoutActionRight + 44}px`
-    : `${layoutActionRight}px`;
+  const actionsInset = `${layoutActionRight + 44}px`;
 
   return (
     <div className="pointer-events-auto relative flex h-full min-w-0 flex-1 border-b border-border/60 bg-background/80 text-foreground shadow-sm shadow-background/30 backdrop-blur-xl supports-[backdrop-filter]:bg-background/65">
@@ -122,7 +123,8 @@ export function ProjectMainTopBar({
               />
             </div>
             {hasConversation ? (
-              <span data-app-no-drag>
+              <span className="flex items-center" data-app-no-drag>
+                <ProjectWorktreeDialog repositoryPath={repositoryPath || ""} sessionId={sessionId} />
                 <ProjectTopBarIconButton aria-label="更多会话操作">
                   <Ellipsis />
                 </ProjectTopBarIconButton>
@@ -136,7 +138,6 @@ export function ProjectMainTopBar({
         isLayoutPanelOpen={isLayoutPanelOpen}
         onToggleLayoutPanel={onToggleLayoutPanel}
         right={layoutActionRight}
-        showLayoutButton={showLayoutButton}
       />
     </div>
   );
@@ -146,12 +147,10 @@ function ProjectMainTopBarActions({
   isLayoutPanelOpen,
   onToggleLayoutPanel,
   right,
-  showLayoutButton,
 }: {
   isLayoutPanelOpen?: boolean;
   onToggleLayoutPanel?: () => void;
   right: number;
-  showLayoutButton?: boolean;
 }) {
   return (
     <div
@@ -159,16 +158,14 @@ function ProjectMainTopBarActions({
       data-app-no-drag
       style={{ right }}
     >
-      {showLayoutButton ? (
-        <ProjectTopBarIconButton
-          aria-label="切换系统环境"
-          aria-pressed={isLayoutPanelOpen}
-          className={cn(isLayoutPanelOpen && "bg-muted text-foreground")}
-          onClick={onToggleLayoutPanel}
-        >
-          <LayoutGrid />
-        </ProjectTopBarIconButton>
-      ) : null}
+      <ProjectTopBarIconButton
+        aria-label="切换系统环境"
+        aria-pressed={isLayoutPanelOpen}
+        className={cn(isLayoutPanelOpen && "bg-muted text-foreground")}
+        onClick={onToggleLayoutPanel}
+      >
+        <LayoutGrid />
+      </ProjectTopBarIconButton>
     </div>
   );
 }

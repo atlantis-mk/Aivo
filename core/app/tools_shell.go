@@ -9,7 +9,7 @@ import (
 	"aivo/core/domain"
 )
 
-const shellNamespaceDescription = "Guarded command execution tools. Prefer run_tests for declared test, lint, and build commands. Use bash only as an escape hatch for short non-interactive workspace commands that no safer dedicated tool can represent."
+const shellNamespaceDescription = "Guarded command execution tools. Prefer run_tests for declared test, lint, and build commands. Use bash for short non-interactive commands; use exec_command plus write_stdin when a command needs a PTY or multiple input/output steps."
 
 type BashTool struct {
 	workspaceRoot string
@@ -40,7 +40,7 @@ func (t *BashTool) SetPersistentCWDHooks(load func(sessionID string, workspaceRo
 func (t *BashTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "bash",
-		Description:          "Escape-hatch shell execution after command policy and permission approval. Prefer run_tests for test/lint/build, read_diagnostics for diagnostics, and format_code for formatter-backed rewrites. Use bash only for short non-interactive workspace commands that no safer dedicated tool can represent. Arguments must be JSON. Foreground mode is bounded; background mode returns a managed processRef. PTY, stdin, env overrides, external cwd, sudo, and network are separate approval dimensions.",
+		Description:          "Escape-hatch shell execution after command policy and permission approval. Prefer run_tests for test/lint/build, read_diagnostics for diagnostics, and format_code for formatter-backed rewrites. Use bash only for short non-interactive workspace commands that no safer dedicated tool can represent; use exec_command plus write_stdin for PTY or multi-step input/output. Arguments must be JSON. Foreground mode is bounded; background mode returns a managed processRef. PTY requests here are rejected. Stdin, env overrides, external cwd, sudo, and network are separate approval dimensions.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: shellNamespaceDescription,
 		Capability:           "shell.exec",
@@ -88,7 +88,7 @@ func (t *BashTool) Execute(ctx context.Context, args json.RawMessage, execCtx do
 		return commandToolResult("bash", prepared, result, runErr)
 	}
 	if prepared.request.Mode == "pty" {
-		return commandToolError("bash", prepared, errors.New("model-facing PTY mode is tracked through the dedicated terminal service"))
+		return commandToolError("bash", prepared, errors.New("use exec_command and write_stdin for model-facing PTY commands"))
 	}
 	if shouldUsePersistentAgentShell(input, execCtx) && t.agentShells != nil {
 		result, runErr := t.agentShells.Run(ctx, prepared.request)

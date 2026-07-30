@@ -37,5 +37,11 @@ func (api *API) call(ctx context.Context, method string, args []json.RawMessage)
 	if result, handled, err := api.callPluginRPC(ctx, method, args); handled {
 		return result, err
 	}
+	if result, handled, err := api.callWorktreeRPC(ctx, method, args); handled {
+		return result, err
+	}
+	if result, handled, err := api.callCommandRPC(ctx, method, args); handled {
+		return result, err
+	}
 	return nil, fmt.Errorf("unknown RPC method %q", method)
 }

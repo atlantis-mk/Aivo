@@ -18,7 +18,7 @@ export function SidebarSectionHeader({
   return (
     <SidebarGroupLabel
       aria-expanded={!collapsed}
-      className="group/sidebar-section-heading mx-1.5 flex h-6 cursor-pointer items-center gap-1 px-3 text-sm font-semibold text-muted-foreground group-data-[collapsible=icon]:mx-2"
+      className="group/sidebar-section-heading flex h-6 cursor-pointer items-center gap-1 px-3 text-sm font-semibold text-muted-foreground group-data-[collapsible=icon]:mx-2"
       onClick={onToggle}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {

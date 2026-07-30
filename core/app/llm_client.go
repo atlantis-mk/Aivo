@@ -65,6 +65,7 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 	chatMessages := normalizeChatMessages(chatRequest.Messages)
 	var lastErr error
 	for fallbackIndex, route := range routes {
+		route = applyChatRequestGenerationSettings(route, chatRequest)
 		routeChatRequest := chatRequest
 		routeChatRequest.Tools = s.toolsForModelRoute(ctx, cfg, route, chatRequest.Tools)
 		requirements := requestRequirements(routeChatRequest, reasoningEffort, onDelta)
@@ -96,6 +97,8 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 				return callBedrockConverse(ctx, route.Provider, route.Model, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
 			case TransportGitHubCopilot:
 				return callGitHubCopilot(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
+			case TransportExternalProcess:
+				return callExternalProcessProvider(ctx, route.Definition, route.Model, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta)
 			case TransportOpenAIChat, TransportOpenAICompatible:
 				return callOpenAICompatible(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
 			default:
@@ -115,6 +118,50 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 		lastErr = errors.New("provider request failed")
 	}
 	return domain.ChatResponse{}, nil, lastErr
+}
+
+func applyChatRequestGenerationSettings(route ResolvedModelRoute, request domain.ChatRequest) ResolvedModelRoute {
+	if request.Temperature == nil && request.TopP == nil && len(request.Options) == 0 {
+		return route
+	}
+	route.Provider.RequestParams = cloneAnyMap(route.Provider.RequestParams)
+	if route.Provider.RequestParams == nil {
+		route.Provider.RequestParams = map[string]any{}
+	}
+	mergeRequestParams(route.Provider.RequestParams, request.Options, true)
+	var temperature *float64
+	if request.Temperature != nil {
+		value := min(2, max(0, *request.Temperature))
+		temperature = &value
+	}
+	var topP *float64
+	if request.TopP != nil {
+		value := min(1, max(0, *request.TopP))
+		topP = &value
+	}
+	switch route.Transport {
+	case TransportGoogleGemini, TransportGoogleVertex:
+		generation, _ := route.Provider.RequestParams["generationConfig"].(map[string]any)
+		generation = cloneAnyMap(generation)
+		if generation == nil {
+			generation = map[string]any{}
+		}
+		if temperature != nil {
+			generation["temperature"] = *temperature
+		}
+		if topP != nil {
+			generation["topP"] = *topP
+		}
+		route.Provider.RequestParams["generationConfig"] = generation
+	default:
+		if temperature != nil {
+			route.Provider.RequestParams["temperature"] = *temperature
+		}
+		if topP != nil {
+			route.Provider.RequestParams["top_p"] = *topP
+		}
+	}
+	return route
 }
 
 type bedrockSigningConfig struct {

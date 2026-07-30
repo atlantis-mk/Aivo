@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import type { LoadConversationTurnsOptions } from "@/features/projects/project-conversation-turn-loader";
@@ -81,6 +81,10 @@ export function useProjectWorkspaceModelComposerController({
     catalog,
     config,
   });
+  const permissionModeRef = useRef(permissionMode);
+  useEffect(() => {
+    permissionModeRef.current = permissionMode;
+  }, [permissionMode]);
   const {
     addFiles: addComposerAttachmentFiles,
     attachments: composerAttachments,
@@ -108,6 +112,7 @@ export function useProjectWorkspaceModelComposerController({
     activeRunningSubagentRun,
     activeSessionId,
     activeSessionIdRef,
+    permissionModeRef,
     reasoningEffort,
     refreshAgentRuntimeState,
     serviceTier,
@@ -131,7 +136,7 @@ export function useProjectWorkspaceModelComposerController({
     loadConversationTurns,
     modelOptions,
     pendingStopRequestedRef,
-    permissionMode,
+    permissionModeRef,
     prompt,
     reasoningEffort,
     refreshPendingPermissionRequests,

@@ -157,26 +157,6 @@ func TestResponsesToolsGroupsNamespaceTools(t *testing.T) {
 	}
 }
 
-func TestResponsesToolsDoesNotUseReservedBrowserNamespace(t *testing.T) {
-	tools := responsesTools([]domain.ToolSpec{{
-		Name:        "browser_click",
-		Description: "Click browser",
-		InputSchema: map[string]any{"type": "object"},
-		Namespace:   "browser",
-		Category:    "browser",
-	}})
-
-	if len(tools) != 1 {
-		t.Fatalf("len(tools) = %d, want 1: %#v", len(tools), tools)
-	}
-	if tools[0]["type"] != "function" || tools[0]["name"] != "browser_click" {
-		t.Fatalf("browser tool = %#v, want standalone function", tools[0])
-	}
-	if _, ok := tools[0]["tools"]; ok {
-		t.Fatalf("browser tool = %#v, should not be namespace-wrapped", tools[0])
-	}
-}
-
 func TestResponsesToolsRendersFreeformCustomTool(t *testing.T) {
 	tools := responsesTools([]domain.ToolSpec{{
 		Name:        "apply_patch",

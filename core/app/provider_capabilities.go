@@ -61,6 +61,13 @@ func (s *Service) validateModelCapabilities(ctx context.Context, route ResolvedM
 	if model.Deprecated || strings.EqualFold(model.Status, "deprecated") {
 		return fmt.Errorf("model unavailable: %s/%s is deprecated", route.Model.ProviderID, route.Model.ModelID)
 	}
+	// Several OpenAI-compatible /models endpoints return only an id and name.
+	// Treat that shape as unknown capability metadata instead of interpreting
+	// every omitted capability as explicitly unsupported. The provider request
+	// remains the source of truth in that case.
+	if !modelCapabilityMetadataKnown(model) {
+		return nil
+	}
 	if req.Tools && !modelSupportsCapability(model, "tools") {
 		return fmt.Errorf("model capability unsupported: %s/%s does not support tools", route.Model.ProviderID, route.Model.ModelID)
 	}
@@ -71,6 +78,10 @@ func (s *Service) validateModelCapabilities(ctx context.Context, route ResolvedM
 		return fmt.Errorf("model capability unsupported: %s/%s does not support reasoning controls", route.Model.ProviderID, route.Model.ModelID)
 	}
 	return nil
+}
+
+func modelCapabilityMetadataKnown(model domain.ModelInfo) bool {
+	return len(model.Capabilities) > 0 || model.Streaming || model.ToolSupport || len(model.ReasoningControls) > 0
 }
 
 func (s *Service) modelInfoForRoute(ctx context.Context, route ResolvedModelRoute) (domain.ModelInfo, bool) {

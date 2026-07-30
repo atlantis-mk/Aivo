@@ -10,6 +10,7 @@ import { usePluginMcpSettingsCatalogState } from "@/features/projects/plugin-mcp
 import { usePluginMcpSettingsDerivedState } from "@/features/projects/plugin-mcp-settings-derived-state";
 import {
   deleteManagedSkill,
+  ignoreSkillCandidatesByName,
   importSkill,
   installPluginFromPath,
   probeMCPServer,
@@ -146,6 +147,19 @@ export function usePluginMcpSettingsState({
     }
   }
 
+  async function ignoreSkillCandidate(candidate: SkillImportCandidate) {
+    catalog.setLoading(true);
+    catalog.setError("");
+    try {
+      await ignoreSkillCandidatesByName(candidate.name);
+      await catalog.reload();
+    } catch (err) {
+      catalog.setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      catalog.setLoading(false);
+    }
+  }
+
   async function toggleSkillEnabled(skill: SkillEntry, enabled: boolean) {
     catalog.setLoading(true);
     catalog.setError("");
@@ -189,6 +203,7 @@ export function usePluginMcpSettingsState({
     applicationPlugins,
     deleteSkill,
     error: catalog.error,
+    ignoreSkillCandidate,
     importSkillCandidate,
     installPlugin,
     installPluginPath,

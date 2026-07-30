@@ -15,6 +15,20 @@ func (api *API) callProviderRPC(ctx context.Context, method string, args []json.
 	case "GetProviderCatalog":
 		result, err := api.service.Catalog(ctx)
 		return result, true, err
+	case "RefreshProviderEcosystemCatalog":
+		input, err := arg[domain.ProviderEcosystemRefreshInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.RefreshProviderEcosystemCatalog(ctx, input)
+		return result, true, err
+	case "GetProviderCatalogForProject":
+		projectPath, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.CatalogForProject(ctx, projectPath)
+		return result, true, err
 	case "ConnectProvider":
 		input, err := arg[domain.ProviderConnectInput](args, 0)
 		if err != nil {

@@ -28,6 +28,7 @@ type skillStore interface {
 	GetSkillImportCandidate(context.Context, string) (domain.SkillImportCandidate, error)
 	ListSkillImportCandidates(context.Context, bool) ([]domain.SkillImportCandidate, error)
 	MarkSkillImportCandidateStatus(context.Context, string, string, string, string) (domain.SkillImportCandidate, error)
+	MarkSkillImportCandidatesByNameStatus(context.Context, string, string, string) ([]domain.SkillImportCandidate, error)
 }
 
 type SkillManager struct {
@@ -78,18 +79,13 @@ func (m *SkillManager) List(ctx context.Context, input domain.SkillListInput) (d
 	if m == nil || m.store == nil {
 		return domain.SkillListResult{}, errors.New("skill store is not configured")
 	}
-	if strings.TrimSpace(input.WorkspaceRoot) != "" {
-		_, _ = m.ScanProject(ctx, input.WorkspaceRoot)
-	} else {
-		_, _ = m.ScanGlobal(ctx)
-	}
 	entries, err := m.store.ListSkills(ctx, input.IncludeDisabled)
 	if err != nil {
 		return domain.SkillListResult{}, err
 	}
 	result := domain.SkillListResult{Entries: entries}
 	if input.IncludeCandidates {
-		candidates, err := m.store.ListSkillImportCandidates(ctx, true)
+		candidates, err := m.store.ListSkillImportCandidates(ctx, input.IncludeIgnored)
 		if err != nil {
 			return domain.SkillListResult{}, err
 		}
@@ -105,6 +101,9 @@ func (m *SkillManager) Import(ctx context.Context, input domain.SkillImportInput
 	candidate, err := m.store.GetSkillImportCandidate(ctx, input.CandidateID)
 	if err != nil {
 		return domain.SkillEntry{}, err
+	}
+	if candidate.Status == domain.SkillCandidateStatusIgnored {
+		return domain.SkillEntry{}, errors.New("skill candidate is ignored")
 	}
 	scope := normalizeSkillScope(firstNonEmpty(input.TargetScope, candidate.Scope))
 	parsed, err := parseSkillDirectory(candidate.RootPath)
@@ -124,7 +123,7 @@ func (m *SkillManager) Import(ctx context.Context, input domain.SkillImportInput
 	}
 	existing, existingErr := m.store.GetSkillByName(ctx, managed.Name, scope)
 	if existingErr == nil && existing.ID != "" && existing.ContentHash != managed.ContentHash {
-		_, _ = m.store.MarkSkillImportCandidateStatus(ctx, candidate.ID, domain.SkillCandidateStatusConflict, existing.ID, "skill name already exists with different content")
+		_, _ = m.store.MarkSkillImportCandidateStatus(ctx, candidate.ID, domain.SkillCandidateStatusIgnored, existing.ID, "skill name already exists with different content")
 		return domain.SkillEntry{}, errors.New("skill name already exists with different content")
 	}
 	now := domain.NowString(time.Now())
@@ -148,6 +147,52 @@ func (m *SkillManager) Import(ctx context.Context, input domain.SkillImportInput
 	})
 	_, _ = m.store.MarkSkillImportCandidateStatus(ctx, candidate.ID, domain.SkillCandidateStatusImported, "", "")
 	return entry, nil
+}
+
+func (m *SkillManager) ImportByName(ctx context.Context, name string, scope string) (domain.SkillEntry, error) {
+	if m == nil || m.store == nil {
+		return domain.SkillEntry{}, errors.New("skill store is not configured")
+	}
+	name = normalizeSkillName(name)
+	if name == "" {
+		return domain.SkillEntry{}, errors.New("skill name is required")
+	}
+	resolvedScope := ""
+	if strings.TrimSpace(scope) != "" {
+		resolvedScope = normalizeSkillScope(scope)
+	}
+	if skill, err := m.store.GetSkillByName(ctx, name, resolvedScope); err == nil && skill.ID != "" {
+		return skill, nil
+	}
+	candidates, err := m.store.ListSkillImportCandidates(ctx, false)
+	if err != nil {
+		return domain.SkillEntry{}, err
+	}
+	var match domain.SkillImportCandidate
+	for _, candidate := range candidates {
+		if normalizeSkillName(candidate.Name) != name || candidate.Status != domain.SkillCandidateStatusPending {
+			continue
+		}
+		match = candidate
+		if resolvedScope == "" || candidate.Scope == resolvedScope {
+			break
+		}
+	}
+	if match.ID == "" {
+		return domain.SkillEntry{}, errors.New("skill is not imported and no pending candidate is available")
+	}
+	return m.Import(ctx, domain.SkillImportInput{CandidateID: match.ID, TargetScope: firstNonEmpty(resolvedScope, match.Scope)})
+}
+
+func (m *SkillManager) IgnoreCandidatesByName(ctx context.Context, input domain.SkillIgnoreCandidatesInput) ([]domain.SkillImportCandidate, error) {
+	if m == nil || m.store == nil {
+		return nil, errors.New("skill store is not configured")
+	}
+	name := normalizeSkillName(input.Name)
+	if name == "" {
+		return nil, errors.New("skill name is required")
+	}
+	return m.store.MarkSkillImportCandidatesByNameStatus(ctx, name, domain.SkillCandidateStatusIgnored, "")
 }
 
 func (m *SkillManager) SetEnabled(ctx context.Context, input domain.SkillEnabledInput) (domain.SkillEntry, error) {

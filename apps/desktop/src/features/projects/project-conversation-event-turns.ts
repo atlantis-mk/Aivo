@@ -72,6 +72,25 @@ export function turnsFromEvents(
     if (!current) continue;
     if (event.type === "error") {
       const completedAt = parseTime(event.timeCreated);
+      const runtimeTurn = event.turnId
+        ? runtimeTurnById.get(event.turnId)
+        : undefined;
+      if (runtimeTurn?.status === "cancelled") {
+        current = {
+          ...current,
+          stopped: true,
+          thinkingSeconds: Math.max(
+            0,
+            Math.floor(
+              (completedAt.getTime() - current.submittedAt.getTime()) / 1000,
+            ),
+          ),
+          turnId: event.turnId,
+        };
+        turns.push(current);
+        current = null;
+        continue;
+      }
       current = {
         ...current,
         activityVisible:

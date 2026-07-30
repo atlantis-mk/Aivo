@@ -6,7 +6,6 @@ import {
   GitCommitHorizontal,
   Globe,
   Laptop,
-  List,
   Plus,
   Terminal,
   Wrench,
@@ -20,7 +19,6 @@ export function EnvironmentSummaryPanel({
   className,
   onAddContext,
   onCommitOrPush,
-  onOpenSkills,
   onOpenTools,
   onSelectBranch,
   onSelectLocalEnvironment,
@@ -28,7 +26,6 @@ export function EnvironmentSummaryPanel({
   className?: string;
   onAddContext?: () => void;
   onCommitOrPush?: () => void;
-  onOpenSkills?: () => void;
   onOpenTools?: () => void;
   onSelectBranch?: () => void;
   onSelectLocalEnvironment?: () => void;
@@ -145,11 +142,6 @@ export function EnvironmentSummaryPanel({
               onClick={onCommitOrPush}
             />
             <EnvironmentSummaryRow icon={Wrench} label="工具" onClick={onOpenTools} />
-            <EnvironmentSummaryRow
-              icon={List}
-              label="技能"
-              onClick={onOpenSkills ?? onOpenTools}
-            />
             <EnvironmentSummaryRow
               disabled
               icon={Terminal}

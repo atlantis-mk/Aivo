@@ -86,6 +86,9 @@ func (s *Service) submitSessionMessage(
 	if err != nil {
 		return domain.PreparedSessionTurn{}, err
 	}
+	if _, err := s.maybeAutoCompactSessionContext(ctx, input.SessionID); err != nil {
+		return domain.PreparedSessionTurn{}, err
+	}
 	modeDef, err := s.resolveAgentModeForRequest(ctx, input.SessionID, input.AgentMode)
 	if err != nil {
 		return domain.PreparedSessionTurn{}, err

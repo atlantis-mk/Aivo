@@ -10,11 +10,13 @@ import (
 )
 
 func (s *Service) ResolveModelRoute(ctx context.Context, cfg domain.AppConfig, requestedModel *domain.ModelRef) (ResolvedModelRoute, error) {
+	registry := s.providerRegistryFromContext(ctx)
+	normalize := registry.Normalize
 	provider, modelRef := resolveActiveProvider(cfg)
 	if requestedModel != nil && strings.TrimSpace(requestedModel.ModelID) != "" {
-		requestedProviderID := s.normalizeProviderID(requestedModel.ProviderID)
-		if requestedProviderID != "" && requestedProviderID != s.normalizeProviderID(provider.ID) {
-			provider = s.providerConfigForModelRequest(cfg, requestedProviderID, strings.TrimSpace(requestedModel.ModelID))
+		requestedProviderID := normalize(requestedModel.ProviderID)
+		if requestedProviderID != "" && requestedProviderID != normalize(provider.ID) {
+			provider = providerConfigForModelRequestWithRegistry(cfg, registry, requestedProviderID, strings.TrimSpace(requestedModel.ModelID))
 			modelRef = domain.ModelRef{ProviderID: provider.ID, ModelID: provider.Model}
 		} else {
 			modelRef.ModelID = strings.TrimSpace(requestedModel.ModelID)
@@ -25,11 +27,11 @@ func (s *Service) ResolveModelRoute(ctx context.Context, cfg domain.AppConfig, r
 			provider.Model = modelRef.ModelID
 		}
 	}
-	provider.ID = s.normalizeProviderID(provider.ID)
+	provider.ID = normalize(provider.ID)
 	if provider.ID == "" {
 		return ResolvedModelRoute{}, errors.New("provider is not configured")
 	}
-	def := s.providerDefinitionForConfig(provider)
+	def := providerDefinitionForConfigWithRegistry(registry, provider)
 	provider.Type = firstNonEmpty(provider.Type, string(def.Transport))
 	if provider.BaseURL == "" {
 		provider.BaseURL = def.DefaultBaseURL
@@ -50,6 +52,40 @@ func (s *Service) ResolveModelRoute(ctx context.Context, cfg domain.AppConfig, r
 		return ResolvedModelRoute{}, err
 	}
 	return ResolvedModelRoute{Provider: provider, Model: modelRef, Definition: def, Transport: transport, BaseURL: provider.BaseURL, Credential: credential}, nil
+}
+
+func providerDefinitionForConfigWithRegistry(registry *ProviderRegistry, provider domain.ProviderConfig) ProviderDefinition {
+	if registry != nil {
+		if definition, ok := registry.Definition(provider.ID); ok {
+			return definition
+		}
+	}
+	return providerDefinitionForConfig(provider)
+}
+
+func providerConfigForModelRequestWithRegistry(cfg domain.AppConfig, registry *ProviderRegistry, providerID string, modelID string) domain.ProviderConfig {
+	normalize := registry.Normalize
+	if cfg.Provider != nil && normalize(cfg.Provider.ID) == normalize(providerID) {
+		provider := *cfg.Provider
+		provider.ID = normalize(provider.ID)
+		if provider.Type == "" {
+			if definition, ok := registry.Definition(provider.ID); ok {
+				provider.Type = string(definition.Transport)
+			} else {
+				provider.Type = string(inferTransport(provider.ID, "", provider.BaseURL))
+			}
+		}
+		provider.Model = modelID
+		return provider
+	}
+	if definition, ok := registry.Definition(providerID); ok {
+		apiKeyEnv := ""
+		if len(definition.APIKeyEnvVars) > 0 {
+			apiKeyEnv = definition.APIKeyEnvVars[0]
+		}
+		return domain.ProviderConfig{ID: definition.ID, Type: string(definition.Transport), BaseURL: definition.DefaultBaseURL, APIKeyEnv: apiKeyEnv, Model: modelID}
+	}
+	return domain.ProviderConfig{ID: normalize(providerID), Type: string(inferTransport(providerID, "", "")), BaseURL: defaultBaseURLFor(providerID), Model: modelID}
 }
 
 func inferTransport(providerID string, providerType string, baseURL string) TransportType {

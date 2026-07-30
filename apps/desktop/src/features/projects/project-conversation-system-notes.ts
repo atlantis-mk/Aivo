@@ -11,7 +11,8 @@ export function attachSystemNotesToTurns(
       (event.visibility && event.visibility !== "normal") ||
       event.type !== "system_note" ||
       !event.turnId ||
-      !event.content?.trim()
+      !event.content?.trim() ||
+      event.content.trim() === "User stopped generation"
     ) {
       continue;
     }

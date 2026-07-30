@@ -135,6 +135,7 @@ type ForkSessionRequest struct {
 	SessionID string `json:"sessionId"`
 	Title     string `json:"title,omitempty"`
 	Goal      string `json:"goal,omitempty"`
+	AtEventID string `json:"atEventId,omitempty"`
 }
 
 type ResumeSessionRequest struct {
@@ -143,10 +144,11 @@ type ResumeSessionRequest struct {
 }
 
 type BuildSessionContextRequest struct {
-	SessionID       string `json:"sessionId"`
-	CurrentInput    string `json:"currentInput,omitempty"`
-	MaxTokens       int    `json:"maxTokens,omitempty"`
-	CharacterBudget int    `json:"characterBudget,omitempty"`
+	SessionID       string   `json:"sessionId"`
+	CurrentInput    string   `json:"currentInput,omitempty"`
+	MaxTokens       int      `json:"maxTokens,omitempty"`
+	CharacterBudget int      `json:"characterBudget,omitempty"`
+	TargetPaths     []string `json:"targetPaths,omitempty"`
 }
 
 type RetrySessionTurnRequest struct {

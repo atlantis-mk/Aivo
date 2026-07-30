@@ -162,8 +162,11 @@ type Tool interface {
 }
 
 type ChatRequest struct {
-	Messages []ChatMessage `json:"messages"`
-	Tools    []ToolSpec    `json:"tools,omitempty"`
+	Messages    []ChatMessage  `json:"messages"`
+	Tools       []ToolSpec     `json:"tools,omitempty"`
+	Temperature *float64       `json:"temperature,omitempty"`
+	TopP        *float64       `json:"topP,omitempty"`
+	Options     map[string]any `json:"options,omitempty"`
 }
 
 type ChatResponse struct {

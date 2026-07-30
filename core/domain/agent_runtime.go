@@ -37,18 +37,26 @@ const (
 )
 
 type AgentModeDefinition struct {
-	ID                   string    `json:"id"`
-	DisplayName          string    `json:"displayName"`
-	Description          string    `json:"description"`
-	Prompt               string    `json:"prompt"`
-	Toolsets             []string  `json:"toolsets"`
-	DefaultPermissions   []string  `json:"defaultPermissions,omitempty"`
-	FileWriteAccess      bool      `json:"fileWriteAccess"`
-	CommandAccess        bool      `json:"commandAccess"`
-	NetworkAccess        bool      `json:"networkAccess"`
-	BackgroundTaskAccess bool      `json:"backgroundTaskAccess"`
-	Hidden               bool      `json:"hidden,omitempty"`
-	Model                *ModelRef `json:"model,omitempty"`
+	ID                   string         `json:"id"`
+	DisplayName          string         `json:"displayName"`
+	Description          string         `json:"description"`
+	Prompt               string         `json:"prompt"`
+	Toolsets             []string       `json:"toolsets"`
+	DefaultPermissions   []string       `json:"defaultPermissions,omitempty"`
+	FileWriteAccess      bool           `json:"fileWriteAccess"`
+	CommandAccess        bool           `json:"commandAccess"`
+	NetworkAccess        bool           `json:"networkAccess"`
+	BackgroundTaskAccess bool           `json:"backgroundTaskAccess"`
+	Hidden               bool           `json:"hidden,omitempty"`
+	Model                *ModelRef      `json:"model,omitempty"`
+	Temperature          *float64       `json:"temperature,omitempty"`
+	TopP                 *float64       `json:"topP,omitempty"`
+	MaxSteps             int            `json:"maxSteps,omitempty"`
+	PermissionScope      string         `json:"permissionScope,omitempty"`
+	Mode                 string         `json:"mode,omitempty"`
+	Variant              string         `json:"variant,omitempty"`
+	Options              map[string]any `json:"options,omitempty"`
+	Revision             string         `json:"revision,omitempty"`
 }
 
 type SetSessionAgentModeInput struct {
@@ -165,14 +173,31 @@ type ScheduledJobListInput struct {
 }
 
 func NormalizeAgentMode(value string) (string, error) {
-	switch strings.TrimSpace(value) {
+	normalized := strings.TrimSpace(value)
+	switch normalized {
 	case "", AgentModeAssistant:
 		return AgentModeAssistant, nil
 	case AgentModeCode, AgentModeBuild, AgentModeExplore, AgentModePlan, AgentModePlanner, AgentModeReview, AgentModeDebug, AgentModeSummary, AgentModeTitle, AgentModeSchedulerWorker:
-		return strings.TrimSpace(value), nil
+		return normalized, nil
 	default:
+		if validAgentModeIdentifier(normalized) {
+			return normalized, nil
+		}
 		return "", errors.New("invalid agent mode")
 	}
+}
+
+func validAgentModeIdentifier(value string) bool {
+	if value == "" || len(value) > 128 || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") || strings.Contains(value, "//") {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == '-' || char == '/' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func NormalizeAgentRunStatus(value string) (string, error) {

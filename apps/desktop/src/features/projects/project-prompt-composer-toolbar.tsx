@@ -27,6 +27,7 @@ type PromptComposerToolbarProps = Pick<
   | "pending"
   | "permissionMode"
   | "prompt"
+  | "projectPath"
   | "reasoningEffort"
   | "serviceTier"
   | "showServiceTier"
@@ -56,6 +57,7 @@ export function PromptComposerToolbar({
   pending,
   permissionMode,
   prompt,
+  projectPath,
   reasoningEffort,
   serviceTier,
   showServiceTier,
@@ -108,6 +110,7 @@ export function PromptComposerToolbar({
           onReasoningEffortSelect={onReasoningEffortSelect}
           reasoningEffort={reasoningEffort}
           onServiceTierSelect={onServiceTierSelect}
+          projectPath={projectPath}
           serviceTier={serviceTier}
           showServiceTier={showServiceTier}
         />

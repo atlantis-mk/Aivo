@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -18,89 +17,14 @@ type mcpServerCapabilities struct {
 }
 
 func probeMCPServer(ctx context.Context, server domain.MCPServerConfig) (mcpServerCapabilities, error) {
-	if server.Transport == "" {
-		server.Transport = domain.MCPTransportStdio
-	}
-	if server.Transport == domain.MCPTransportStreamableHTTP || server.Transport == domain.MCPTransportSSE {
-		client, err := newMCPHTTPClient(server)
-		if err != nil {
-			return mcpServerCapabilities{}, err
-		}
-		if _, err := client.call(ctx, "initialize", mcpInitializeParams(server)); err != nil {
-			return mcpServerCapabilities{}, err
-		}
-		result, _ := client.call(ctx, "tools/list", map[string]any{})
-		tools := parseMCPTools(server, result)
-		tools = refreshMCPHTTPToolsIfChanged(ctx, client, server, tools)
-		promptsResult, _ := client.call(ctx, "prompts/list", map[string]any{})
-		tools = refreshMCPHTTPToolsIfChanged(ctx, client, server, tools)
-		resourcesResult, _ := client.call(ctx, "resources/list", map[string]any{})
-		tools = refreshMCPHTTPToolsIfChanged(ctx, client, server, tools)
-		templatesResult, _ := client.call(ctx, "resources/templates/list", map[string]any{})
-		tools = refreshMCPHTTPToolsIfChanged(ctx, client, server, tools)
-		return mcpServerCapabilities{
-			Tools:             tools,
-			Prompts:           parseMCPPrompts(server, promptsResult),
-			Resources:         parseMCPResources(server, resourcesResult, false),
-			ResourceTemplates: parseMCPResources(server, templatesResult, true),
-		}, nil
-	}
-	if server.Transport != domain.MCPTransportStdio {
-		return mcpServerCapabilities{}, fmt.Errorf("unsupported mcp transport %s", server.Transport)
-	}
-	client, err := startMCPStdio(ctx, server)
+	connectCtx, cancel := withMCPTimeout(ctx, server, true)
+	defer cancel()
+	client, err := startMCPClient(connectCtx, server)
 	if err != nil {
 		return mcpServerCapabilities{}, err
 	}
 	defer client.close()
-	if _, err := client.call(ctx, "initialize", mcpInitializeParams(server)); err != nil {
-		return mcpServerCapabilities{}, err
-	}
-	result, _ := client.call(ctx, "tools/list", map[string]any{})
-	tools := parseMCPTools(server, result)
-	tools = refreshMCPToolsIfChanged(ctx, client, server, tools)
-	promptsResult, _ := client.call(ctx, "prompts/list", map[string]any{})
-	tools = refreshMCPToolsIfChanged(ctx, client, server, tools)
-	resourcesResult, _ := client.call(ctx, "resources/list", map[string]any{})
-	tools = refreshMCPToolsIfChanged(ctx, client, server, tools)
-	templatesResult, _ := client.call(ctx, "resources/templates/list", map[string]any{})
-	tools = refreshMCPToolsIfChanged(ctx, client, server, tools)
-	return mcpServerCapabilities{
-		Tools:             tools,
-		Prompts:           parseMCPPrompts(server, promptsResult),
-		Resources:         parseMCPResources(server, resourcesResult, false),
-		ResourceTemplates: parseMCPResources(server, templatesResult, true),
-	}, nil
-}
-
-func refreshMCPToolsIfChanged(ctx context.Context, client *mcpStdioClient, server domain.MCPServerConfig, current []domain.MCPToolRecord) []domain.MCPToolRecord {
-	if client == nil || !client.consumeToolsListChanged() {
-		return current
-	}
-	result, err := client.call(ctx, "tools/list", map[string]any{})
-	if err != nil {
-		return current
-	}
-	next := parseMCPTools(server, result)
-	if len(next) == 0 {
-		return current
-	}
-	return next
-}
-
-func refreshMCPHTTPToolsIfChanged(ctx context.Context, client *mcpHTTPClient, server domain.MCPServerConfig, current []domain.MCPToolRecord) []domain.MCPToolRecord {
-	if client == nil || !client.consumeToolsListChanged() {
-		return current
-	}
-	result, err := client.call(ctx, "tools/list", map[string]any{})
-	if err != nil {
-		return current
-	}
-	next := parseMCPTools(server, result)
-	if len(next) == 0 {
-		return current
-	}
-	return next
+	return discoverMCPCapabilitiesWithClient(ctx, server, client), nil
 }
 
 func parseMCPTools(server domain.MCPServerConfig, result map[string]any) []domain.MCPToolRecord {
@@ -200,29 +124,12 @@ func callMCPTool(ctx context.Context, server domain.MCPServerConfig, name string
 }
 
 func callMCPMethod(ctx context.Context, server domain.MCPServerConfig, method string, params map[string]any) (map[string]any, error) {
-	if server.Transport == "" {
-		server.Transport = domain.MCPTransportStdio
-	}
-	if server.Transport == domain.MCPTransportStreamableHTTP || server.Transport == domain.MCPTransportSSE {
-		client, err := newMCPHTTPClient(server)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := client.call(ctx, "initialize", mcpInitializeParams(server)); err != nil {
-			return nil, err
-		}
-		return client.call(ctx, method, params)
-	}
-	if server.Transport != domain.MCPTransportStdio {
-		return nil, fmt.Errorf("unsupported mcp transport %s", server.Transport)
-	}
-	client, err := startMCPStdio(ctx, server)
+	connectCtx, cancel := withMCPTimeout(ctx, server, true)
+	defer cancel()
+	client, err := startMCPClient(connectCtx, server)
 	if err != nil {
 		return nil, err
 	}
 	defer client.close()
-	if _, err := client.call(ctx, "initialize", mcpInitializeParams(server)); err != nil {
-		return nil, err
-	}
 	return client.call(ctx, method, params)
 }

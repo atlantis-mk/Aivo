@@ -128,13 +128,12 @@ export function ProjectWorkspaceChatContent({
         {shouldShowEnvironmentSummaryPanel ? (
           <ProjectEnvironmentSummaryAside
             canDockPinnedSummary={canDockPinnedSummary}
-            onOpenSkills={onOpenToolActivationDialog}
             onOpenTools={onOpenToolActivationDialog}
           />
         ) : null}
 
         {showConversationLayout && (
-          <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-5 h-10 bg-background" />
+          <div className="pointer-events-none absolute bottom-0 left-0 right-2.5 z-5 h-10 bg-background" />
         )}
 
         {hasPendingPermissionRequest && showConversationLayout ? (

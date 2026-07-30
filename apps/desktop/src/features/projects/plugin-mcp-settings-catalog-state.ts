@@ -36,7 +36,11 @@ export function usePluginMcpSettingsCatalogState({
       listPlugins(true),
       listMCPServers(true, true),
       listToolCatalog(workspaceRoot ?? ""),
-      listSkills({ includeCandidates: true, includeDisabled: true }),
+      listSkills({
+        includeCandidates: true,
+        includeDisabled: true,
+        includeIgnored: true,
+      }),
     ] as const);
 
     if (results[0].status === "fulfilled") {

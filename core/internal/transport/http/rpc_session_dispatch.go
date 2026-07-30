@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	coreapp "aivo/core/app"
 	"aivo/core/domain"
 )
 
@@ -58,6 +59,62 @@ func (api *API) callSessionRPC(ctx context.Context, method string, args []json.R
 		}
 		result, err := api.service.SubmitSessionMessageStreaming(ctx, input)
 		return result, true, err
+	case "ResolveAgentTerminalInput":
+		input, err := arg[coreapp.ResolveAgentTerminalInputRequest](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.ResolveAgentTerminalInput(ctx, input)
+		return result, true, err
+	case "ReleaseAgentTerminalInput":
+		input, err := arg[coreapp.ReleaseAgentTerminalInputRequest](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.ReleaseAgentTerminalInput(ctx, input)
+		return result, true, err
+	case "ListSessionTerminals":
+		workspaceRoot, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		sessionID, err := arg[string](args, 1)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.ListSessionTerminals(ctx, workspaceRoot, sessionID)
+		return result, true, err
+	case "TerminateSessionTerminals":
+		workspaceRoot, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		sessionID, err := arg[string](args, 1)
+		if err != nil {
+			return nil, true, err
+		}
+		return nil, true, api.service.TerminateSessionTerminals(ctx, workspaceRoot, sessionID)
+	case "UpdateSessionTerminal":
+		input, err := arg[coreapp.UpdateSessionTerminalRequest](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.UpdateSessionTerminal(ctx, input)
+		return result, true, err
+	case "RemoveSessionTerminal":
+		workspaceRoot, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		sessionID, err := arg[string](args, 1)
+		if err != nil {
+			return nil, true, err
+		}
+		processRef, err := arg[string](args, 2)
+		if err != nil {
+			return nil, true, err
+		}
+		return nil, true, api.service.RemoveSessionTerminal(ctx, workspaceRoot, sessionID, processRef)
 	case "GetSession":
 		id, err := arg[string](args, 0)
 		if err != nil {

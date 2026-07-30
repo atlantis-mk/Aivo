@@ -16,10 +16,10 @@ func TestMCPProbeHelperProcess(t *testing.T) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var request struct {
-			ID     string `json:"id"`
-			Method string `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || request.ID == "" {
+		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || len(request.ID) == 0 {
 			continue
 		}
 		writeMCPHelperResponse(request.ID, mcpHelperResult(request.Method))
@@ -36,11 +36,11 @@ func TestMCPRootsHelperProcess(t *testing.T) {
 		os.Exit(1)
 	}
 	var initRequest struct {
-		ID     string         `json:"id"`
-		Method string         `json:"method"`
-		Params map[string]any `json:"params"`
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params map[string]any  `json:"params"`
 	}
-	if err := json.Unmarshal(scanner.Bytes(), &initRequest); err != nil || initRequest.ID == "" || initRequest.Method != "initialize" {
+	if err := json.Unmarshal(scanner.Bytes(), &initRequest); err != nil || len(initRequest.ID) == 0 || initRequest.Method != "initialize" {
 		os.Exit(1)
 	}
 	rawRootRequest, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": "roots-request", "method": "roots/list"})
@@ -71,10 +71,10 @@ func TestMCPRootsHelperProcess(t *testing.T) {
 	writeMCPHelperResponse(initRequest.ID, mcpHelperResult("initialize"))
 	for scanner.Scan() {
 		var request struct {
-			ID     string `json:"id"`
-			Method string `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || request.ID == "" {
+		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || len(request.ID) == 0 {
 			continue
 		}
 		writeMCPHelperResponse(request.ID, mcpHelperResult(request.Method))
@@ -90,10 +90,10 @@ func TestMCPToolsChangedHelperProcess(t *testing.T) {
 	toolsListCalls := 0
 	for scanner.Scan() {
 		var request struct {
-			ID     string `json:"id"`
-			Method string `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || request.ID == "" {
+		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || len(request.ID) == 0 {
 			continue
 		}
 		switch request.Method {
@@ -123,10 +123,10 @@ func TestMCPLongLivedHelperProcess(t *testing.T) {
 	counter := 0
 	for scanner.Scan() {
 		var request struct {
-			ID     string `json:"id"`
-			Method string `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || request.ID == "" {
+		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || len(request.ID) == 0 {
 			continue
 		}
 		switch request.Method {
@@ -154,10 +154,10 @@ func TestMCPReconnectHelperProcess(t *testing.T) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var request struct {
-			ID     string `json:"id"`
-			Method string `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || request.ID == "" {
+		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil || len(request.ID) == 0 {
 			continue
 		}
 		switch request.Method {

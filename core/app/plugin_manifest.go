@@ -59,6 +59,12 @@ func LoadPluginManifest(path string) (string, string, domain.PluginManifest, err
 	if err := validatePluginManifestPaths(absRoot, manifest); err != nil {
 		return "", "", domain.PluginManifest{}, err
 	}
+	for id, provider := range manifest.Providers {
+		if provider.Command != "" && strings.Contains(provider.Command, string(os.PathSeparator)) && !filepath.IsAbs(provider.Command) {
+			provider.Command = filepath.Join(absRoot, provider.Command)
+			manifest.Providers[id] = provider
+		}
+	}
 	return absRoot, manifestPath, manifest, nil
 }
 
@@ -70,6 +76,11 @@ func validatePluginManifestPaths(root string, manifest domain.PluginManifest) er
 	}
 	if manifest.Entrypoint.CWD != "" && !pathWithin(root, filepath.Join(root, manifest.Entrypoint.CWD)) {
 		return errors.New("entrypoint cwd escapes plugin root")
+	}
+	for _, provider := range manifest.Providers {
+		if provider.Command != "" && strings.Contains(provider.Command, string(os.PathSeparator)) && !filepath.IsAbs(provider.Command) && !pathWithin(root, filepath.Join(root, provider.Command)) {
+			return errors.New("provider command escapes plugin root")
+		}
 	}
 	return nil
 }

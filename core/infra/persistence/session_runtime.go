@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 )
 
 func (s *Store) migrateSessionRuntime(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&turnRow{}, &sessionEventRow{}, &toolCallRow{}, &sessionExecutionStateRow{}, &pendingSessionInputRow{}, &permissionRequestRow{}, &questionRequestRow{}, &sessionSummaryRow{}, &sessionCheckpointRow{}, &codingContextRow{}, &agentRunRow{}, &todoItemRow{}, &scheduledJobRow{}, &pluginInstallRow{}, &pluginDiagnosticRow{}, &mcpServerRow{}, &mcpToolRow{}, &mcpPromptRow{}, &mcpResourceRow{}, &skillRow{}, &skillSourceRow{}, &skillImportCandidateRow{}, &toolRegistrationRow{}); err != nil {
+	if err := s.db.WithContext(ctx).AutoMigrate(&turnRow{}, &sessionEventRow{}, &toolCallRow{}, &sessionExecutionStateRow{}, &pendingSessionInputRow{}, &permissionRequestRow{}, &questionRequestRow{}, &sessionSummaryRow{}, &sessionCheckpointRow{}, &codingContextRow{}, &gitWorktreeRow{}, &agentRunRow{}, &todoItemRow{}, &scheduledJobRow{}, &pluginInstallRow{}, &pluginDiagnosticRow{}, &mcpServerRow{}, &mcpToolRow{}, &mcpPromptRow{}, &mcpResourceRow{}, &skillRow{}, &skillSourceRow{}, &skillImportCandidateRow{}, &toolRegistrationRow{}); err != nil {
 		return err
 	}
 	return nil
@@ -179,6 +180,24 @@ func (s *Store) SetRuntimeSessionAgentMode(ctx context.Context, id string, mode 
 		return domain.Session{}, err
 	}
 	return s.GetRuntimeSession(ctx, id)
+}
+
+func (s *Store) SetRuntimeSessionProject(ctx context.Context, sessionID string, projectPath string) (domain.Session, error) {
+	projectPath = normalizeStoredPath(projectPath)
+	if strings.TrimSpace(sessionID) == "" || projectPath == "" {
+		return domain.Session{}, errors.New("sessionId and project path are required")
+	}
+	projectID, err := s.projectIDForPath(ctx, projectPath)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	now := domain.NowString(time.Now())
+	if err := s.db.WithContext(ctx).Model(&sessionRow{}).Where("id = ?", sessionID).Updates(map[string]any{
+		"project_id": projectID, "time_updated": now,
+	}).Error; err != nil {
+		return domain.Session{}, err
+	}
+	return s.GetRuntimeSession(ctx, sessionID)
 }
 
 func normalizeStoredPath(path string) string {

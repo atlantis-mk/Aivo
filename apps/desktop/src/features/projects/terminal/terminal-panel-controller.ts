@@ -87,6 +87,7 @@ export function useTerminalPanelController({
   const cursorUpdatesRef = useRef<Record<string, number>>({});
   const cursorUpdateTimerRef = useRef<number | null>(null);
   const creatingTerminalRef = useRef(false);
+  const dismissedTerminalIdsRef = useRef<Set<string>>(new Set());
   const canOpenPanel = enabled;
   const canUseTerminal = canOpenPanel && terminalEnabled;
 
@@ -114,6 +115,7 @@ export function useTerminalPanelController({
     setCreatingTerminal(false);
     setError("");
     creatingTerminalRef.current = false;
+    dismissedTerminalIdsRef.current.clear();
   }, [loadWorkspaceState, setOpen, setState, workspaceRoot]);
 
   useEffect(() => {
@@ -151,7 +153,9 @@ export function useTerminalPanelController({
     try {
       const next = await listTerminals(workspaceRoot);
       const liveTerminals = next.filter(
-        (terminal) => terminal.status !== "removed",
+        (terminal) =>
+          terminal.status !== "removed" &&
+          !dismissedTerminalIdsRef.current.has(terminal.id),
       );
       setTerminals(liveTerminals);
       setTerminalsLoaded(true);
@@ -252,25 +256,30 @@ export function useTerminalPanelController({
   ]);
 
   async function closeTerminal(terminalId: string) {
-    try {
-      await removeTerminal(workspaceRoot, terminalId);
-    } catch (err) {
-      if (!isTerminalNotFoundError(err)) {
-        setError(err instanceof Error ? err.message : String(err));
-        return;
-      }
-    }
+    if (dismissedTerminalIdsRef.current.has(terminalId)) return;
+    dismissedTerminalIdsRef.current.add(terminalId);
+
+    // Closing a tab is an immediate UI action. Process termination continues
+    // in the background and may take up to the graceful shutdown timeout.
     setTerminals((current) =>
       current.filter((terminal) => terminal.id !== terminalId),
     );
     const remainingTabs = stateRef.current.tabs.filter(
       (tab) => tab.id !== terminalId,
     );
+    setState((current) => removeTerminalTab(current, terminalId));
+    setError("");
     if (remainingTabs.length === 0) {
       setOpen(false);
     }
-    setState((current) => removeTerminalTab(current, terminalId));
-    setError("");
+
+    try {
+      await removeTerminal(workspaceRoot, terminalId);
+    } catch (err) {
+      if (!isTerminalNotFoundError(err)) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
   }
 
   async function renameTerminal(terminal: TerminalInfo) {

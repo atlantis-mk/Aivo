@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -144,7 +143,7 @@ func TestAgentLoopStreamsTextAfterStreamedToolCall(t *testing.T) {
 	}
 }
 
-func TestAgentLoopPlainChatAndMaxSteps(t *testing.T) {
+func TestAgentLoopPlainChat(t *testing.T) {
 	t.Run("plain chat", func(t *testing.T) {
 		service, cleanup := newSessionTestService(t)
 		defer cleanup()
@@ -167,31 +166,6 @@ func TestAgentLoopPlainChatAndMaxSteps(t *testing.T) {
 		}
 		if run.AssistantEvent == nil || run.AssistantEvent.Content != "plain reply" {
 			t.Fatalf("run = %#v", run)
-		}
-	})
-	t.Run("max steps", func(t *testing.T) {
-		service, cleanup := newSessionTestService(t)
-		defer cleanup()
-		ctx := context.Background()
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_loop","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}}]}}]}`))
-		}))
-		defer server.Close()
-		if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
-			t.Fatal(err)
-		}
-		root := t.TempDir()
-		if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("loop"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: root})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "loop"})
-		if !errors.Is(err, ErrMaxStepsExceeded) {
-			t.Fatalf("err = %v, want ErrMaxStepsExceeded", err)
 		}
 	})
 }

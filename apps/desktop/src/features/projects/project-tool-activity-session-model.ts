@@ -2,8 +2,6 @@ import type { ToolActivityTab } from "@/features/projects/tool-activity-model";
 
 export type ToolActivitySessionState = {
   activeTabId: string;
-  browserInitialUrls: Record<string, string>;
-  browserTabIds: string[];
   closedItemIds: string[];
   isOpen: boolean;
   tabs: ToolActivityTab[];
@@ -11,30 +9,20 @@ export type ToolActivitySessionState = {
 
 export function buildToolActivitySessionState({
   activeTabId,
-  browserInitialUrls,
-  browserTabIds,
   closedItemIds,
   isOpen,
   tabs,
 }: {
   activeTabId: string;
-  browserInitialUrls: Record<string, string>;
-  browserTabIds: string[];
   closedItemIds: Set<string>;
   isOpen: boolean;
   tabs: ToolActivityTab[];
 }): ToolActivitySessionState {
   const visibleTabs = visibleToolActivityTabs(tabs, closedItemIds);
   return {
-    activeTabId: resolveActiveToolActivityTabId({
-      activeTabId,
-      browserTabIds,
-      tabs: visibleTabs,
-    }),
-    browserInitialUrls,
-    browserTabIds,
+    activeTabId: resolveActiveToolActivityTabId({ activeTabId, tabs: visibleTabs }),
     closedItemIds: [...closedItemIds],
-    isOpen: isOpen && (visibleTabs.length > 0 || browserTabIds.length > 0),
+    isOpen: isOpen && visibleTabs.length > 0,
     tabs: visibleTabs,
   };
 }
@@ -48,25 +36,20 @@ export function visibleToolActivityTabs(
 
 export function resolveActiveToolActivityTabId({
   activeTabId,
-  browserTabIds,
   tabs,
 }: {
   activeTabId: string;
-  browserTabIds: string[];
   tabs: ToolActivityTab[];
 }) {
-  return tabs.some((tab) => tab.id === activeTabId) ||
-    browserTabIds.includes(activeTabId)
+  return tabs.some((tab) => tab.id === activeTabId)
     ? activeTabId
-    : browserTabIds.at(-1) || tabs.at(-1)?.id || "";
+    : tabs.at(-1)?.id || "";
 }
 
 export function closeToolActivityTabState({
-  browserTabIds,
   tabId,
   tabs,
 }: {
-  browserTabIds: string[];
   tabId: string;
   tabs: ToolActivityTab[];
 }) {
@@ -75,11 +58,9 @@ export function closeToolActivityTabState({
   return {
     closedKeys: closedTab ? toolActivityCloseKeys(closedTab) : [],
     nextActiveTabId: (currentId: string) =>
-      currentId === tabId
-        ? browserTabIds.at(-1) || nextTabs.at(-1)?.id || ""
-        : currentId,
+      currentId === tabId ? nextTabs.at(-1)?.id || "" : currentId,
     nextTabs,
-    shouldCloseSidebar: nextTabs.length === 0 && browserTabIds.length === 0,
+    shouldCloseSidebar: nextTabs.length === 0,
   };
 }
 

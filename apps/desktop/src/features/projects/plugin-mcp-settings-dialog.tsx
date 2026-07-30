@@ -65,6 +65,7 @@ export function PluginMcpSettingsContent({
     applicationPlugins,
     deleteSkill,
     error,
+    ignoreSkillCandidate,
     importSkillCandidate,
     installPlugin,
     installPluginPath,
@@ -149,6 +150,7 @@ export function PluginMcpSettingsContent({
         <PluginMcpSettingsTabPanels
           loading={loading}
           onDeleteSkill={deleteSkill}
+          onIgnoreSkillCandidate={ignoreSkillCandidate}
           onImportSkillCandidate={importSkillCandidate}
           onInstallPlugin={installPlugin}
           onPluginPathChange={setPluginPath}

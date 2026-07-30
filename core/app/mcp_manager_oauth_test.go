@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,9 +52,6 @@ func TestMCPOAuthDiscoveryFindsResourceAndAuthorizationMetadata(t *testing.T) {
 	ctx := context.Background()
 	var httpServer *httptest.Server
 	httpServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("MCP-Protocol-Version") == "" {
-			t.Fatalf("missing MCP-Protocol-Version header")
-		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/.well-known/oauth-protected-resource/mcp":
@@ -107,6 +106,11 @@ func TestMCPOAuthDiscoveryFindsResourceAndAuthorizationMetadata(t *testing.T) {
 }
 
 func TestMCPOAuthBrowserFlowStoresTokenAndUsesItForHTTPMCP(t *testing.T) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", mcpOAuthPort))
+	if err != nil {
+		t.Skipf("OAuth callback port is already in use: %v", err)
+	}
+	_ = listener.Close()
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	secrets := NewMemorySecretStore()
@@ -152,17 +156,29 @@ func TestMCPOAuthBrowserFlowStoresTokenAndUsesItForHTTPMCP(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "mcp-access-token", "refresh_token": "mcp-refresh-token", "expires_in": 3600, "token_type": "Bearer"})
 		case "/mcp":
+			if r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			if got := r.Header.Get("Authorization"); got != "Bearer mcp-access-token" {
 				t.Fatalf("authorization = %q, want saved OAuth access token", got)
 			}
 			var request struct {
-				ID     string `json:"id"`
-				Method string `json:"method"`
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": mcpHelperResult(request.Method)})
+			if len(request.ID) == 0 {
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(request.ID), "result": mcpHelperResult(request.Method)})
 		default:
 			http.NotFound(w, r)
 		}
@@ -252,17 +268,29 @@ func TestMCPOAuthRefreshesExpiredTokenBeforeHTTPMCPCall(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "new-access-token", "expires_in": 3600, "token_type": "Bearer"})
 		case "/mcp":
+			if r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if r.Method == http.MethodDelete {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			if got := r.Header.Get("Authorization"); got != "Bearer new-access-token" {
 				t.Fatalf("authorization = %q, want refreshed OAuth access token", got)
 			}
 			var request struct {
-				ID     string `json:"id"`
-				Method string `json:"method"`
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": mcpHelperResult(request.Method)})
+			if len(request.ID) == 0 {
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(request.ID), "result": mcpHelperResult(request.Method)})
 		default:
 			http.NotFound(w, r)
 		}

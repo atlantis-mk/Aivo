@@ -47,22 +47,19 @@ export function ProjectComposerDropOverlay({
 
 export function ProjectEnvironmentSummaryAside({
   canDockPinnedSummary,
-  onOpenSkills,
   onOpenTools,
 }: {
   canDockPinnedSummary: boolean;
-  onOpenSkills: () => void;
   onOpenTools: () => void;
 }) {
   return (
     <aside
       className={cn(
-        "absolute right-4 top-9 hidden min-[1050px]:block sm:right-6",
-        canDockPinnedSummary ? "z-10" : "z-20",
+        "absolute right-4 top-9 z-20 sm:right-6",
+        canDockPinnedSummary && "z-10",
       )}
     >
       <EnvironmentSummaryPanel
-        onOpenSkills={onOpenSkills}
         onOpenTools={onOpenTools}
       />
     </aside>

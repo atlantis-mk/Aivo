@@ -62,6 +62,8 @@ type ProviderDefinition struct {
 	BuiltIn         bool
 	Experimental    bool
 	Deprecated      bool
+	Command         string
+	Args            []string
 }
 
 type ProviderRegistry struct {
@@ -259,6 +261,7 @@ func cloneProviderDefinition(def ProviderDefinition) ProviderDefinition {
 	def.AuthTypes = append([]AuthType(nil), def.AuthTypes...)
 	def.APIKeyEnvVars = append([]string(nil), def.APIKeyEnvVars...)
 	def.Models = append([]domain.ModelInfo(nil), def.Models...)
+	def.Args = append([]string(nil), def.Args...)
 	def.RequestProfile = cloneRequestProfile(def.RequestProfile)
 	return def
 }
@@ -269,6 +272,8 @@ func providerDefinition(providerID string) (ProviderDefinition, bool) {
 
 func (s *Service) normalizeProviderID(providerID string) string {
 	if s != nil && s.providers != nil {
+		s.providersMu.RLock()
+		defer s.providersMu.RUnlock()
 		return s.providers.Normalize(providerID)
 	}
 	return normalizeProviderID(providerID)
@@ -276,6 +281,8 @@ func (s *Service) normalizeProviderID(providerID string) string {
 
 func (s *Service) providerDefinitions() []ProviderDefinition {
 	if s != nil && s.providers != nil {
+		s.providersMu.RLock()
+		defer s.providersMu.RUnlock()
 		return s.providers.Definitions()
 	}
 	return providerDefinitions()
@@ -283,6 +290,8 @@ func (s *Service) providerDefinitions() []ProviderDefinition {
 
 func (s *Service) providerDefinition(providerID string) (ProviderDefinition, bool) {
 	if s != nil && s.providers != nil {
+		s.providersMu.RLock()
+		defer s.providersMu.RUnlock()
 		return s.providers.Definition(providerID)
 	}
 	return providerDefinition(providerID)

@@ -96,11 +96,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, args json.RawMessage, execCt
 		if truncated {
 			content += fmt.Sprintf("\n\n[truncated: call read_file again with offset %d to continue]", next)
 		}
+		modelContent := withNestedProjectInstructions(content, toolWorkspaceRoot(t.workspaceRoot, execCtx), path)
 		return domain.ToolResult{
 			Name:         "read_file",
 			OK:           true,
 			Content:      content,
-			ModelContent: content,
+			ModelContent: modelContent,
 			Structured:   map[string]any{"snapshot": snapshot},
 		}
 	}
@@ -115,13 +116,22 @@ func (t *ReadFileTool) Execute(ctx context.Context, args json.RawMessage, execCt
 	if truncated {
 		content += fmt.Sprintf("\n\n[truncated: file exceeded %d characters]", readFileMaxChars)
 	}
+	modelContent := withNestedProjectInstructions(content, toolWorkspaceRoot(t.workspaceRoot, execCtx), path)
 	return domain.ToolResult{
 		Name:         "read_file",
 		OK:           true,
 		Content:      content,
-		ModelContent: content,
+		ModelContent: modelContent,
 		Structured:   map[string]any{"snapshot": snapshot},
 	}
+}
+
+func withNestedProjectInstructions(content, workspaceRoot, targetPath string) string {
+	instructions := nestedProjectInstructionsForTarget(workspaceRoot, targetPath)
+	if instructions == "" {
+		return content
+	}
+	return content + "\n\n<project_instructions_for_file>\n" + instructions + "\n</project_instructions_for_file>"
 }
 
 type ListFilesTool struct {
@@ -135,7 +145,7 @@ func NewListFilesTool(workspaceRoot string) *ListFilesTool {
 func (t *ListFilesTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "list_files",
-		Description:          "List entries in one workspace directory. Use this to inspect project structure when you do not yet know which file to read. Do not use this when you already know the target file; use read_file. For filename/path pattern matching use glob, and for content search use search_files. The optional path must be relative to the workspace root. Heavy generated directories such as .git, node_modules, vendor, dist, build, .next, and target are ignored, and workspace .gitignore rules are respected.",
+		Description:          "List entries in one workspace directory. Use this to inspect project structure when you do not yet know which file to read. Do not use this when you already know the target file; use read_file. For filename/path pattern matching use glob, and for content search use search_files. The optional path must be relative to the workspace root. Hidden files and directories whose names start with . are skipped unless includeHidden is true. Heavy generated directories such as .git, node_modules, vendor, dist, build, .next, and target are ignored, and workspace .gitignore rules are respected.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.list",
@@ -146,7 +156,8 @@ func (t *ListFilesTool) Spec() domain.ToolSpec {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path": map[string]any{"type": "string", "description": "Optional directory path relative to the workspace root. Defaults to the workspace root. Must point to a directory, not a file."},
+				"path":          map[string]any{"type": "string", "description": "Optional directory path relative to the workspace root. Defaults to the workspace root. Must point to a directory, not a file."},
+				"includeHidden": map[string]any{"type": "boolean", "description": "Include files and directories whose names start with . Defaults to false. Generated directories such as .git are still ignored."},
 			},
 		},
 	}
@@ -154,7 +165,8 @@ func (t *ListFilesTool) Spec() domain.ToolSpec {
 
 func (t *ListFilesTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	var input struct {
-		Path string `json:"path"`
+		Path          string `json:"path"`
+		IncludeHidden *bool  `json:"includeHidden"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &input); err != nil {
@@ -175,6 +187,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, args json.RawMessage, execC
 	}
 	var files []string
 	truncated := false
+	includeHidden := input.IncludeHidden != nil && *input.IncludeHidden
 	ignore := loadWorkspaceIgnore(ctx, workspaceRoot)
 	err = filepath.WalkDir(path, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -184,6 +197,12 @@ func (t *ListFilesTool) Execute(ctx context.Context, args json.RawMessage, execC
 			return err
 		}
 		if shouldSkipWorkspaceEntry(workspaceRoot, current, entry, ignore) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !includeHidden && shouldSkipHiddenListEntry(workspaceRoot, current, entry) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -215,6 +234,14 @@ func (t *ListFilesTool) Execute(ctx context.Context, args json.RawMessage, execC
 		content += fmt.Sprintf("\n\n[truncated: showing first %d files]", listFilesMaxResults)
 	}
 	return domain.ToolResult{Name: "list_files", OK: true, Content: content}
+}
+
+func shouldSkipHiddenListEntry(workspaceRoot string, current string, entry os.DirEntry) bool {
+	if current == workspaceRoot {
+		return false
+	}
+	name := strings.TrimSpace(entry.Name())
+	return strings.HasPrefix(name, ".") && name != "." && name != ".."
 }
 
 type GlobTool struct {

@@ -17,35 +17,6 @@ func isDeferredToolActivated(spec domain.ToolSpec, activated map[string]bool) bo
 	if activated[name] {
 		return true
 	}
-	if isBrowserToolSpec(spec) && activatedHasBrowserToolGroup(activated) {
-		return true
-	}
-	return false
-}
-
-const deferredBrowserToolGroupKey = "toolset:browser"
-
-func activatedHasBrowserToolGroup(activated map[string]bool) bool {
-	if activated[deferredBrowserToolGroupKey] || activated["browser"] {
-		return true
-	}
-	for name, ok := range activated {
-		if ok && strings.HasPrefix(strings.TrimSpace(name), "browser_") {
-			return true
-		}
-	}
-	return false
-}
-
-func isBrowserToolSpec(spec domain.ToolSpec) bool {
-	if spec.Category == "browser" || strings.HasPrefix(strings.TrimSpace(spec.Name), "browser_") {
-		return true
-	}
-	for _, toolset := range spec.Toolsets {
-		if strings.TrimSpace(toolset) == "browser" {
-			return true
-		}
-	}
 	return false
 }
 
@@ -59,9 +30,6 @@ func deferredToolNameUsedByCall(registry *Registry, call domain.ChatToolCall, re
 			continue
 		}
 		if isRegisteredDeferrableTool(registry, name) {
-			if strings.HasPrefix(name, "browser_") {
-				return deferredBrowserToolGroupKey
-			}
 			return name
 		}
 	}

@@ -5,24 +5,16 @@ import type {
 } from "@/features/projects/tool-activity-model";
 import { commandEntries as commandTabEntries } from "@/features/projects/tool-activity-command-entry-model";
 
-export const BUILTIN_BROWSER_TAB_ID = "builtin-browser";
-
 export type ToolActivitySidebarProps = {
   activeTabId?: string;
-  browserInitialUrls?: Record<string, string>;
-  browserReadyTokens?: Record<string, number>;
-  browserTabIds?: string[];
-  browserVisible?: boolean;
   tabs: ToolActivityTab[];
+  workspaceRoot: string;
   onActiveTabChange: (tabId: string) => void;
   onApplyFileState?: (
     tab: ToolActivityFileTab,
     targetState: "before" | "after",
   ) => void;
-  onBrowserReady?: (tabId: string) => void;
-  onCloseBrowser?: (tabId?: string) => void;
   onCloseTab: (tabId: string) => void;
-  onOpenBrowser?: (targetUrl?: string) => void;
 };
 
 export function commandEntries(tab: ToolActivityCommandTab) {

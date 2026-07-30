@@ -184,6 +184,54 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 			prepared.metadata["justification"] = input.Justification
 		}
 		return prepared.detect.Paths, prepared.metadata, nil
+	case ExecCommandToolName:
+		input, err := parseExecCommandArgs(args)
+		if err != nil {
+			return nil, nil, err
+		}
+		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, ExecCommandToolName, input.Command, input.CWD, 0, input.Network, "pty", "", input.Env)
+		if err != nil {
+			return prepared.detect.Paths, prepared.metadata, err
+		}
+		prepared.metadata["interactive"] = true
+		prepared.metadata["yieldTimeMs"] = input.YieldTimeMS
+		if input.Justification != "" {
+			prepared.metadata["justification"] = input.Justification
+		}
+		return prepared.detect.Paths, prepared.metadata, nil
+	case WriteStdinToolName:
+		input, err := parseWriteStdinArgs(args)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := defaultAgentPTYRegistry.ValidateOwner(execCtx.WorkspaceRoot, execCtx.SessionID, input.ProcessRef); err != nil {
+			return nil, nil, err
+		}
+		capabilities := []string{"shell.interactive.observe"}
+		category := CommandCategoryRead
+		riskLevel := CommandRiskLow
+		hasInput := input.Chars != "" || input.PressEnter
+		if hasInput {
+			capabilities = append(capabilities, "shell.stdin")
+			category = CommandCategoryUnknown
+			riskLevel = CommandRiskHigh
+		}
+		if input.Rows > 0 && input.Cols > 0 {
+			capabilities = append(capabilities, "shell.resize")
+		}
+		if input.Terminate {
+			capabilities = append(capabilities, "shell.terminate")
+			category = CommandCategoryDangerous
+			riskLevel = CommandRiskHigh
+		}
+		approvalKey := commandApprovalKey(execCtx.WorkspaceRoot, execCtx.WorkspaceRoot, input.ProcessRef, []string{input.ProcessRef}, WriteStdinToolName, "local", "pty", "deny", category, riskLevel, capabilities)
+		return nil, map[string]any{
+			"approvalKey": approvalKey, "processRef": input.ProcessRef, "interactive": true,
+			"stdinPresent": hasInput, "terminate": input.Terminate,
+			"resize": input.Rows > 0 && input.Cols > 0, "capabilities": capabilities,
+			"category": category, "riskLevel": riskLevel, "networkPolicy": "deny",
+			"policyDecision": CommandDecisionAllow,
+		}, nil
 	case "run_tests":
 		input, err := parseRunTestsArgs(args)
 		if err != nil {

@@ -39,6 +39,15 @@ export function normalizeShellOutputPayload(
     chunk: typeof payload?.chunk === "string" ? payload.chunk : "",
     sequence:
       typeof payload?.sequence === "number" ? payload.sequence : undefined,
+    cursor: typeof payload?.cursor === "number" ? payload.cursor : undefined,
+    status:
+      payload?.status === "running" || payload?.status === "waiting_input" || payload?.status === "exited"
+        ? payload.status
+        : undefined,
+    truncated:
+      typeof payload?.truncated === "boolean"
+        ? payload.truncated
+        : undefined,
     timeCreated:
       typeof payload?.timeCreated === "string" ? payload.timeCreated : "",
   };

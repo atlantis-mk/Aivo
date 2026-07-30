@@ -13,6 +13,7 @@ import {
   archiveSession,
   listRecentProjects,
   listSessions,
+  scanProjectSkills,
   selectProjectDirectory,
   setProjectSidebarHidden,
   upsertProject,
@@ -93,6 +94,11 @@ export function useProjectSidebarActions({
     }
   }, [setRecentProjects]);
 
+  function scanProjectInBackground(projectPath: string) {
+    if (!hasAppBridge() || !projectPath) return;
+    void scanProjectSkills(projectPath).catch(() => undefined);
+  }
+
   function startNewConversation({
     preservePrompt = false,
   }: { preservePrompt?: boolean } = {}) {
@@ -118,6 +124,7 @@ export function useProjectSidebarActions({
       startNewConversation({ preservePrompt: true });
     }
     setSelectedProjectPath(project.rootPath);
+    scanProjectInBackground(project.rootPath);
   }
 
   function clearComposerProject() {
@@ -142,6 +149,7 @@ export function useProjectSidebarActions({
         startNewConversation({ preservePrompt: true });
       }
       setSelectedProjectPath(rootPath);
+      scanProjectInBackground(rootPath);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "选择项目失败");
     }
@@ -169,6 +177,7 @@ export function useProjectSidebarActions({
     activeSessionIdRef.current = session.id;
     setActiveSessionId(session.id);
     restoreToolActivitySessionState(session.id);
+    scanProjectInBackground(session.projectPath || "");
 
     try {
       if (shouldAnimateFromEmpty) {
@@ -215,6 +224,7 @@ export function useProjectSidebarActions({
     if (!projectPath) return;
     startNewConversation();
     setSelectedProjectPath(projectPath);
+    scanProjectInBackground(projectPath);
   }
 
   async function hideSidebarProject(projectPath: string) {

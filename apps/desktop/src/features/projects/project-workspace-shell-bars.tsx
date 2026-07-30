@@ -60,20 +60,22 @@ export function ProjectWorkspaceTopBar({
 
 export function ProjectWorkspaceMainTopBar({
   activeProjectPage,
-  canToggleEnvironmentSummaryPanel,
   conversationTitle,
   hasConversation,
   isPinnedSummaryOpen,
   isRightSidebarOpen,
   onTogglePinnedSummary,
+  repositoryPath,
+  sessionId,
 }: {
   activeProjectPage: ProjectWorkspacePage;
-  canToggleEnvironmentSummaryPanel: boolean;
   conversationTitle: string;
   hasConversation: boolean;
   isPinnedSummaryOpen: boolean;
   isRightSidebarOpen: boolean;
   onTogglePinnedSummary: () => void;
+  repositoryPath?: string;
+  sessionId?: string;
 }) {
   const { pageIcon, pageTitle } =
     getProjectWorkspacePageHeader(activeProjectPage);
@@ -86,9 +88,10 @@ export function ProjectWorkspaceMainTopBar({
       onToggleLayoutPanel={onTogglePinnedSummary}
       pageIcon={pageIcon}
       pageTitle={pageTitle}
+      repositoryPath={repositoryPath}
       rightOpen={activeProjectPage === "chat" && isRightSidebarOpen}
-      showLayoutButton={canToggleEnvironmentSummaryPanel}
       showTerminalButton={activeProjectPage === "chat"}
+      sessionId={sessionId}
     />
   );
 }

@@ -17,6 +17,11 @@ func (s *Service) appConfig(ctx context.Context) (domain.AppConfig, error) {
 	cfg.Persistence.JournalEnabled = true
 	cfg.Persistence.DualWriteValidation = true
 	cfg.ProviderPolicy = normalizeProviderRuntimePolicy(cfg.ProviderPolicy)
+	runtime := loadEffectiveRuntimeConfig("")
+	cfg.Runtime = runtime.Config
+	if len(runtime.Sources) > 0 {
+		cfg.ConfigPath = runtime.Sources[len(runtime.Sources)-1].Path
+	}
 	if cfg.Persistence.ReadPath == "" {
 		cfg.Persistence.ReadPath = "sqlite"
 	}

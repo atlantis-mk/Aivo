@@ -100,7 +100,8 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 	for _, tool := range newAgentRuntimeTools(s) {
 		_ = registry.Register(tool)
 	}
-	_ = registry.Register(NewSkillLoadTool(s))
+	_ = registry.Register(NewProjectSearchTool(s))
+	_ = registry.Register(NewSkillLoadTool(s, s.resolveSkillsWithAuxiliaryModel))
 	if s.pluginManager == nil {
 		s.pluginManager = NewPluginManager(s.store)
 	}

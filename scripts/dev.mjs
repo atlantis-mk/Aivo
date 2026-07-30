@@ -82,10 +82,6 @@ try {
 
 const core = start('go', ['run', './cmd/aivo-core'], {
   cwd: `${rootDir}/core`,
-  env: {
-    ...process.env,
-    AIVO_BROWSER_BRIDGE_URL: 'http://127.0.0.1:43118',
-  },
 })
 
 try {

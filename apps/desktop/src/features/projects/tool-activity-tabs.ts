@@ -12,6 +12,8 @@ export function toolActivityTabsFromToolCall(
     case "apply_patch":
       return writeFileTabs(toolCall);
     case "bash":
+    case "exec_command":
+    case "write_stdin":
     case "run_tests":
     case "git_status":
     case "git_diff":

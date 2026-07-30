@@ -9,6 +9,26 @@ export function getProviderCatalog() {
   return invoke<domain.CatalogState>("GetProviderCatalog");
 }
 
+export function getProviderCatalogForProject(projectPath: string) {
+  return invoke<domain.CatalogState>("GetProviderCatalogForProject", projectPath);
+}
+
+export type ProviderEcosystemRefreshResult = {
+  source: string;
+  cachePath: string;
+  refreshedAt: string;
+  providerCount: number;
+  modelCount: number;
+  unsupportedCount?: number;
+};
+
+export function refreshProviderEcosystemCatalog(url?: string) {
+  return invoke<ProviderEcosystemRefreshResult>(
+    "RefreshProviderEcosystemCatalog",
+    { url },
+  );
+}
+
 export function connectProvider(input: domain.ProviderConnectInput) {
   return invoke<domain.CatalogState>("ConnectProvider", input);
 }

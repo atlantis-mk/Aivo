@@ -31,7 +31,11 @@ func (w *shellOutputWriter) Write(p []byte) (int, error) {
 }
 
 func (e *shellOutputEmitter) emit(stream string, chunk string) {
-	if e == nil || e.request.OutputSink == nil || chunk == "" {
+	e.emitWithCursor(stream, chunk, 0, "", false)
+}
+
+func (e *shellOutputEmitter) emitWithCursor(stream string, chunk string, cursor int64, status string, truncated bool) {
+	if e == nil || e.request.OutputSink == nil || (chunk == "" && status == "") {
 		return
 	}
 	e.mu.Lock()
@@ -46,6 +50,9 @@ func (e *shellOutputEmitter) emit(stream string, chunk string) {
 		Stream:      stream,
 		Chunk:       redactCommandOutput(chunk),
 		Sequence:    sequence,
+		Cursor:      cursor,
+		Status:      status,
+		Truncated:   truncated,
 		TimeCreated: domain.NowString(time.Now()),
 	})
 }

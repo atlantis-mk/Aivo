@@ -295,7 +295,7 @@ func TestHardlineCommandDeniedBeforeApproval(t *testing.T) {
 	}
 }
 
-func TestFullAccessAllowsKnownReadBashButStillAsksForUnknownBash(t *testing.T) {
+func TestFullAccessAllowsArbitrarySafeBash(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -312,11 +312,9 @@ func TestFullAccessAllowsKnownReadBashButStillAsksForUnknownBash(t *testing.T) {
 	if !readResult.OK || readResult.PermissionRequested {
 		t.Fatalf("readResult = %#v, want full-access known read command allowed", readResult)
 	}
-	approvalCtx, cancel := context.WithTimeout(ctx, 30*time.Millisecond)
-	defer cancel()
-	unknownResult := runtime.ExecuteWithContext(approvalCtx, domain.ChatToolCall{ID: "call_echo", Name: "bash", Arguments: json.RawMessage(`{"command":"echo hi"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "call_echo"})
-	if unknownResult.OK || !unknownResult.PermissionRequested {
-		t.Fatalf("unknownResult = %#v, want arbitrary bash to still ask", unknownResult)
+	unknownResult := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_echo", Name: "bash", Arguments: json.RawMessage(`{"command":"echo hi"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "call_echo"})
+	if !unknownResult.OK || unknownResult.PermissionRequested {
+		t.Fatalf("unknownResult = %#v, want full access to allow arbitrary safe bash", unknownResult)
 	}
 }
 

@@ -11,7 +11,31 @@ type terminalTicket struct {
 	Token         string
 	WorkspaceRoot string
 	TerminalID    string
+	SessionID     string
 	ExpiresAt     time.Time
+}
+
+func (s *terminalTicketStore) createAgent(workspaceRoot, sessionID, processRef string) (terminalTicket, error) {
+	ticket, err := s.create(workspaceRoot, processRef)
+	if err != nil {
+		return terminalTicket{}, err
+	}
+	ticket.SessionID = sessionID
+	s.mu.Lock()
+	s.tickets[ticket.Token] = ticket
+	s.mu.Unlock()
+	return ticket, nil
+}
+
+func (s *terminalTicketStore) consumeAgent(token, workspaceRoot, sessionID, processRef string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ticket, ok := s.tickets[token]
+	if !ok {
+		return false
+	}
+	delete(s.tickets, token)
+	return time.Now().Before(ticket.ExpiresAt) && ticket.WorkspaceRoot == workspaceRoot && ticket.SessionID == sessionID && ticket.TerminalID == processRef
 }
 
 type terminalTicketStore struct {

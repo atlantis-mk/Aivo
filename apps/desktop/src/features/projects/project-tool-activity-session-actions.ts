@@ -35,14 +35,10 @@ import type { domain } from "../../../bridge/go/models";
 export function useProjectToolActivitySessionActions({
   activeSessionIdRef,
   activeToolActivityTabIdRef,
-  builtinBrowserInitialUrlsRef,
-  builtinBrowserTabIdsRef,
   closedToolActivityItemIdsRef,
   isRightSidebarOpenRef,
   loadConversationTurns,
   setActiveToolActivityTabId,
-  setBuiltinBrowserInitialUrls,
-  setBuiltinBrowserTabIds,
   setRightSidebarOpen,
   setToolActivityTabs,
   toolActivitySessionStatesRef,
@@ -50,8 +46,6 @@ export function useProjectToolActivitySessionActions({
 }: {
   activeSessionIdRef: { current: string };
   activeToolActivityTabIdRef: { current: string };
-  builtinBrowserInitialUrlsRef: { current: Record<string, string> };
-  builtinBrowserTabIdsRef: { current: string[] };
   closedToolActivityItemIdsRef: { current: Set<string> };
   isRightSidebarOpenRef: { current: boolean };
   loadConversationTurns: (
@@ -59,10 +53,6 @@ export function useProjectToolActivitySessionActions({
     options?: LoadConversationTurnsOptions,
   ) => Promise<void>;
   setActiveToolActivityTabId: Dispatch<SetStateAction<string>>;
-  setBuiltinBrowserInitialUrls: Dispatch<
-    SetStateAction<Record<string, string>>
-  >;
-  setBuiltinBrowserTabIds: Dispatch<SetStateAction<string[]>>;
   setRightSidebarOpen: Dispatch<SetStateAction<boolean>>;
   setToolActivityTabs: Dispatch<SetStateAction<ToolActivityTab[]>>;
   toolActivitySessionStatesRef: {
@@ -78,8 +68,6 @@ export function useProjectToolActivitySessionActions({
       sessionId,
       buildToolActivitySessionState({
         activeTabId: activeToolActivityTabIdRef.current,
-        browserInitialUrls: builtinBrowserInitialUrlsRef.current,
-        browserTabIds: builtinBrowserTabIdsRef.current,
         closedItemIds: closedToolActivityItemIdsRef.current,
         isOpen: isRightSidebarOpenRef.current,
         tabs: toolActivityTabsRef.current,
@@ -89,18 +77,14 @@ export function useProjectToolActivitySessionActions({
 
   function restoreToolActivitySessionState(sessionId: string) {
     const savedState = toolActivitySessionStatesRef.current.get(sessionId);
-    const tabs = savedState?.tabs ?? [];
-    const browserTabIds = savedState?.browserTabIds ?? [];
+    const tabs = upsertToolActivityTabs([], savedState?.tabs ?? []);
     closedToolActivityItemIdsRef.current = new Set(
       savedState?.closedItemIds ?? [],
     );
     setToolActivityTabs(tabs);
-    setBuiltinBrowserInitialUrls(savedState?.browserInitialUrls ?? {});
-    setBuiltinBrowserTabIds(browserTabIds);
     setActiveToolActivityTabId(
       resolveActiveToolActivityTabId({
         activeTabId: savedState?.activeTabId || "",
-        browserTabIds,
         tabs,
       }),
     );
@@ -108,7 +92,7 @@ export function useProjectToolActivitySessionActions({
       Boolean(
         SHOULD_AUTO_OPEN_TOOL_ACTIVITY_SIDEBAR &&
           savedState?.isOpen &&
-          (tabs.length > 0 || browserTabIds.length > 0),
+          tabs.length > 0,
       ),
     );
   }
@@ -167,15 +151,10 @@ export function useProjectToolActivitySessionActions({
     setActiveToolActivityTabId((currentId) =>
       resolveActiveToolActivityTabId({
         activeTabId: currentId,
-        browserTabIds: builtinBrowserTabIdsRef.current,
         tabs,
       }),
     );
-    setRightSidebarOpen(
-      (current) =>
-        current &&
-        (tabs.length > 0 || builtinBrowserTabIdsRef.current.length > 0),
-    );
+    setRightSidebarOpen((current) => current && tabs.length > 0);
   }
 
   async function applyToolActivityFileState(
@@ -239,7 +218,6 @@ export function useProjectToolActivitySessionActions({
     (tabId: string) => {
       setToolActivityTabs((currentTabs) => {
         const nextState = closeToolActivityTabState({
-          browserTabIds: builtinBrowserTabIdsRef.current,
           tabId,
           tabs: currentTabs,
         });
@@ -256,7 +234,6 @@ export function useProjectToolActivitySessionActions({
       });
     },
     [
-      builtinBrowserTabIdsRef,
       closedToolActivityItemIdsRef,
       setActiveToolActivityTabId,
       setRightSidebarOpen,

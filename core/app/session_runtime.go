@@ -9,6 +9,16 @@ import (
 )
 
 func (s *Service) CreateRuntimeSession(ctx context.Context, input domain.CreateSessionRequest) (domain.Session, error) {
+	if input.Type == domain.SessionTypeCoding && strings.TrimSpace(input.AgentMode) == "" {
+		runtime := loadEffectiveRuntimeConfig(input.ProjectPath).Config
+		if strings.TrimSpace(runtime.DefaultAgent) != "" {
+			definition, err := NewAgentCatalogWithRuntime(runtime).Get(runtime.DefaultAgent)
+			if err != nil || definition.Hidden || definition.Mode == "subagent" {
+				return domain.Session{}, errors.New("configured defaultAgent is unavailable as a primary agent")
+			}
+			input.AgentMode = definition.ID
+		}
+	}
 	needsManagedWorkspace := input.Type == domain.SessionTypeCoding && strings.TrimSpace(input.ProjectPath) == ""
 	session, err := s.store.CreateRuntimeSession(ctx, input)
 	if err != nil {
@@ -69,7 +79,11 @@ func (s *Service) DeleteRuntimeSession(ctx context.Context, id string) (domain.S
 	if strings.TrimSpace(id) == "" {
 		return domain.Session{}, errors.New("sessionId is required")
 	}
-	return s.store.SetRuntimeSessionStatus(ctx, id, domain.SessionStatusDeleted)
+	deleted, err := s.store.SetRuntimeSessionStatus(ctx, id, domain.SessionStatusDeleted)
+	if err == nil {
+		defaultAgentPTYRegistry.CleanupSession(strings.TrimSpace(id))
+	}
+	return deleted, err
 }
 
 func (s *Service) ContinueLastSession(ctx context.Context) (*domain.ResumeRecap, error) {

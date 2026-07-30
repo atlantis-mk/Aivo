@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,8 +62,8 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := contextSectionsText(result.Sections)
-	if !strings.Contains(joined, "<available_skills>") || !strings.Contains(joined, "<name>code-review</name>") {
-		t.Fatalf("context missing available skill guidance: %q", joined)
+	if strings.Contains(joined, "<available_skills>") || strings.Contains(joined, "skill_guidance") {
+		t.Fatalf("context should not expose the available skill catalog: %q", joined)
 	}
 	if !strings.Contains(joined, `<skill_content name="code-review"`) || !strings.Contains(joined, "# Skill: code-review") || !strings.Contains(joined, "Use this skill to review code.") {
 		t.Fatalf("context missing loaded skill: %q", joined)
@@ -70,10 +71,10 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 	if strings.Contains(joined, "---\nname: code-review") {
 		t.Fatalf("context should not include skill frontmatter: %q", joined)
 	}
-	if !strings.Contains(joined, "Base directory for this skill: "+filepath.Join(home, ".aivo", "skills", "code-review")) {
+	if !strings.Contains(joined, "Skill directory: "+filepath.Join(home, ".aivo", "skills", "code-review")) {
 		t.Fatalf("context missing OpenCode skill base directory line: %q", joined)
 	}
-	if !strings.Contains(joined, "<skill_files>") || !strings.Contains(joined, "<file>"+filepath.Join(home, ".aivo", "skills", "code-review", "reference.md")+"</file>") {
+	if !strings.Contains(joined, "<skill_resources>") || !strings.Contains(joined, "<file>reference.md</file>") {
 		t.Fatalf("context missing sampled skill files: %q", joined)
 	}
 	registry, _ := service.toolsForWorkspace(session.ProjectPath)
@@ -88,7 +89,35 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 	}
 }
 
-func TestSkillScanDetectsSameNameConflict(t *testing.T) {
+func TestSkillListDoesNotScanImplicitly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "list-skill"), "list-skill", "List test", "Use this skill.")
+
+	before, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true, IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Entries) != 0 || len(before.Candidates) != 0 {
+		t.Fatalf("list before scan = %+v, want empty", before)
+	}
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	after, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true, IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Candidates) != 1 || after.Candidates[0].Name != "list-skill" {
+		t.Fatalf("list after scan = %+v, want scanned candidate", after)
+	}
+}
+
+func TestSkillScanIgnoresSameNameContentConflicts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -104,17 +133,250 @@ func TestSkillScanDetectsSameNameConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if scan.Conflicts != 1 {
-		t.Fatalf("conflicts = %d, want 1; scan=%+v", scan.Conflicts, scan)
+	if scan.Conflicts != 0 {
+		t.Fatalf("conflicts = %d, want 0; scan=%+v", scan.Conflicts, scan)
 	}
-	var conflict domain.SkillImportCandidate
+	var ignored domain.SkillImportCandidate
 	for _, candidate := range scan.Candidates {
-		if candidate.Status == domain.SkillCandidateStatusConflict {
-			conflict = candidate
+		if candidate.Status == domain.SkillCandidateStatusIgnored {
+			ignored = candidate
 		}
 	}
-	if conflict.ID == "" || conflict.ConflictID == "" {
-		t.Fatalf("missing conflict candidate: %+v", scan.Candidates)
+	if ignored.ID == "" || ignored.ConflictID == "" {
+		t.Fatalf("missing ignored conflict candidate: %+v", scan.Candidates)
+	}
+}
+
+func TestSkillIgnoreByNamePersistsAcrossIncrementalScans(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "ignore-me"), "ignore-me", "Ignore Claude", "Claude content.")
+	writeSkill(t, filepath.Join(home, ".agents", "skills", "ignore-me"), "ignore-me", "Ignore Agents", "Agents content.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.IgnoreSkillCandidatesByName(ctx, domain.SkillIgnoreCandidatesInput{Name: "ignore-me"}); err != nil {
+		t.Fatal(err)
+	}
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scan.Candidates) != 2 {
+		t.Fatalf("scan candidates = %+v, want 2", scan.Candidates)
+	}
+	for _, candidate := range scan.Candidates {
+		if candidate.Status != domain.SkillCandidateStatusIgnored {
+			t.Fatalf("candidate = %+v, want ignored", candidate)
+		}
+	}
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Candidates) != 0 {
+		t.Fatalf("non-ignored candidate list = %+v, want empty", list.Candidates)
+	}
+	withIgnored, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true, IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withIgnored.Candidates) != 2 {
+		t.Fatalf("ignored candidate list = %+v, want 2", withIgnored.Candidates)
+	}
+}
+
+func TestSkillToolOnlyListsAndLoadsImportedSkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "tool-skill"), "tool-skill", "Tool import", "Loaded by tool.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := NewSkillLoadTool(service)
+	listed := tool.Execute(ctx, json.RawMessage(`{"mode":"list"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-list"})
+	if !listed.OK || strings.Contains(listed.ModelContent, "tool-skill") {
+		t.Fatalf("list result = %+v, pending skill must not be visible to the model", listed)
+	}
+	blockedPending := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-pending"})
+	if !blockedPending.OK || !strings.Contains(blockedPending.Content, "no_match") {
+		t.Fatalf("pending load result = %+v, pending skill must not be loadable by the model", blockedPending)
+	}
+	candidates, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true})
+	if err != nil || len(candidates.Candidates) != 1 {
+		t.Fatalf("candidates = %+v, err = %v", candidates, err)
+	}
+	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidates.Candidates[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	listed = tool.Execute(ctx, json.RawMessage(`{"mode":"list"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-list-imported"})
+	if !listed.OK || !strings.Contains(listed.ModelContent, "<name>tool-skill</name>") || strings.Contains(listed.ModelContent, "Loaded by tool.") {
+		t.Fatalf("list result = %+v, want imported catalog metadata without skill body", listed)
+	}
+	load := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-call-1"})
+	if !load.OK || !strings.Contains(load.ModelContent, "Loaded by tool.") {
+		t.Fatalf("load result = %+v, want imported and loaded", load)
+	}
+	duplicate := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-call-duplicate"})
+	if !duplicate.OK || !strings.Contains(duplicate.ModelContent, "already_active") || strings.Contains(duplicate.ModelContent, "Loaded by tool.") {
+		t.Fatalf("duplicate activation = %+v, want deduplicated activation without reinjection", duplicate)
+	}
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true, IncludeDisabled: true, IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Entries) != 1 || list.Entries[0].Name != "tool-skill" {
+		t.Fatalf("entries = %+v, want imported tool-skill", list.Entries)
+	}
+	if len(list.Candidates) != 1 || list.Candidates[0].Status != domain.SkillCandidateStatusImported {
+		t.Fatalf("candidates = %+v, want imported candidate", list.Candidates)
+	}
+	if _, err := service.SetSkillEnabled(ctx, domain.SkillEnabledInput{SkillID: list.Entries[0].ID, Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	nextSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: nextSession.ID, ToolCallID: "skill-call-3"})
+	if !blocked.OK || !strings.Contains(blocked.Content, "no_match") {
+		t.Fatalf("blocked load = %+v, want disabled skill omitted from the resolvable catalog", blocked)
+	}
+	if _, err := service.SetSkillEnabled(ctx, domain.SkillEnabledInput{SkillID: list.Entries[0].ID, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: nextSession.ID, ToolCallID: "skill-call-5"})
+	if !reloaded.OK {
+		t.Fatalf("reload result = %+v, want ok", reloaded)
+	}
+}
+
+func TestSkillToolDoesNotImportIgnoredCandidate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "ignored-tool"), "ignored-tool", "Ignored tool", "Should not load.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.IgnoreSkillCandidatesByName(ctx, domain.SkillIgnoreCandidatesInput{Name: "ignored-tool"}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := NewSkillLoadTool(service).Execute(ctx, json.RawMessage(`{"mode":"activate","names":["ignored-tool"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-call-ignored"})
+	if !result.OK || !strings.Contains(result.Content, "no_match") {
+		t.Fatalf("result = %+v, want ignored candidate omitted from the resolvable catalog", result)
+	}
+}
+
+func TestSkillToolResolvesWithAuxiliarySelector(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "pdf-workflow"), "pdf-workflow", "Create and inspect PDF documents", "Follow the PDF workflow.")
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "code-review"), "code-review", "Review source code", "Follow the code review workflow.")
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range scan.Candidates {
+		if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidate.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	resolver := func(_ context.Context, request SkillResolveRequest) (SkillResolveDecision, error) {
+		called = true
+		if request.Intent != "create a PDF report" || len(request.Candidates) != 2 {
+			t.Fatalf("resolve request = %+v", request)
+		}
+		return SkillResolveDecision{Names: []string{"pdf-workflow", "invented-skill"}, Reason: "PDF workflow matched"}, nil
+	}
+	result := NewSkillLoadTool(service, resolver).Execute(ctx, json.RawMessage(`{"mode":"discover","intent":"create a PDF report"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-discover"})
+	if !called || !result.OK || !strings.Contains(result.ModelContent, "<name>pdf-workflow</name>") || strings.Contains(result.ModelContent, "Follow the PDF workflow.") || strings.Contains(result.ModelContent, "invented-skill") {
+		t.Fatalf("discover result = %+v", result)
+	}
+	active, err := service.GetSessionActiveSkills(ctx, session.ID)
+	if err != nil || len(active.Skills) != 0 {
+		t.Fatalf("discovery must not activate skills: %+v, err = %v", active, err)
+	}
+	activated := NewSkillLoadTool(service, resolver).Execute(ctx, json.RawMessage(`{"mode":"activate","names":["pdf-workflow"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-activate"})
+	if !activated.OK || !strings.Contains(activated.ModelContent, "Follow the PDF workflow.") {
+		t.Fatalf("activate result = %+v", activated)
+	}
+	active, err = service.GetSessionActiveSkills(ctx, session.ID)
+	if err != nil || len(active.Skills) != 1 || active.Skills[0].Name != "pdf-workflow" {
+		t.Fatalf("active skills = %+v, err = %v", active, err)
+	}
+}
+
+func TestSkillScanDiscoversCodexSkillsAsCandidates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "codex-review"), "codex-review", "Review with Codex conventions", "Follow Codex conventions.")
+
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scan.Scanned != 1 || len(scan.Candidates) != 1 {
+		t.Fatalf("scan = %+v, want one Codex candidate", scan)
+	}
+	candidate := scan.Candidates[0]
+	if candidate.Source != domain.SkillSourceCodex || candidate.Scope != domain.SkillScopeGlobal || candidate.Status != domain.SkillCandidateStatusPending {
+		t.Fatalf("candidate = %+v, want pending global Codex candidate", candidate)
+	}
+}
+
+func TestSkillScanDiscoversProjectCodexSkillsAsCandidates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	workspaceRoot := t.TempDir()
+
+	writeSkill(t, filepath.Join(workspaceRoot, ".codex", "skills", "project-codex"), "project-codex", "Project Codex workflow", "Follow project Codex workflow.")
+
+	scan, err := service.ScanProjectSkills(ctx, domain.SkillScanInput{WorkspaceRoot: workspaceRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scan.Scanned != 1 || len(scan.Candidates) != 1 {
+		t.Fatalf("scan = %+v, want one project Codex candidate", scan)
+	}
+	candidate := scan.Candidates[0]
+	if candidate.Source != domain.SkillSourceCodex || candidate.Scope != domain.SkillScopeProject || candidate.Status != domain.SkillCandidateStatusPending {
+		t.Fatalf("candidate = %+v, want pending project Codex candidate", candidate)
 	}
 }
 
@@ -128,6 +390,23 @@ func TestParseSkillRejectsInvalidFrontmatter(t *testing.T) {
 	}
 	if _, err := parseSkillDirectory(root); err == nil {
 		t.Fatal("parseSkillDirectory should reject missing frontmatter")
+	}
+}
+
+func TestParseSkillMarkdownFoldedDescription(t *testing.T) {
+	raw := "---\nname: folded-description\ndescription: >\n  Turn an idea into a goal package.\n  Build a reviewed execution plan.\nmetadata: test\n---\n\n# Instructions\n"
+	name, description, metadata, _, err := parseSkillMarkdown(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "folded-description" {
+		t.Fatalf("name = %q", name)
+	}
+	if description != "Turn an idea into a goal package. Build a reviewed execution plan." {
+		t.Fatalf("description = %q", description)
+	}
+	if metadata["metadata"] != "test" {
+		t.Fatalf("metadata = %+v", metadata)
 	}
 }
 

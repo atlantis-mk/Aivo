@@ -110,6 +110,7 @@ export function PromptComposer({
           pending={pending}
           permissionMode={permissionMode}
           prompt={prompt}
+          projectPath={projectPath}
           reasoningEffort={reasoningEffort}
           serviceTier={serviceTier}
           showServiceTier={showServiceTier}

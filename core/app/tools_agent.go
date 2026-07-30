@@ -109,7 +109,7 @@ func (s *Service) agentListModesToolNamed(ctx context.Context, args json.RawMess
 		IncludeHidden bool `json:"includeHidden"`
 	}
 	_ = json.Unmarshal(args, &input)
-	modes, err := s.ListAgentModes(ctx, input.IncludeHidden)
+	modes, err := s.ListAgentModesForProject(ctx, execCtx.WorkspaceRoot, input.IncludeHidden)
 	return structuredToolResult(toolName, modes, err)
 }
 
@@ -162,6 +162,21 @@ func (s *Service) delegateTaskToolNamed(ctx context.Context, args json.RawMessag
 	parent, err := s.store.GetRuntimeSession(ctx, execCtx.SessionID)
 	if err != nil {
 		return errorToolResult(toolName, err)
+	}
+	modeDefinition, err := NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(parent.ProjectPath).Config).Get(mode)
+	if err != nil {
+		return errorToolResult(toolName, err)
+	}
+	if modeDefinition.Mode == "primary" || modeDefinition.ID == domain.AgentModeSummary || modeDefinition.ID == domain.AgentModeTitle || modeDefinition.ID == domain.AgentModeSchedulerWorker {
+		return errorToolResult(toolName, errors.New("agent is not available for delegated tasks"))
+	}
+	// Built-in agents deliberately describe the full production toolset. Tests and
+	// reduced embeddings may expose only a subset, so availability validation is
+	// reserved for user-defined agents whose contract must be checked strictly.
+	if modeDefinition.Revision != "" {
+		if err := s.validateAgentToolsets(parent.ProjectPath, modeDefinition); err != nil {
+			return errorToolResult(toolName, err)
+		}
 	}
 	child, err := s.store.ForkRuntimeSession(ctx, parent, domain.ForkSessionRequest{Title: firstNonEmpty(strings.TrimSpace(input.Title), "Subagent: "+bounded(prompt, 48)), Goal: prompt})
 	if err != nil {
@@ -243,7 +258,11 @@ func (s *Service) validateDelegateLimits(ctx context.Context, sessionID string) 
 	if err != nil {
 		return err
 	}
-	if len(runs) >= 3 {
+	limit := loadEffectiveRuntimeConfig(session.ProjectPath).Config.MaxParallelChildren
+	if limit <= 0 {
+		limit = 4
+	}
+	if len(runs) >= limit {
 		return errors.New("agent_delegate_task concurrent child limit exceeded")
 	}
 	return nil

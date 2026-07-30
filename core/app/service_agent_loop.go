@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 
 	"aivo/core/domain"
 )
@@ -30,18 +32,12 @@ func (s *Service) runAssistantAgentLoop(
 		}
 	}
 	registry, runtime := s.toolsForWorkspace(strings.TrimSpace(cc.ProjectPath))
+	ctx = withProviderRegistry(ctx, s.providerRegistryForProject(strings.TrimSpace(cc.ProjectPath)))
 	allowedToolsets := allowedToolsetsForRun(modeDef, input)
 	requestedModel := s.modelForAgentMode(ctx, modeDef, input.Model)
-	messages := append([]domain.ChatMessage(nil), history...)
-	modePrompt := "Agent mode: " + modeDef.DisplayName + "\n\n" + modeDef.Prompt
-	modePrompt += "\n\nIf a task matches an available skill, call the skill tool to load that skill before continuing. If current tools cannot perform a required action, call tool_resolve with a concise, specific missing capability. Do not use it for convenience, exploration, planning, or guessing tool names. If no allowed tool matches, stop with a local no_available_tool error."
-	if len(messages) > 0 && messages[0].Role == domain.EventRoleSystem {
-		messages[0].Text = messages[0].Text + "\n\n" + modePrompt
-	} else {
-		messages = append([]domain.ChatMessage{{Role: domain.EventRoleSystem, Text: modePrompt}}, messages...)
-	}
+	messages := prependAgentSystemPrompt(history, modeDef)
 	var model *domain.ModelRef
-	for step := 0; step < defaultAgentMaxSteps; step++ {
+	for {
 		var specs []domain.ToolSpec
 		expectedRegistrations := map[string]domain.ToolRegistrationIdentity{}
 		if registry != nil {
@@ -53,7 +49,7 @@ func (s *Service) runAssistantAgentLoop(
 		if s.pluginManager != nil {
 			_ = s.pluginManager.InvokeHook(ctx, "pre_llm_call", map[string]any{"sessionId": input.SessionID, "turnId": turn.ID, "toolCount": len(specs), "messageCount": len(messages), "agentMode": modeDef.ID})
 		}
-		resp, activeModel, err := s.GenerateChatResponseStreamWithToolDelta(ctx, domain.ChatRequest{Messages: messages, Tools: specs}, requestedModel, reasoningEffort, serviceTier, onDelta, func(call domain.ChatToolCall) {
+		resp, activeModel, err := s.GenerateChatResponseStreamWithToolDelta(ctx, domain.ChatRequest{Messages: messages, Tools: specs, Temperature: modeDef.Temperature, TopP: modeDef.TopP, Options: modeDef.Options}, requestedModel, reasoningEffort, serviceTier, onDelta, func(call domain.ChatToolCall) {
 			s.emitApplyPatchDraft(input.SessionID, turn.ID, strings.TrimSpace(cc.ProjectPath), call)
 		})
 		if s.pluginManager != nil {
@@ -88,6 +84,26 @@ func (s *Service) runAssistantAgentLoop(
 			Content:    bounded(resp.Text, 1000),
 			Payload:    map[string]any{"toolCalls": toolCallsPayload(resp.ToolCalls)},
 		})
+		if isParallelDelegateBatch(resp.ToolCalls) && runtime != nil {
+			for _, call := range resp.ToolCalls {
+				_ = s.recordToolCallStarted(ctx, input.SessionID, turn.ID, call)
+			}
+			limit := loadEffectiveRuntimeConfig(strings.TrimSpace(cc.ProjectPath)).Config.MaxParallelChildren
+			results := executeBoundedParallelToolCalls(ctx, resp.ToolCalls, limit, func(call domain.ChatToolCall) domain.ToolResult {
+				return runtime.ExecuteWithContext(ctx, call, domain.ToolExecutionContext{
+					WorkspaceRoot: strings.TrimSpace(cc.ProjectPath), SessionID: input.SessionID, TurnID: turn.ID,
+					AgentMode: modeDef.ID, AllowedToolsets: allowedToolsets,
+					PermissionScope:       firstNonEmpty(input.PermissionScope, permissionScopeForAgent(modeDef)),
+					ExpectedRegistrations: expectedRegistrations,
+				})
+			})
+			for index, call := range resp.ToolCalls {
+				result := results[index]
+				_ = s.recordToolResult(ctx, input.SessionID, turn.ID, call, result)
+				messages = append(messages, domain.ChatMessage{Role: "tool", Text: encodeToolResultForModel(result), ToolCallID: call.ID, Name: call.Name})
+			}
+			continue
+		}
 		for _, call := range resp.ToolCalls {
 			_ = s.recordToolCallStarted(ctx, input.SessionID, turn.ID, call)
 			var result domain.ToolResult
@@ -100,7 +116,7 @@ func (s *Service) runAssistantAgentLoop(
 					TurnID:                turn.ID,
 					AgentMode:             modeDef.ID,
 					AllowedToolsets:       allowedToolsets,
-					PermissionScope:       firstNonEmpty(input.PermissionScope, defaultPermissionScopeForMode(modeDef.ID)),
+					PermissionScope:       firstNonEmpty(input.PermissionScope, permissionScopeForAgent(modeDef)),
 					ExpectedRegistrations: expectedRegistrations,
 				})
 			}
@@ -112,9 +128,69 @@ func (s *Service) runAssistantAgentLoop(
 				return "", model, errors.New(result.ToolError.Message)
 			}
 			messages = append(messages, domain.ChatMessage{Role: "tool", Text: encodeToolResultForModel(result), ToolCallID: call.ID, Name: call.Name})
+			if call.Name == "search_projects" && result.OK && projectSearchActivates(call.Arguments) {
+				cc, _ = s.store.GetCodingContext(ctx, input.SessionID)
+				registry, runtime = s.toolsForWorkspace(strings.TrimSpace(cc.ProjectPath))
+				ctx = withProviderRegistry(ctx, s.providerRegistryForProject(strings.TrimSpace(cc.ProjectPath)))
+			}
 		}
 	}
-	return "", model, ErrMaxStepsExceeded
+}
+
+func projectSearchActivates(arguments []byte) bool {
+	var input struct {
+		ActivateProjectPath string `json:"activateProjectPath"`
+	}
+	return json.Unmarshal(arguments, &input) == nil && strings.TrimSpace(input.ActivateProjectPath) != ""
+}
+
+func isParallelDelegateBatch(calls []domain.ChatToolCall) bool {
+	if len(calls) < 2 {
+		return false
+	}
+	for _, call := range calls {
+		if call.Name != "agent_delegate_task" && call.Name != "task" {
+			return false
+		}
+	}
+	return true
+}
+
+func executeBoundedParallelToolCalls(
+	ctx context.Context,
+	calls []domain.ChatToolCall,
+	limit int,
+	execute func(domain.ChatToolCall) domain.ToolResult,
+) []domain.ToolResult {
+	if limit <= 0 {
+		limit = 1
+	}
+	if limit > 32 {
+		limit = 32
+	}
+	results := make([]domain.ToolResult, len(calls))
+	semaphore := make(chan struct{}, limit)
+	var wait sync.WaitGroup
+	for index, call := range calls {
+		wait.Add(1)
+		go func(index int, call domain.ChatToolCall) {
+			defer wait.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				results[index] = domain.ToolResult{CallID: call.ID, Name: call.Name, OK: false, Error: ctx.Err().Error()}
+				return
+			}
+			if err := ctx.Err(); err != nil {
+				results[index] = domain.ToolResult{CallID: call.ID, Name: call.Name, OK: false, Error: err.Error()}
+				return
+			}
+			results[index] = execute(call)
+		}(index, call)
+	}
+	wait.Wait()
+	return results
 }
 
 func isModelExecutionUnavailable(err error) bool {

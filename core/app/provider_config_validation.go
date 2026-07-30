@@ -20,6 +20,8 @@ func providerConfigFromInput(input domain.ProviderConnectInput) (domain.Provider
 func (s *Service) providerConfigFromInput(input domain.ProviderConnectInput) (domain.ProviderConfig, ProviderDefinition, error) {
 	registry := defaultProviderRegistry
 	if s != nil && s.providers != nil {
+		s.providersMu.RLock()
+		defer s.providersMu.RUnlock()
 		registry = s.providers
 	}
 	return registry.providerConfigFromInput(input)

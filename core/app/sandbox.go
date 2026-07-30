@@ -89,6 +89,9 @@ type ShellOutputEvent struct {
 	Stream      string `json:"stream"`
 	Chunk       string `json:"chunk"`
 	Sequence    int64  `json:"sequence"`
+	Cursor      int64  `json:"cursor,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Truncated   bool   `json:"truncated,omitempty"`
 	TimeCreated string `json:"timeCreated"`
 }
 

@@ -6,13 +6,13 @@ func toolResolveSpec(deferredCount int) domain.ToolSpec {
 	_ = deferredCount
 	return domain.ToolSpec{
 		Name: ToolResolveName, Description: "Resolve allowed deferred tools for one concise, specific missing capability. Use only when current tools cannot perform the required action. This does not call tools or bypass permissions.",
-		Capability: "tool.resolve", Category: "tool_discovery", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp", "plugin", "browser"},
+		Capability: "tool.resolve", Category: "tool_discovery", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp", "plugin"},
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"intent":    map[string]any{"type": "string", "description": "Concise, specific missing capability. Describe the required action, not a guessed tool name, plan, or broad topic."},
 			"required":  map[string]any{"type": "boolean", "description": "Whether the task cannot proceed without a matching tool. Defaults to true."},
 			"maxTools":  map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum number of tools to activate. Defaults to 8."},
 			"source":    map[string]any{"type": "string", "description": "Optional source filter, such as mcp, plugin, builtin, or bridge."},
-			"category":  map[string]any{"type": "string", "description": "Optional category filter, such as browser, mcp, plugin, automation, or filesystem."},
+			"category":  map[string]any{"type": "string", "description": "Optional category filter, such as mcp, plugin, automation, or filesystem."},
 			"riskLevel": map[string]any{"type": "string", "description": "Optional risk filter, such as low, medium, or high."},
 		}, "required": []string{"intent"}, "additionalProperties": false},
 	}

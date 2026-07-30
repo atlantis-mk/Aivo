@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -185,18 +184,13 @@ func (c *mcpManagedConnection) ensureInitialized(ctx context.Context) error {
 	if c.initialized && c.client != nil {
 		return nil
 	}
-	client, err := startMCPClient(ctx, c.server)
+	connectCtx, cancel := withMCPTimeout(ctx, c.server, true)
+	defer cancel()
+	client, err := startMCPClient(connectCtx, c.server)
 	if err != nil {
 		return err
 	}
 	c.client = client
-	callCtx, cancel := withMCPTimeout(ctx, c.server, true)
-	defer cancel()
-	if _, err := c.client.call(callCtx, "initialize", mcpInitializeParams(c.server)); err != nil {
-		c.client.close()
-		c.client = nil
-		return err
-	}
 	c.capabilitiesCache = discoverMCPCapabilitiesWithClient(ctx, c.server, c.client)
 	c.initialized = true
 	c.startKeepaliveLocked()
@@ -306,27 +300,29 @@ func (c *mcpManagedConnection) keepalive(parent context.Context) error {
 }
 
 func startMCPClient(ctx context.Context, server domain.MCPServerConfig) (mcpRPCClient, error) {
-	if server.Transport == "" {
-		server.Transport = domain.MCPTransportStdio
-	}
-	switch server.Transport {
-	case domain.MCPTransportStreamableHTTP, domain.MCPTransportSSE:
-		return newMCPHTTPClient(server)
-	case domain.MCPTransportStdio:
-		return startMCPStdio(ctx, server)
-	default:
-		return nil, fmt.Errorf("unsupported mcp transport %s", server.Transport)
-	}
+	return startMCPSDKClient(ctx, server)
 }
 
 func discoverMCPCapabilitiesWithClient(ctx context.Context, server domain.MCPServerConfig, client mcpRPCClient) mcpServerCapabilities {
 	listCtx, listCancel := withMCPTimeout(ctx, server, false)
-	result, _ := client.call(listCtx, "tools/list", map[string]any{})
+	result, _ := listAllMCPPages(listCtx, client, "tools/list", "tools")
 	listCancel()
 	tools := parseMCPTools(server, result)
+	promptsCtx, promptsCancel := withMCPTimeout(ctx, server, false)
+	promptsResult, _ := listAllMCPPages(promptsCtx, client, "prompts/list", "prompts")
+	promptsCancel()
+	resourcesCtx, resourcesCancel := withMCPTimeout(ctx, server, false)
+	resourcesResult, _ := listAllMCPPages(resourcesCtx, client, "resources/list", "resources")
+	resourcesCancel()
+	templatesCtx, templatesCancel := withMCPTimeout(ctx, server, false)
+	templatesResult, _ := listAllMCPPages(templatesCtx, client, "resources/templates/list", "resourceTemplates")
+	templatesCancel()
+	// List-changed notifications may arrive while any capability list is being
+	// discovered. Consume the signal only after the initial snapshot is complete
+	// so a notification racing with a later list is not lost.
 	if client.consumeToolsListChanged() {
 		refreshCtx, refreshCancel := withMCPTimeout(ctx, server, false)
-		refreshed, err := client.call(refreshCtx, "tools/list", map[string]any{})
+		refreshed, err := listAllMCPPages(refreshCtx, client, "tools/list", "tools")
 		refreshCancel()
 		if err == nil {
 			if next := parseMCPTools(server, refreshed); len(next) > 0 {
@@ -334,21 +330,38 @@ func discoverMCPCapabilitiesWithClient(ctx context.Context, server domain.MCPSer
 			}
 		}
 	}
-	promptsCtx, promptsCancel := withMCPTimeout(ctx, server, false)
-	promptsResult, _ := client.call(promptsCtx, "prompts/list", map[string]any{})
-	promptsCancel()
-	resourcesCtx, resourcesCancel := withMCPTimeout(ctx, server, false)
-	resourcesResult, _ := client.call(resourcesCtx, "resources/list", map[string]any{})
-	resourcesCancel()
-	templatesCtx, templatesCancel := withMCPTimeout(ctx, server, false)
-	templatesResult, _ := client.call(templatesCtx, "resources/templates/list", map[string]any{})
-	templatesCancel()
 	return mcpServerCapabilities{
 		Tools:             tools,
 		Prompts:           parseMCPPrompts(server, promptsResult),
 		Resources:         parseMCPResources(server, resourcesResult, false),
 		ResourceTemplates: parseMCPResources(server, templatesResult, true),
 	}
+}
+
+func listAllMCPPages(ctx context.Context, client mcpRPCClient, method string, key string) (map[string]any, error) {
+	items := []any{}
+	cursor := ""
+	seen := map[string]bool{}
+	for {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		result, err := client.call(ctx, method, params)
+		if err != nil {
+			return nil, err
+		}
+		page, _ := result[key].([]any)
+		items = append(items, page...)
+		next, _ := result["nextCursor"].(string)
+		next = strings.TrimSpace(next)
+		if next == "" || seen[next] {
+			break
+		}
+		seen[next] = true
+		cursor = next
+	}
+	return map[string]any{key: items}, nil
 }
 
 func withMCPTimeout(ctx context.Context, server domain.MCPServerConfig, connect bool) (context.Context, context.CancelFunc) {

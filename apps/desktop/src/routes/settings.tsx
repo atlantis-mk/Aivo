@@ -36,7 +36,7 @@ function SettingsRoute() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
-                    className="h-7 gap-2.5 px-3 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+                    className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
                   >
                     <Link to="/projects/chat">
                       <ArrowLeft />

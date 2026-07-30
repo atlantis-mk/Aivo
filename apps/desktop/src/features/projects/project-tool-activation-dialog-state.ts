@@ -11,6 +11,7 @@ import {
 import {
   getSessionActiveSkills,
   getSessionActiveTools,
+  ignoreSkillCandidatesByName,
   importSkill,
   listPlugins,
   listSkills,
@@ -94,9 +95,9 @@ export function useToolActivationDialogState({
     void Promise.all([
       listToolCatalog(workspaceRoot),
       listSkills({
-        workspaceRoot,
         includeCandidates: true,
         includeDisabled: true,
+        includeIgnored: true,
       }),
       activeSessionId
         ? getSessionActiveTools(activeSessionId).catch(() => ({
@@ -218,15 +219,34 @@ export function useToolActivationDialogState({
     try {
       await importSkill(candidate.id, candidate.scope || "project");
       const list = await listSkills({
-        workspaceRoot,
         includeCandidates: true,
         includeDisabled: true,
+        includeIgnored: true,
       });
       setSkills(list.entries ?? []);
       setSkillCandidates(list.candidates ?? []);
       toast.success(`已导入技能 ${candidate.name}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "导入技能失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function ignoreCandidate(candidate: SkillImportCandidate) {
+    setSaving(true);
+    try {
+      await ignoreSkillCandidatesByName(candidate.name);
+      const list = await listSkills({
+        includeCandidates: true,
+        includeDisabled: true,
+        includeIgnored: true,
+      });
+      setSkills(list.entries ?? []);
+      setSkillCandidates(list.candidates ?? []);
+      toast.success(`已忽略技能 ${candidate.name}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "忽略技能失败");
     } finally {
       setSaving(false);
     }
@@ -252,5 +272,6 @@ export function useToolActivationDialogState({
     usedToolSet,
     loadSkill,
     importCandidate,
+    ignoreCandidate,
   };
 }

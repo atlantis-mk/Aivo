@@ -8,15 +8,17 @@ import type {
 export function ToolActivityDetail({
   onApplyFileState,
   tab,
+  workspaceRoot,
 }: {
   onApplyFileState?: (
     tab: ToolActivityFileTab,
     targetState: "before" | "after",
   ) => void;
   tab: ToolActivityTab;
+  workspaceRoot: string;
 }) {
   if (tab.kind === "file") {
     return <FileActivityDetail onApplyFileState={onApplyFileState} tab={tab} />;
   }
-  return <CommandActivityDetail tab={tab} />;
+  return <CommandActivityDetail tab={tab} workspaceRoot={workspaceRoot} />;
 }

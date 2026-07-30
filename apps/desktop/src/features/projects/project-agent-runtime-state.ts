@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useProjectTodoFloatingState } from "@/features/projects/project-workspace-derived-state";
 import { hasAppBridge } from "@/lib/app-config";
 import {
-  listAgentModes,
+  listAgentModesForProject,
   listAgentRuns,
   listTodoItems,
   type AgentModeDefinition,
@@ -53,17 +53,19 @@ export function useProjectAgentRuntimeState({
   useEffect(() => {
     if (!hasAppBridge()) return;
     let cancelled = false;
-    void listAgentModes(false)
+    void listAgentModesForProject(activeWorkspaceRoot || "", false)
       .then((modes) => {
         if (!cancelled) {
-          setAgentModes(modes.filter((mode) => !mode.hidden));
+          setAgentModes(
+            modes.filter((mode) => !mode.hidden && mode.mode !== "subagent"),
+          );
         }
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeWorkspaceRoot]);
 
   useEffect(() => {
     const sessionMode =

@@ -211,6 +211,10 @@ func (m *memoryProviderStore) ListProjects(context.Context, int) ([]domain.Assis
 	return nil, nil
 }
 
+func (m *memoryProviderStore) UpdateProjectDescription(context.Context, string, string) (domain.AssistantProject, error) {
+	return domain.AssistantProject{}, nil
+}
+
 func (m *memoryProviderStore) CreateRuntimeSession(context.Context, domain.CreateSessionRequest) (domain.Session, error) {
 	return domain.Session{}, nil
 }
@@ -232,6 +236,10 @@ func (m *memoryProviderStore) SetRuntimeSessionStatus(context.Context, string, s
 }
 
 func (m *memoryProviderStore) SetRuntimeSessionAgentMode(context.Context, string, string) (domain.Session, error) {
+	return domain.Session{}, nil
+}
+
+func (m *memoryProviderStore) SetRuntimeSessionProject(context.Context, string, string) (domain.Session, error) {
 	return domain.Session{}, nil
 }
 

@@ -13,6 +13,7 @@ type AppConfig struct {
 	Persistence     PersistenceRolloutConfig `json:"persistence,omitempty"`
 	WebSearch       WebSearchConfig          `json:"webSearch,omitempty"`
 	NativeTools     NativeToolsConfig        `json:"nativeTools,omitempty"`
+	Runtime         RuntimeConfig            `json:"runtime,omitempty"`
 	ConfigPath      string                   `json:"configPath,omitempty"`
 }
 
