@@ -165,12 +165,32 @@ func (r *LocalSandboxRunner) Run(ctx context.Context, request SandboxRequest) (S
 		cmd.Stdin = nil
 	}
 	setProcessGroup(cmd)
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return killProcessGroup(cmd.Process)
+	}
+	cmd.WaitDelay = 250 * time.Millisecond
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
 	emitter := newShellOutputEmitter(request, "")
-	cmd.Stdout = newShellOutputWriter(&stdout, emitter, "stdout")
-	cmd.Stderr = newShellOutputWriter(&stderr, emitter, "stderr")
+	maxChars := request.OutputPolicy.MaxChars
+	if maxChars <= 0 {
+		maxChars = defaultStreamMaxChars
+	}
+	stdout, err := newBoundedOutputCapture(request, "stdout", maxChars, emitter)
+	if err != nil {
+		return SandboxResult{}, &SandboxError{Code: SandboxErrorOutputRetentionFailed, Message: err.Error(), Err: err}
+	}
+	stderr, err := newBoundedOutputCapture(request, "stderr", maxChars, emitter)
+	if err != nil {
+		stdout.Abort()
+		return SandboxResult{}, &SandboxError{Code: SandboxErrorOutputRetentionFailed, Message: err.Error(), Err: err}
+	}
+	defer stdout.Abort()
+	defer stderr.Abort()
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	result := SandboxResult{
 		Command:       command,
@@ -213,15 +233,11 @@ func (r *LocalSandboxRunner) Run(ctx context.Context, request SandboxRequest) (S
 		}
 	}
 
-	maxChars := request.OutputPolicy.MaxChars
-	if maxChars <= 0 {
-		maxChars = defaultStreamMaxChars
-	}
-	stdoutText, stdoutTruncated, stdoutRef, stdoutOriginal, retainErr := boundedSandboxOutput(request, "stdout", stdout.String(), maxChars)
+	stdoutText, stdoutTruncated, stdoutRef, stdoutOriginal, retainErr := stdout.Finish()
 	if retainErr != nil {
 		return result, retainErr
 	}
-	stderrText, stderrTruncated, stderrRef, stderrOriginal, retainErr := boundedSandboxOutput(request, "stderr", stderr.String(), maxChars)
+	stderrText, stderrTruncated, stderrRef, stderrOriginal, retainErr := stderr.Finish()
 	if retainErr != nil {
 		return result, retainErr
 	}

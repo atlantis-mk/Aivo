@@ -67,12 +67,10 @@ export function ProviderConnectionDialogs({
  onProviderDialogStepChange,
  onResetAuthMode,
  onSelectOpenAIAuthMode,
- onSelectedAuxiliaryModelIdChange,
  onSelectedModelIdChange,
  onSubmit,
  providerDialogStep,
  saving,
- selectedAuxiliaryModelId,
  selectedModelId,
  showModelSelect,
  submitDisabled,
@@ -96,12 +94,10 @@ export function ProviderConnectionDialogs({
  onProviderDialogStepChange: (step: ProviderDialogStep) => void;
  onResetAuthMode: (mode: ProviderAuthMode) => void;
  onSelectOpenAIAuthMode: (mode: ProviderAuthMode) => void;
- onSelectedAuxiliaryModelIdChange?: (value: string) => void;
  onSelectedModelIdChange: (value: string) => void;
  onSubmit: () => void;
  providerDialogStep: ProviderDialogStep;
  saving: boolean;
- selectedAuxiliaryModelId?: string;
  selectedModelId: string;
  showModelSelect: boolean;
  submitDisabled: boolean;
@@ -227,24 +223,9 @@ export function ProviderConnectionDialogs({
  <ProviderField label="状态" value={oauthStatusLabel(oauthStatus?.status, oauthReady)} />
  </div>
  ) : null}
- {showModelSelect && onSelectedAuxiliaryModelIdChange ? (
- <div className="grid gap-3 sm:grid-cols-2">
+ {showModelSelect ? (
  <ProviderModelSelect
  label="默认模型"
- models={models}
- onValueChange={onSelectedModelIdChange}
- value={selectedModelId}
- />
- <ProviderModelSelect
- label="辅助模型"
- models={models}
- onValueChange={onSelectedAuxiliaryModelIdChange}
- value={selectedAuxiliaryModelId || selectedModelId}
- />
- </div>
- ) : showModelSelect ? (
- <ProviderModelSelect
- label="模型"
  models={models}
  onValueChange={onSelectedModelIdChange}
  value={selectedModelId}

@@ -1,16 +1,21 @@
 package domain
 
 type RuntimeConfig struct {
-	Instructions        []string                               `json:"instructions,omitempty"`
-	DefaultAgent        string                                 `json:"defaultAgent,omitempty"`
-	Commands            map[string]CommandTemplateDefinition   `json:"commands,omitempty"`
-	Agents              map[string]AgentRuntimeDefinition      `json:"agents,omitempty"`
-	LanguageServers     map[string]LanguageServerDefinition    `json:"languageServers,omitempty"`
-	ProviderExtensions  map[string]ProviderExtensionDefinition `json:"providerExtensions,omitempty"`
-	Toolsets            map[string][]string                    `json:"toolsets,omitempty"`
-	Permissions         map[string]string                      `json:"permissions,omitempty"`
-	Compaction          CompactionRuntimeConfig                `json:"compaction,omitempty"`
-	MaxParallelChildren int                                    `json:"maxParallelChildren,omitempty"`
+	Instructions         []string                               `json:"instructions,omitempty"`
+	DefaultAgent         string                                 `json:"defaultAgent,omitempty"`
+	Commands             map[string]CommandTemplateDefinition   `json:"commands,omitempty"`
+	Agents               map[string]AgentRuntimeDefinition      `json:"agents,omitempty"`
+	LanguageServers      map[string]LanguageServerDefinition    `json:"languageServers,omitempty"`
+	ProviderExtensions   map[string]ProviderExtensionDefinition `json:"providerExtensions,omitempty"`
+	Toolsets             map[string][]string                    `json:"toolsets,omitempty"`
+	Permissions          map[string]string                      `json:"permissions,omitempty"`
+	Compaction           CompactionRuntimeConfig                `json:"compaction,omitempty"`
+	MaxParallelChildren  int                                    `json:"maxParallelChildren,omitempty"`
+	ExecutionEnvironment ExecutionEnvironmentConfig             `json:"executionEnvironment,omitempty"`
+}
+
+type ExecutionEnvironmentConfig struct {
+	BashPath string `json:"bashPath,omitempty"`
 }
 
 type CommandTemplateDefinition struct {

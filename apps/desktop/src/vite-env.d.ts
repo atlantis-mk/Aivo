@@ -16,5 +16,11 @@ interface Window {
     focusWindow(): Promise<void>;
     toggleMaximize(): Promise<void>;
     exportDiagnostics(): Promise<string>;
+    openExtensionView(input: {
+      extensionId: string;
+      viewId: string;
+      surface: "page" | "dialog" | "tool-detail" | "settings" | "notification";
+      context?: unknown;
+    }): Promise<{ opened: boolean; extensionId: string; viewId: string; surface: string }>;
   };
 }

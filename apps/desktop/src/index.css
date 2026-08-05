@@ -15,6 +15,16 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: var(--aivo-font-sans);
+  --spacing-aivo-control-sm: var(--aivo-control-small);
+  --spacing-aivo-control: var(--aivo-control-regular);
+  --spacing-aivo-control-lg: var(--aivo-control-large);
+  --spacing-aivo-1: var(--aivo-space-1);
+  --spacing-aivo-2: var(--aivo-space-2);
+  --spacing-aivo-3: var(--aivo-space-3);
+  --spacing-aivo-4: var(--aivo-space-4);
+  --spacing-aivo-6: var(--aivo-space-6);
+  --spacing-aivo-8: var(--aivo-space-8);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -61,10 +71,56 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--aivo-font-sans);
+    font-size: var(--aivo-type-body-size);
+    line-height: var(--aivo-type-body-leading);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 }
 
 @layer components {
+  /* Prefix semantic type utilities to avoid Tailwind's text-color merge group. */
+  .aivo-type-large-title {
+    font-size: var(--aivo-type-large-title-size);
+    line-height: var(--aivo-type-large-title-leading);
+  }
+
+  .aivo-type-title-1 {
+    font-size: var(--aivo-type-title-1-size);
+    line-height: var(--aivo-type-title-1-leading);
+  }
+
+  .aivo-type-title-2 {
+    font-size: var(--aivo-type-title-2-size);
+    line-height: var(--aivo-type-title-2-leading);
+  }
+
+  .aivo-type-title-3 {
+    font-size: var(--aivo-type-title-3-size);
+    line-height: var(--aivo-type-title-3-leading);
+  }
+
+  .aivo-type-headline {
+    font-size: var(--aivo-type-headline-size);
+    line-height: var(--aivo-type-headline-leading);
+  }
+
+  .aivo-type-body {
+    font-size: var(--aivo-type-body-size);
+    line-height: var(--aivo-type-body-leading);
+  }
+
+  .aivo-type-subheadline {
+    font-size: var(--aivo-type-subheadline-size);
+    line-height: var(--aivo-type-subheadline-leading);
+  }
+
+  .aivo-type-footnote {
+    font-size: var(--aivo-type-footnote-size);
+    line-height: var(--aivo-type-footnote-leading);
+  }
+
   .aivo-text-shimmer {
     --aivo-text-shimmer-duration: 1200ms;
     --aivo-text-shimmer-size: 360%;
@@ -447,6 +503,33 @@
 }
 
 :root {
+  /* Apple HIG logical type ramp, used as a cross-platform desktop baseline. */
+  --aivo-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --aivo-type-large-title-size: 1.625rem;
+  --aivo-type-large-title-leading: 2rem;
+  --aivo-type-title-1-size: 1.375rem;
+  --aivo-type-title-1-leading: 1.625rem;
+  --aivo-type-title-2-size: 1.0625rem;
+  --aivo-type-title-2-leading: 1.375rem;
+  --aivo-type-title-3-size: 0.9375rem;
+  --aivo-type-title-3-leading: 1.25rem;
+  --aivo-type-headline-size: 0.8125rem;
+  --aivo-type-headline-leading: 1rem;
+  --aivo-type-body-size: 0.8125rem;
+  --aivo-type-body-leading: 1rem;
+  --aivo-type-subheadline-size: 0.6875rem;
+  --aivo-type-subheadline-leading: 0.875rem;
+  --aivo-type-footnote-size: 0.625rem;
+  --aivo-type-footnote-leading: 0.8125rem;
+  --aivo-control-small: 1.5rem;
+  --aivo-control-regular: 1.75rem;
+  --aivo-control-large: 2rem;
+  --aivo-space-1: 0.25rem;
+  --aivo-space-2: 0.5rem;
+  --aivo-space-3: 0.75rem;
+  --aivo-space-4: 1rem;
+  --aivo-space-6: 1.5rem;
+  --aivo-space-8: 2rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -470,7 +553,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.5rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);

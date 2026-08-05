@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,6 +22,25 @@ type fileSnapshot struct {
 	Size      int64  `json:"size"`
 	LineRange string `json:"lineRange,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
+}
+
+func snapshotForFile(relPath, absPath, lineRange string, truncated bool) (fileSnapshot, error) {
+	file, err := os.Open(absPath)
+	if err != nil {
+		return fileSnapshot{}, err
+	}
+	defer file.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return fileSnapshot{}, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return fileSnapshot{}, err
+	}
+	encoded := hex.EncodeToString(hasher.Sum(nil))
+	clean := cleanPatchPath(relPath)
+	return fileSnapshot{ID: clean + "@" + encoded[:12], Path: clean, SHA256: encoded, MTime: info.ModTime().UTC().Format(time.RFC3339Nano), Size: info.Size(), LineRange: lineRange, Truncated: truncated}, nil
 }
 
 type staleFileError struct {
@@ -104,10 +124,45 @@ func writeFileIfUnchanged(absPath string, relPath string, expectedHash string, c
 			return staleFileError{Path: cleanPatchPath(relPath), ExpectedHash: expectedHash, CurrentHash: currentHash}
 		}
 	}
+	return atomicReplaceFile(absPath, content, perm)
+}
+
+func atomicReplaceFile(absPath string, content []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(absPath, content, perm)
+	if perm == 0 {
+		perm = 0o600
+	}
+	temp, err := os.CreateTemp(filepath.Dir(absPath), ".aivo-write-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	committed := false
+	defer func() {
+		_ = temp.Close()
+		if !committed {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	if err := temp.Chmod(perm); err != nil {
+		return err
+	}
+	if _, err := temp.Write(content); err != nil {
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, absPath); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func removeFileIfUnchanged(absPath string, relPath string, expectedHash string) error {

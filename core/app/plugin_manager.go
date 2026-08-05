@@ -127,9 +127,32 @@ func (m *PluginManager) RegisterEnabledTools(ctx context.Context, registry *Regi
 			continue
 		}
 		for _, spec := range m.tools[plugin.ID] {
-			_ = registry.RegisterScoped(&PluginRuntimeTool{pluginID: plugin.ID, spec: spec, manager: m}, domain.ToolSourcePlugin, plugin.ID, plugin.Manifest.Version)
+			if registerErr := registry.RegisterScoped(&PluginRuntimeTool{pluginID: plugin.ID, spec: spec, manager: m}, domain.ToolSourcePlugin, plugin.ID, plugin.Manifest.Version); registerErr != nil {
+				m.diagnostic(ctx, plugin.ID, "", domain.PluginDiagnosticError, registerErr.Error(), map[string]any{"tool": spec.Name})
+			}
 		}
 	}
+}
+
+func (m *PluginManager) PrepareEnabled(ctx context.Context) map[string]bool {
+	failed := map[string]bool{}
+	if m == nil || m.store == nil {
+		return failed
+	}
+	plugins, err := m.store.ListPluginInstalls(ctx, false)
+	if err != nil {
+		return failed
+	}
+	for _, plugin := range plugins {
+		if !plugin.Enabled {
+			continue
+		}
+		if err := m.ensurePluginStarted(ctx, plugin); err != nil {
+			failed[toolSourceEligibilityKey(domain.ToolSourcePlugin, plugin.ID)] = true
+			m.diagnostic(ctx, plugin.ID, "", domain.PluginDiagnosticError, err.Error(), nil)
+		}
+	}
+	return failed
 }
 
 func (m *PluginManager) RegisterCachedEnabledTools(ctx context.Context, registry *Registry) {
@@ -152,7 +175,9 @@ func (m *PluginManager) RegisterCachedEnabledTools(ctx context.Context, registry
 			}))
 		}
 		for _, spec := range dedupeToolSpecs(specs) {
-			_ = registry.RegisterScoped(&PluginRuntimeTool{pluginID: plugin.ID, spec: spec, manager: m}, domain.ToolSourcePlugin, plugin.ID, plugin.Manifest.Version)
+			if registerErr := registry.RegisterScoped(&PluginRuntimeTool{pluginID: plugin.ID, spec: spec, manager: m}, domain.ToolSourcePlugin, plugin.ID, plugin.Manifest.Version); registerErr != nil {
+				m.diagnostic(ctx, plugin.ID, "", domain.PluginDiagnosticError, registerErr.Error(), map[string]any{"tool": spec.Name})
+			}
 		}
 	}
 }

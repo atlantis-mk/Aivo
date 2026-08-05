@@ -146,6 +146,9 @@ func (s *Service) AskQuestion(ctx context.Context, request domain.QuestionReques
 	for {
 		select {
 		case <-ctx.Done():
+			if rejected, err := s.store.UpdateQuestionRequest(context.Background(), created.ID, domain.QuestionRequestStatusRejected, nil, "question cancelled with its turn"); err == nil {
+				s.resolveQuestionRequest(rejected)
+			}
 			return domain.QuestionRequest{}, ctx.Err()
 		case <-watched:
 			current, err := s.store.GetQuestionRequest(ctx, created.ID)

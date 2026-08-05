@@ -22,10 +22,29 @@ export function sameTimelineRow(
       const nextGroup = (next as typeof previous).group;
       return (
         previous.turnId === (next as typeof previous).turnId &&
+        previous.group.description === nextGroup.description &&
         previous.group.id === nextGroup.id &&
         previous.group.kind === nextGroup.kind &&
         previous.group.title === nextGroup.title &&
         sameToolCalls(previous.group.calls, nextGroup.calls)
+      );
+    }
+    case "tool-cluster": {
+      const nextGroups = (next as typeof previous).groups;
+      return (
+        previous.turnId === (next as typeof previous).turnId &&
+        previous.groups.length === nextGroups.length &&
+        previous.groups.every((group, index) => {
+          const nextGroup = nextGroups[index];
+          return (
+            nextGroup &&
+            group.description === nextGroup.description &&
+            group.id === nextGroup.id &&
+            group.kind === nextGroup.kind &&
+            group.title === nextGroup.title &&
+            sameToolCalls(group.calls, nextGroup.calls)
+          );
+        })
       );
     }
     case "assistant-status":

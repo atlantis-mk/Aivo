@@ -83,6 +83,13 @@ func (s *Store) LatestCheckpoint(ctx context.Context, sessionID string) (*domain
 }
 
 func (s *Store) UpsertCodingContext(ctx context.Context, cc domain.CodingContext) (domain.CodingContext, error) {
+	if _, err := upsertCodingContextWithDB(s.db.WithContext(ctx), cc); err != nil {
+		return domain.CodingContext{}, err
+	}
+	return s.GetCodingContext(ctx, cc.SessionID)
+}
+
+func upsertCodingContextWithDB(db *gorm.DB, cc domain.CodingContext) (domain.CodingContext, error) {
 	now := domain.NowString(time.Now())
 	if cc.ID == "" {
 		cc.ID = uuid.NewString()
@@ -93,7 +100,7 @@ func (s *Store) UpsertCodingContext(ctx context.Context, cc domain.CodingContext
 	cc.TimeUpdated = now
 	cc.ProjectPath = normalizeStoredPath(cc.ProjectPath)
 	row := codingContextToRow(cc)
-	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	err := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "session_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"project_path": row.ProjectPath, "git_branch": row.GitBranch, "commit_sha": row.CommitSHA, "repo_url": row.RepoURL,
@@ -104,7 +111,7 @@ func (s *Store) UpsertCodingContext(ctx context.Context, cc domain.CodingContext
 	if err != nil {
 		return domain.CodingContext{}, err
 	}
-	return s.GetCodingContext(ctx, cc.SessionID)
+	return cc, nil
 }
 
 func (s *Store) GetCodingContext(ctx context.Context, sessionID string) (domain.CodingContext, error) {

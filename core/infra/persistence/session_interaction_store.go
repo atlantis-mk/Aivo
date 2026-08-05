@@ -64,7 +64,7 @@ func (s *Store) ListPermissionRequests(ctx context.Context, sessionID string, st
 func (s *Store) UpdatePermissionRequest(ctx context.Context, requestID string, status string, remember bool, reason string) (domain.PermissionRequest, error) {
 	now := domain.NowString(time.Now())
 	updates := map[string]any{"status": status, "remember": boolInt(remember), "reason": strings.TrimSpace(reason), "time_updated": now}
-	if err := s.db.WithContext(ctx).Model(&permissionRequestRow{}).Where("id = ?", requestID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&permissionRequestRow{}).Where("id = ? AND status = ?", requestID, domain.PermissionRequestStatusPending).Updates(updates).Error; err != nil {
 		return domain.PermissionRequest{}, err
 	}
 	return s.GetPermissionRequest(ctx, requestID)
@@ -127,7 +127,7 @@ func (s *Store) ListQuestionRequests(ctx context.Context, sessionID string, stat
 func (s *Store) UpdateQuestionRequest(ctx context.Context, requestID string, status string, answers [][]string, reason string) (domain.QuestionRequest, error) {
 	now := domain.NowString(time.Now())
 	updates := map[string]any{"status": status, "answers": encodeStringMatrix(answers), "reason": strings.TrimSpace(reason), "time_updated": now}
-	if err := s.db.WithContext(ctx).Model(&questionRequestRow{}).Where("id = ?", requestID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&questionRequestRow{}).Where("id = ? AND status = ?", requestID, domain.QuestionRequestStatusPending).Updates(updates).Error; err != nil {
 		return domain.QuestionRequest{}, err
 	}
 	return s.GetQuestionRequest(ctx, requestID)

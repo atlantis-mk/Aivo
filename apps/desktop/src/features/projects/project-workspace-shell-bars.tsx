@@ -1,6 +1,6 @@
+import type { ReactNode } from "react";
 import { Plug } from "lucide-react";
 
-import type { ProjectSidebarState } from "@/features/projects/project-workspace-layout-model";
 import {
   ProjectMainTopBar,
   ProjectTopBar,
@@ -28,17 +28,29 @@ export function ProjectWorkspaceTopBar({
   canShowTerminalPanel,
   conversationTitle,
   hasConversation,
-  leftSidebarState,
+  historyContent,
+  isConversationPinned,
+  isPinnedSummaryOpen,
+  onArchiveConversation,
   onNewPage,
-  onToggleLeftSidebar,
+  onTogglePinnedConversation,
+  onTogglePinnedSummary,
+  repositoryPath,
+  sessionId,
 }: {
   activeProjectPage: ProjectWorkspacePage;
   canShowTerminalPanel: boolean;
   conversationTitle: string;
   hasConversation: boolean;
-  leftSidebarState: ProjectSidebarState;
+  historyContent: ReactNode;
+  isConversationPinned: boolean;
+  isPinnedSummaryOpen: boolean;
+  onArchiveConversation: () => void;
   onNewPage: () => void;
-  onToggleLeftSidebar: () => void;
+  onTogglePinnedConversation: () => void;
+  onTogglePinnedSummary: () => void;
+  repositoryPath?: string;
+  sessionId?: string;
 }) {
   const { pageIcon, pageTitle } =
     getProjectWorkspacePageHeader(activeProjectPage);
@@ -48,12 +60,18 @@ export function ProjectWorkspaceTopBar({
       canShowTerminalPanel={canShowTerminalPanel}
       conversationTitle={conversationTitle}
       hasConversation={hasConversation}
-      leftSidebarState={leftSidebarState}
+      historyContent={historyContent}
+      isConversationPinned={isConversationPinned}
+      isLayoutPanelOpen={isPinnedSummaryOpen}
+      onArchiveConversation={onArchiveConversation}
       onNewPage={onNewPage}
-      onToggleLeftSidebar={onToggleLeftSidebar}
+      onToggleLayoutPanel={onTogglePinnedSummary}
+      onTogglePinnedConversation={onTogglePinnedConversation}
       pageIcon={pageIcon}
       pageTitle={pageTitle}
+      repositoryPath={repositoryPath}
       showTerminalButton={activeProjectPage === "chat"}
+      sessionId={sessionId}
     />
   );
 }

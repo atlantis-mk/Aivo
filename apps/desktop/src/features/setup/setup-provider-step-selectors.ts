@@ -6,7 +6,6 @@ import type {
 } from "@/features/providers/provider-types";
 import {
   catalogDefaultModelForProvider,
-  defaultAuxiliaryModelForProvider,
   modelsForProvider,
 } from "@/features/setup/setup-provider-models";
 import type { CatalogState, ModelInfo } from "@/lib/provider-catalog";
@@ -39,29 +38,6 @@ export function selectedModelIdForProvider({
     models[0]?.id ||
     selectedModelId
   );
-}
-
-export function selectedAuxiliaryModelIdForProvider({
-  catalog,
-  models,
-  provider,
-  selectedAuxiliaryModelId,
-  selectedModelId,
-}: {
-  catalog: CatalogState | null;
-  models: ModelInfo[];
-  provider: ProviderChoice | null;
-  selectedAuxiliaryModelId: string;
-  selectedModelId: string;
-}) {
-  if (!provider) return selectedAuxiliaryModelId;
-  if (
-    selectedAuxiliaryModelId &&
-    models.some((model) => model.id === selectedAuxiliaryModelId)
-  ) {
-    return selectedAuxiliaryModelId;
-  }
-  return defaultAuxiliaryModelForProvider(catalog, provider.id, selectedModelId);
 }
 
 export function oauthReady(

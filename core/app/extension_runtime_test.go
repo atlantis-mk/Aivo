@@ -1,0 +1,569 @@
+package app
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"aivo/core/domain"
+)
+
+func TestLoadExtensionManifestV1IsDeclarativeAndHashesSchemas(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "schemas", "echo.json"), `{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`, 0o600)
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example_echo", "name": "Echo", "version": "1.0.0", "apiVersion": "1",
+		"runtime":     map[string]any{"type": "process", "command": "bin/echo-extension", "transport": "stdio"},
+		"contributes": map[string]any{"tools": []any{map[string]any{"name": "example_echo", "description": "Echo text", "schema": "schemas/echo.json", "activation": "auto"}}},
+	})
+	writeTestFile(t, filepath.Join(root, "bin", "echo-extension"), "not executed during discovery", 0o700)
+	loaded, err := LoadExtensionManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Integrity == "" || loaded.ToolSchemas["example_echo"]["type"] != "object" {
+		t.Fatalf("loaded = %#v", loaded)
+	}
+	firstIntegrity := loaded.Integrity
+	writeTestFile(t, filepath.Join(root, "schemas", "echo.json"), `{"type":"object","properties":{"value":{"type":"number"}}}`, 0o600)
+	changed, err := LoadExtensionManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.Integrity == firstIntegrity {
+		t.Fatal("schema change did not change package integrity")
+	}
+}
+
+func TestLoadExtensionManifestRejectsReservedNamesAndEscapingAssets(t *testing.T) {
+	root := t.TempDir()
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example.bad", "name": "Bad", "version": "1", "apiVersion": "1",
+		"runtime":     map[string]any{"type": "builtin"},
+		"contributes": map[string]any{"tools": []any{map[string]any{"name": "read", "schema": map[string]any{"type": "object"}}}},
+	})
+	if _, err := LoadExtensionManifest(root); err == nil {
+		t.Fatal("reserved core tool was accepted")
+	}
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example.bad", "name": "Bad", "version": "1", "apiVersion": "1",
+		"runtime":     map[string]any{"type": "builtin"},
+		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "bad", "kind": "skill", "path": "../secret"}}},
+	})
+	if _, err := LoadExtensionManifest(root); err == nil {
+		t.Fatal("escaping context asset was accepted")
+	}
+}
+
+type builtinExtensionTestClient struct{ events *[]string }
+
+func (c *builtinExtensionTestClient) Initialize(context.Context, domain.ExtensionManifest) error {
+	*c.events = append(*c.events, "initialize")
+	return nil
+}
+func (c *builtinExtensionTestClient) Execute(_ context.Context, name string, _ json.RawMessage, _ domain.ToolExecutionContext) (domain.ToolResult, error) {
+	*c.events = append(*c.events, "execute:"+name)
+	return domain.ToolResult{Name: name, OK: true, Content: "ok"}, nil
+}
+func (c *builtinExtensionTestClient) UIEvent(context.Context, string, string, any) (any, error) {
+	return map[string]any{"ok": true}, nil
+}
+func (c *builtinExtensionTestClient) Shutdown(context.Context) error {
+	*c.events = append(*c.events, "shutdown")
+	return nil
+}
+
+type versionedBuiltinTestClient struct{ version string }
+
+type policyBuiltinTestClient struct{}
+
+func (*policyBuiltinTestClient) Initialize(context.Context, domain.ExtensionManifest) error {
+	return nil
+}
+func (*policyBuiltinTestClient) Execute(_ context.Context, name string, _ json.RawMessage, _ domain.ToolExecutionContext) (domain.ToolResult, error) {
+	structured := map[string]any{}
+	if name == "policy.example.guard.pre_tool_call" {
+		structured = map[string]any{"block": true, "message": "blocked by test policy"}
+	}
+	return domain.ToolResult{Name: name, OK: true, Structured: structured}, nil
+}
+func (*policyBuiltinTestClient) UIEvent(context.Context, string, string, any) (any, error) {
+	return nil, nil
+}
+func (*policyBuiltinTestClient) Shutdown(context.Context) error { return nil }
+
+func (c *versionedBuiltinTestClient) Initialize(_ context.Context, manifest domain.ExtensionManifest) error {
+	if manifest.Version == "broken" {
+		return fmt.Errorf("broken update")
+	}
+	c.version = manifest.Version
+	return nil
+}
+func (c *versionedBuiltinTestClient) Execute(_ context.Context, name string, _ json.RawMessage, _ domain.ToolExecutionContext) (domain.ToolResult, error) {
+	return domain.ToolResult{Name: name, OK: true, Content: c.version}, nil
+}
+func (c *versionedBuiltinTestClient) UIEvent(context.Context, string, string, any) (any, error) {
+	return nil, nil
+}
+func (c *versionedBuiltinTestClient) Shutdown(context.Context) error { return nil }
+
+func TestExtensionSupervisorSeparatesDiscoveryTrustActivationAndExecution(t *testing.T) {
+	root := t.TempDir()
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example.builtin", "name": "Builtin", "version": "1.0.0", "apiVersion": "1",
+		"runtime": map[string]any{"type": "builtin"},
+		"contributes": map[string]any{
+			"tools":       []any{map[string]any{"name": "example_echo", "description": "Echo", "schema": map[string]any{"type": "object"}, "activation": "manual"}},
+			"environment": map[string]any{"id": "example.environment"},
+		},
+	})
+	events := []string{}
+	supervisor := NewExtensionSupervisor()
+	supervisor.RegisterBuiltin("com.example.builtin", func() extensionRuntimeClient { return &builtinExtensionTestClient{events: &events} })
+	status, err := supervisor.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != domain.ExtensionStateValidated || len(events) != 0 {
+		t.Fatalf("discovery status = %#v, events = %v", status, events)
+	}
+	status, err = supervisor.Enable(context.Background(), status.ID)
+	if err != nil || status.State != domain.ExtensionStateReady || !reflect.DeepEqual(events, []string{"initialize"}) {
+		t.Fatalf("enable status = %#v, events = %v, err = %v", status, events, err)
+	}
+	environment, err := supervisor.ExecutionEnvironment(status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentRegistry, err := NewCodingToolRegistryWithExecutionEnvironment(t.TempDir(), nil, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentResult := NewToolRuntime(environmentRegistry, t.TempDir()).Execute(context.Background(), domain.ChatToolCall{Name: "read", Arguments: json.RawMessage(`{"path":"remote.txt"}`)})
+	if !environmentResult.OK || !containsString(events, "execute:environment.read") {
+		t.Fatalf("environment result = %#v, events = %v", environmentResult, events)
+	}
+	registry, err := NewCodingToolRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.RegisterReadyTools(status.ID, registry); err != nil {
+		t.Fatal(err)
+	}
+	assembly := AssembleToolSpecsWithActivated(registry, registry.Specs(), map[string]bool{"example_echo": true})
+	if len(assembly.Specs) != 5 || assembly.Specs[4].Name != "example_echo" {
+		t.Fatalf("activated specs = %#v", assembly.Specs)
+	}
+	result := supervisor.Execute(context.Background(), status.ID, "example_echo", json.RawMessage(`{}`), domain.ToolExecutionContext{ToolSnapshot: &assembly.Snapshot})
+	if !result.OK || !reflect.DeepEqual(events, []string{"initialize", "execute:environment.read", "execute:example_echo"}) {
+		t.Fatalf("result = %#v, events = %v", result, events)
+	}
+	status, err = supervisor.Stop(context.Background(), status.ID)
+	if err != nil || status.State != domain.ExtensionStateStopped || events[len(events)-1] != "shutdown" {
+		t.Fatalf("stop status = %#v, events = %v, err = %v", status, events, err)
+	}
+}
+
+func TestExtensionPolicyInterceptsBeforeToolExecution(t *testing.T) {
+	root := t.TempDir()
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example.policy", "name": "Policy", "version": "1", "apiVersion": "1",
+		"runtime":     map[string]any{"type": "builtin"},
+		"contributes": map[string]any{"policies": []string{"example.guard"}},
+	})
+	supervisor := NewExtensionSupervisor()
+	supervisor.RegisterBuiltin("com.example.policy", func() extensionRuntimeClient { return &policyBuiltinTestClient{} })
+	status, err := supervisor.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Enable(context.Background(), status.ID); err != nil {
+		t.Fatal(err)
+	}
+	registry := NewRegistry()
+	if err := registry.Register(testTool{name: "guarded"}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewToolRuntime(registry, t.TempDir())
+	runtime.PluginHooks = supervisor
+	result := runtime.Execute(context.Background(), domain.ChatToolCall{Name: "guarded", Arguments: json.RawMessage(`{}`)})
+	if result.OK || result.ToolError == nil || result.ToolError.Code != "policy_denied" || result.Error != "blocked by test policy" {
+		t.Fatalf("policy result = %#v", result)
+	}
+}
+
+func TestExtensionUpdateKeepsFrozenGenerationAndFailedUpdateKeepsCurrent(t *testing.T) {
+	root := t.TempDir()
+	writeVersion := func(version string) {
+		writeTestExtensionManifest(t, root, map[string]any{
+			"schemaVersion": 1, "id": "com.example_versioned", "name": "Versioned", "version": version, "apiVersion": "1",
+			"runtime":     map[string]any{"type": "builtin"},
+			"contributes": map[string]any{"tools": []any{map[string]any{"name": "example_versioned", "description": version, "schema": map[string]any{"type": "object"}}}},
+		})
+	}
+	writeVersion("1.0.0")
+	supervisor := NewExtensionSupervisor()
+	supervisor.RegisterBuiltin("com.example_versioned", func() extensionRuntimeClient { return &versionedBuiltinTestClient{} })
+	status, err := supervisor.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Enable(context.Background(), status.ID); err != nil {
+		t.Fatal(err)
+	}
+	oldRegistry := NewRegistry()
+	if err := supervisor.RegisterReadyTools(status.ID, oldRegistry); err != nil {
+		t.Fatal(err)
+	}
+	oldIdentity, _ := oldRegistry.IdentityFor("example_versioned")
+
+	writeVersion("2.0.0")
+	pending, err := supervisor.Discover(root)
+	if err != nil || pending.Version != "2.0.0" {
+		t.Fatalf("pending = %#v, err = %v", pending, err)
+	}
+	if _, err := supervisor.Enable(context.Background(), status.ID); err != nil {
+		t.Fatal(err)
+	}
+	newRegistry := NewRegistry()
+	if err := supervisor.RegisterReadyTools(status.ID, newRegistry); err != nil {
+		t.Fatal(err)
+	}
+	newIdentity, _ := newRegistry.IdentityFor("example_versioned")
+	if oldIdentity.RegistrationID == newIdentity.RegistrationID || oldIdentity.ImplementationHash == newIdentity.ImplementationHash {
+		t.Fatalf("old = %#v new = %#v, want immutable implementation identities", oldIdentity, newIdentity)
+	}
+	oldResult := NewToolRuntime(oldRegistry, t.TempDir()).ExecuteWithContext(context.Background(), domain.ChatToolCall{Name: "example_versioned", Arguments: json.RawMessage(`{}`)}, domain.ToolExecutionContext{ExpectedRegistrations: map[string]domain.ToolRegistrationIdentity{"example_versioned": oldIdentity}})
+	newResult := NewToolRuntime(newRegistry, t.TempDir()).ExecuteWithContext(context.Background(), domain.ChatToolCall{Name: "example_versioned", Arguments: json.RawMessage(`{}`)}, domain.ToolExecutionContext{ExpectedRegistrations: map[string]domain.ToolRegistrationIdentity{"example_versioned": newIdentity}})
+	if !oldResult.OK || oldResult.Content != "1.0.0" || !newResult.OK || newResult.Content != "2.0.0" {
+		t.Fatalf("old result = %#v new result = %#v", oldResult, newResult)
+	}
+
+	writeVersion("broken")
+	if _, err := supervisor.Discover(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Enable(context.Background(), status.ID); err == nil {
+		t.Fatal("broken update unexpectedly replaced the ready generation")
+	}
+	currentRegistry := NewRegistry()
+	if err := supervisor.RegisterReadyTools(status.ID, currentRegistry); err != nil {
+		t.Fatal(err)
+	}
+	currentResult := NewToolRuntime(currentRegistry, t.TempDir()).Execute(context.Background(), domain.ChatToolCall{Name: "example_versioned", Arguments: json.RawMessage(`{}`)})
+	if !currentResult.OK || currentResult.Content != "2.0.0" {
+		t.Fatalf("current result after failed update = %#v", currentResult)
+	}
+	_, _ = supervisor.Stop(context.Background(), status.ID)
+	removedRegistry := NewRegistry()
+	if err := supervisor.RegisterAllReadyTools(removedRegistry); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := removedRegistry.Get("example_versioned"); ok {
+		t.Fatal("stopped extension remained executable")
+	}
+}
+
+func TestExecutableExtensionRequiresIntegrityBoundTrust(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "extension"), "#!/bin/sh\nexit 0\n", 0o700)
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example.process", "name": "Process", "version": "1.0.0", "apiVersion": "1",
+		"runtime": map[string]any{"type": "process", "command": "extension", "transport": "stdio"},
+	})
+	supervisor := NewExtensionSupervisor()
+	status, err := supervisor.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != domain.ExtensionStateUntrusted || status.Trusted {
+		t.Fatalf("status = %#v", status)
+	}
+	if _, err := supervisor.Enable(context.Background(), status.ID); err == nil {
+		t.Fatal("untrusted executable was enabled")
+	}
+	if _, err := supervisor.Trust(status.ID, "wrong"); err == nil {
+		t.Fatal("wrong integrity was trusted")
+	}
+	trusted, err := supervisor.Trust(status.ID, status.Integrity)
+	if err != nil || !trusted.Trusted || trusted.State != domain.ExtensionStateValidated {
+		t.Fatalf("trusted = %#v, err = %v", trusted, err)
+	}
+}
+
+func TestExtensionCredentialBrokerRequiresDeclaredBoundOperationSlot(t *testing.T) {
+	store := NewMemorySecretStore()
+	if err := store.Put(context.Background(), "secure/github", "token-value"); err != nil {
+		t.Fatal(err)
+	}
+	broker := NewHostCredentialBroker(store)
+	if err := broker.Bind("com.example.github", "github", "secure/github"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := broker.Request(context.Background(), "com.example.github", []string{"github"}, "github", ""); err == nil {
+		t.Fatal("ownerless credential lease succeeded")
+	}
+	if _, err := broker.Request(context.Background(), "com.example.github", []string{"github"}, "other", "op-1"); err == nil {
+		t.Fatal("undeclared credential slot succeeded")
+	}
+	value, err := broker.Request(context.Background(), "com.example.github", []string{"github"}, "github", "op-1")
+	if err != nil || value != "token-value" {
+		t.Fatalf("value = %q, err = %v", value, err)
+	}
+	broker.Release("op-1")
+}
+
+func TestExtensionProcessProtocolCredentialsCatalogAndLifecycle(t *testing.T) {
+	root := t.TempDir()
+	script := "#!/bin/sh\nexec " + strconv.Quote(os.Args[0]) + " -test.run=TestExtensionProcessHelper -- extension-process\n"
+	writeTestFile(t, filepath.Join(root, "bin", "extension"), script, 0o700)
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 1, "id": "com.example.process", "name": "Process", "version": "1.0.0", "apiVersion": "1",
+		"runtime":      map[string]any{"type": "process", "command": "bin/extension", "transport": "stdio"},
+		"requirements": map[string]any{"credentials": []string{"demo"}},
+		"contributes":  map[string]any{"tools": []any{map[string]any{"name": "example_echo", "description": "Echo", "schema": map[string]any{"type": "object"}, "activation": "auto"}}},
+	})
+	secretStore := NewMemorySecretStore()
+	if err := secretStore.Put(context.Background(), "secret/demo", "credential-value"); err != nil {
+		t.Fatal(err)
+	}
+	broker := NewHostCredentialBroker(secretStore)
+	if err := broker.Bind("com.example.process", "demo", "secret/demo"); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := NewExtensionSupervisor()
+	supervisor.SetCredentialBroker(broker)
+	status, err := supervisor.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Trust(status.ID, status.Integrity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Enable(context.Background(), status.ID); err != nil {
+		t.Fatal(err)
+	}
+	result := supervisor.Execute(context.Background(), status.ID, "example_echo", json.RawMessage(`{"text":"hello"}`), domain.ToolExecutionContext{ToolCallID: "op-1"})
+	if !result.OK || result.Content != "credential accepted" {
+		t.Fatalf("result = %#v", result)
+	}
+	if _, err := supervisor.Stop(context.Background(), status.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExtensionProcessHelper(t *testing.T) {
+	if !hasTestArgument("extension-process") {
+		return
+	}
+	reader := bufio.NewReader(os.Stdin)
+	writer := bufio.NewWriter(os.Stdout)
+	defer writer.Flush()
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			return
+		}
+		var request struct {
+			ID     string         `json:"id"`
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if json.Unmarshal(line, &request) != nil {
+			continue
+		}
+		result := map[string]any{}
+		switch request.Method {
+		case "catalog/list":
+			result["tools"] = []any{map[string]any{"name": "example_echo", "schemaHash": toolSchemaHash(domain.ToolSpec{InputSchema: map[string]any{"type": "object"}})}}
+		case "tool/execute":
+			opID, _ := request.Params["operationId"].(string)
+			writeExtensionTestFrame(writer, map[string]any{"jsonrpc": "2.0", "id": "credential-1", "method": "credential/request", "params": map[string]any{"slot": "demo", "operationId": opID}})
+			credentialLine, readErr := reader.ReadBytes('\n')
+			if readErr != nil || !strings.Contains(string(credentialLine), "credential-value") {
+				return
+			}
+			writeExtensionTestFrame(writer, map[string]any{"jsonrpc": "2.0", "method": "tool/progress", "params": map[string]any{"operationId": opID, "message": "working"}})
+			result = map[string]any{"ok": true, "content": "credential accepted"}
+		}
+		writeExtensionTestFrame(writer, map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+		if request.Method == "extension/shutdown" {
+			return
+		}
+	}
+}
+
+func TestServiceExternalAndStaticExtensionRuntimes(t *testing.T) {
+	schemaHash := toolSchemaHash(domain.ToolSpec{InputSchema: map[string]any{"type": "object"}})
+	serviceHandler := func(expectedBearer func(string) bool) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !expectedBearer(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			var request struct {
+				ID     string `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			result := map[string]any{}
+			if request.Method == "catalog/list" {
+				result["tools"] = []any{map[string]any{"name": "example_service", "schemaHash": schemaHash}}
+			}
+			if request.Method == "tool/execute" {
+				result = map[string]any{"ok": true, "content": "service ok"}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+		}
+	}
+
+	localServer := httptest.NewServer(serviceHandler(func(value string) bool { return len(value) == 64 }))
+	defer localServer.Close()
+	localRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(localRoot, "bin", "service"), "#!/bin/sh\nsleep 30\n", 0o700)
+	writeTestExtensionManifest(t, localRoot, map[string]any{
+		"schemaVersion": 1, "id": "com.example_service", "name": "Service", "version": "1", "apiVersion": "1",
+		"runtime": map[string]any{"type": "service", "command": "bin/service", "url": localServer.URL},
+		"contributes": map[string]any{
+			"tools": []any{map[string]any{"name": "example_service", "schema": map[string]any{"type": "object"}}},
+			"views": []any{map[string]any{"id": "detail", "title": "Detail", "type": "web", "route": "/ui", "surfaces": []string{"tool-detail"}, "tools": []string{"example_service"}, "actions": []string{"view.refresh"}}},
+		},
+	})
+	localSupervisor := NewExtensionSupervisor()
+	localSupervisor.idleTimeout = 25 * time.Millisecond
+	localStatus, err := localSupervisor.Discover(localRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := localSupervisor.Trust(localStatus.ID, localStatus.Integrity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := localSupervisor.Enable(context.Background(), localStatus.ID); err != nil {
+		t.Fatal(err)
+	}
+	view, err := localSupervisor.ResolveView(context.Background(), localStatus.ID, "detail")
+	if err != nil || view.BackendToken == "" || !strings.HasPrefix(view.LogicalURL, "aivo-extension://") {
+		t.Fatalf("view = %#v, err = %v", view, err)
+	}
+	if err := localSupervisor.OpenView(context.Background(), localStatus.ID); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if status, _ := localSupervisor.Status(localStatus.ID); status.State != domain.ExtensionStateActive {
+		t.Fatalf("view did not prevent idle stop: %#v", status)
+	}
+	if err := localSupervisor.CloseView(context.Background(), localStatus.ID); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if status, _ := localSupervisor.Status(localStatus.ID); status.State != domain.ExtensionStateReady || !status.Enabled {
+		t.Fatalf("idle status = %#v, want enabled lazy-ready", status)
+	}
+	if result := localSupervisor.Execute(context.Background(), localStatus.ID, "example_service", json.RawMessage(`{}`), domain.ToolExecutionContext{ToolCallID: "local-op"}); !result.OK {
+		t.Fatalf("lazy restart result = %#v", result)
+	}
+	_, _ = localSupervisor.Stop(context.Background(), localStatus.ID)
+
+	externalServer := httptest.NewTLSServer(serviceHandler(func(value string) bool { return value == "external-token" }))
+	defer externalServer.Close()
+	externalRoot := t.TempDir()
+	writeTestExtensionManifest(t, externalRoot, map[string]any{
+		"schemaVersion": 1, "id": "com.example.external", "name": "External", "version": "1", "apiVersion": "1",
+		"runtime":      map[string]any{"type": "external", "url": externalServer.URL},
+		"requirements": map[string]any{"credentials": []string{"service"}},
+		"contributes": map[string]any{
+			"tools": []any{map[string]any{"name": "example_service", "schema": map[string]any{"type": "object"}}},
+			"views": []any{map[string]any{"id": "external-view", "title": "External", "type": "web", "route": "/ui", "surfaces": []string{"page"}}},
+		},
+	})
+	store := NewMemorySecretStore()
+	_ = store.Put(context.Background(), "external/ref", "external-token")
+	broker := NewHostCredentialBroker(store)
+	_ = broker.Bind("com.example.external", "service", "external/ref")
+	externalSupervisor := NewExtensionSupervisor()
+	externalSupervisor.httpClient = externalServer.Client()
+	externalSupervisor.SetCredentialBroker(broker)
+	externalStatus, err := externalSupervisor.Discover(externalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = externalSupervisor.Trust(externalStatus.ID, externalStatus.Integrity)
+	if _, err := externalSupervisor.Enable(context.Background(), externalStatus.ID); err != nil {
+		t.Fatal(err)
+	}
+	if result := externalSupervisor.Execute(context.Background(), externalStatus.ID, "example_service", json.RawMessage(`{}`), domain.ToolExecutionContext{ToolCallID: "external-op"}); !result.OK {
+		t.Fatalf("external result = %#v", result)
+	}
+	descriptor, err := externalSupervisor.ResolveView(context.Background(), externalStatus.ID, "external-view")
+	if err != nil || descriptor.BackendToken != "external-token" {
+		t.Fatalf("external view descriptor = %#v, err = %v; want Host-bound proxy token", descriptor, err)
+	}
+	_, _ = externalSupervisor.Stop(context.Background(), externalStatus.ID)
+
+	staticRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(staticRoot, "context", "guide.md"), "safe context", 0o600)
+	writeTestExtensionManifest(t, staticRoot, map[string]any{
+		"schemaVersion": 1, "id": "com.example.static", "name": "Static", "version": "1", "apiVersion": "1",
+		"runtime":     map[string]any{"type": "static"},
+		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "guide", "kind": "skill", "path": "context/guide.md"}}},
+	})
+	staticSupervisor := NewExtensionSupervisor()
+	staticStatus, err := staticSupervisor.Discover(staticRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staticStatus, err = staticSupervisor.Enable(context.Background(), staticStatus.ID); err != nil || staticStatus.State != domain.ExtensionStateReady {
+		t.Fatalf("static status = %#v, err = %v", staticStatus, err)
+	}
+	contexts, err := staticSupervisor.ContextResources(staticStatus.ID)
+	if err != nil || len(contexts) != 1 || contexts[0].Content != "safe context" || contexts[0].SHA256 == "" {
+		t.Fatalf("static contexts = %#v, err = %v", contexts, err)
+	}
+}
+
+func writeExtensionTestFrame(writer *bufio.Writer, value any) {
+	raw, _ := json.Marshal(value)
+	_, _ = writer.Write(append(raw, '\n'))
+	_ = writer.Flush()
+}
+
+func hasTestArgument(value string) bool {
+	for _, arg := range os.Args {
+		if arg == value {
+			return true
+		}
+	}
+	return false
+}
+
+func writeTestExtensionManifest(t *testing.T, root string, manifest map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "aivo.extension.json"), string(raw), 0o600)
+}
+
+func writeTestFile(t *testing.T, path, content string, mode os.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+}

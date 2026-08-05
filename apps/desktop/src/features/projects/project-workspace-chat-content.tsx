@@ -1,4 +1,11 @@
-import type { CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import {
   PermissionApprovalDock,
@@ -12,8 +19,12 @@ import {
 } from "@/features/projects/project-workspace-chat-overlays";
 import { ProjectWorkspaceComposerFrame } from "@/features/projects/project-workspace-composer-frame";
 import { ProjectConversationViewport } from "@/features/projects/project-workspace-conversation-view";
+import { constructConversationTimelineRows } from "@/features/projects/conversation-timeline-row-model";
+import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
+import { ConversationToolInspector } from "@/features/projects/conversation-tool-inspector";
 
 export function ProjectWorkspaceChatContent({
+  activeSessionId,
   activeSubagentRun,
   agentMode,
   agentModes,
@@ -85,10 +96,100 @@ export function ProjectWorkspaceChatContent({
   turns,
   viewportHandlers,
 }: ProjectWorkspaceMainContentProps) {
+  const [selectedToolActivityId, setSelectedToolActivityId] = useState("");
+  const toolActivities = useMemo(
+    () =>
+      constructConversationTimelineRows(turns).flatMap((row) => {
+        if (row.type === "tool-cluster") {
+          return [{ id: row.key, groups: row.groups }];
+        }
+        if (row.type === "tool-group" && row.group.kind !== "delegate") {
+          return [{ id: row.key, groups: [row.group] }];
+        }
+        return [];
+      }),
+    [turns],
+  );
+  const toolInspectorAutoOpenRef = useRef({
+    observedToolCallIds: new Set(
+      toolActivities.flatMap((activity) =>
+        activity.groups.flatMap((group) =>
+          group.calls.map((toolCall) => toolCall.id),
+        ),
+      ),
+    ),
+    sessionId: activeSessionId,
+    suppressed: false,
+  });
+  const selectedToolActivity =
+    toolActivities.find(
+      (activity) => activity.id === selectedToolActivityId,
+    ) ?? null;
+  const openToolActivity = useCallback((activity: ToolCallActivity) => {
+    setSelectedToolActivityId(activity.id);
+  }, []);
+  const closeToolActivity = useCallback(() => {
+    toolInspectorAutoOpenRef.current.suppressed = true;
+    setSelectedToolActivityId("");
+  }, []);
+
+  useEffect(() => {
+    const currentToolCallIds = new Set(
+      toolActivities.flatMap((activity) =>
+        activity.groups.flatMap((group) =>
+          group.calls.map((toolCall) => toolCall.id),
+        ),
+      ),
+    );
+    const autoOpenState = toolInspectorAutoOpenRef.current;
+
+    if (autoOpenState.sessionId !== activeSessionId) {
+      toolInspectorAutoOpenRef.current = {
+        observedToolCallIds: currentToolCallIds,
+        sessionId: activeSessionId,
+        suppressed: false,
+      };
+      setSelectedToolActivityId("");
+      if (
+        hasPendingTurn &&
+        !isRevealingHistoryConversation &&
+        toolActivities.length > 0
+      ) {
+        setSelectedToolActivityId(toolActivities.at(-1)?.id ?? "");
+      }
+      return;
+    }
+
+    const latestNewActivity = toolActivities.findLast((activity) =>
+      activity.groups.some((group) =>
+        group.calls.some(
+          (toolCall) => !autoOpenState.observedToolCallIds.has(toolCall.id),
+        ),
+      ),
+    );
+    autoOpenState.observedToolCallIds = currentToolCallIds;
+    if (
+      latestNewActivity &&
+      hasPendingTurn &&
+      !isRevealingHistoryConversation &&
+      !autoOpenState.suppressed
+    ) {
+      setSelectedToolActivityId(latestNewActivity.id);
+    }
+  }, [
+    activeSessionId,
+    hasPendingTurn,
+    isRevealingHistoryConversation,
+    toolActivities,
+  ]);
+
   return (
-    <div id="conversation-main" className="min-h-0 flex-1">
+    <div
+      id="conversation-main"
+      className="relative flex min-h-0 flex-1 overflow-hidden"
+    >
       <div
-        className="relative h-full min-h-0 overflow-hidden px-4 sm:px-6"
+        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden px-4 sm:px-6"
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
@@ -105,6 +206,7 @@ export function ProjectWorkspaceChatContent({
         }
       >
         <ProjectWorkspaceEmptyPrompt
+          onPromptChange={onPromptChange}
           showConversationLayout={showConversationLayout}
         />
 
@@ -118,6 +220,7 @@ export function ProjectWorkspaceChatContent({
           }
           handlers={viewportHandlers}
           hasTurns={hasTurns}
+          onOpenToolActivity={openToolActivity}
           reservePermissionDock={hasPendingInteractionRequest}
           revealFromHistory={isRevealingHistoryConversation}
           rootRef={messagesScrollRootRef}
@@ -202,6 +305,10 @@ export function ProjectWorkspaceChatContent({
           />
         )}
       </div>
+      <ConversationToolInspector
+        activity={selectedToolActivity}
+        onClose={closeToolActivity}
+      />
     </div>
   );
 }

@@ -13,7 +13,7 @@ const (
 	promptInjectionScopeGlobal  promptInjectionScope = "global"
 )
 
-const agentToolProtocolPrompt = `When specialized workflow instructions may help, first call the skill tool with mode=discover and a concise intent. Privately filtered skill names and descriptions will be returned. Review them and call mode=activate with only the exact applicable names before continuing; never treat discovery as activation and never guess names. Use mode=list only when the user asks which skills are available. If current tools cannot perform a required action, call tool_resolve with a concise, specific missing capability. Do not use tool_resolve for convenience, exploration, planning, or guessing tool names. If no allowed tool matches, stop with a local no_available_tool error.`
+const agentToolProtocolPrompt = `Before each request, the Host may inject canonical summaries for relevant Skills, full instructions for the selected Skills needed to perform the task, extension context, and a bounded set of eligible extension tools alongside the four core primitives. Treat Skill summaries as availability metadata and injected instructions/context as task context. Use only tools actually present in the request. Do not invent or request hidden discovery tools. If the available tools cannot perform a required action, explain the concrete missing capability instead of claiming that no installed extension exists.`
 
 type promptInjection struct {
 	Scope promptInjectionScope

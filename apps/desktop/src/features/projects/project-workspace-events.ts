@@ -84,6 +84,12 @@ export function useProjectWorkspaceEvents({
       if (!turn?.id || !turn.sessionId) return;
       setConversationRunning(turn.sessionId, turn.status === "running");
       if (turn.sessionId !== activeSessionIdRef.current) return;
+      if (turn.status !== "running") {
+        // Assistant deltas are batched until the next animation frame. A
+        // terminal event can arrive first and would otherwise close the turn
+        // before the buffered final text has a chance to attach to it.
+        flushPendingAssistantDelta();
+      }
       setTurns((currentTurns) => mergeRuntimeTurn(currentTurns, turn));
     };
     const offStarted = EventsOn("turn.started", handleTurnEvent);
@@ -96,7 +102,12 @@ export function useProjectWorkspaceEvents({
       offFailed();
       offCancelled();
     };
-  }, [activeSessionIdRef, setConversationRunning, setTurns]);
+  }, [
+    activeSessionIdRef,
+    flushPendingAssistantDelta,
+    setConversationRunning,
+    setTurns,
+  ]);
 
   useEffect(() => {
     if (!hasAppBridge()) return;

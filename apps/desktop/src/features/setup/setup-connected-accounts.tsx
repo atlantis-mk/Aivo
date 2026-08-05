@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import {
+  Cancel01Icon,
+  CheckmarkCircle01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,14 +21,11 @@ import {
 } from "@/components/ui/select";
 import { providerNameForPrompt } from "@/features/providers/provider-defaults";
 import {
-  currentAuxiliaryModelForProvider,
-  currentDefaultModelForProvider,
   modelOptionsForConnectedProvider,
   type AppConfigWithAuxiliary,
 } from "@/features/setup/setup-provider-models";
 import type {
   CatalogState,
-  ModelInfo,
   ProviderAccountInfo,
 } from "@/lib/provider-catalog";
 
@@ -42,98 +43,64 @@ export function ConnectedAccountsBar({
   }
 
   return (
-    <div className="flex w-full max-w-[880px] flex-wrap items-center justify-center gap-2">
-      {accounts.map((account) => (
-        <div
-          key={account.id}
-          className="inline-flex max-w-full items-center gap-1.5"
-        >
-          <Button
-            className="max-w-full rounded-full px-3"
-            onClick={() => onAccountClick(account)}
-            size="sm"
-            type="button"
-            variant="secondary"
+    <section className="mt-aivo-6 flex w-full max-w-[640px] flex-col gap-aivo-3">
+      <div className="flex items-baseline justify-between gap-aivo-3 text-left">
+        <h2 className="aivo-type-headline font-semibold text-foreground">
+          已连接
+        </h2>
+        <span className="aivo-type-footnote text-muted-foreground">
+          {accounts.length} 个服务
+        </span>
+      </div>
+      <ul className="grid w-full grid-cols-1 gap-aivo-2 sm:grid-cols-2">
+        {accounts.map((account) => (
+          <li
+            className="flex min-w-0 items-center rounded-lg border border-border bg-muted/40 p-1"
+            key={account.id}
           >
-            <span className="min-w-0 truncate">
-              {accountTypeLabel(account)} {accountDisplayName(account)} 已连接
-            </span>
-          </Button>
-          <Button
-            aria-label={`删除 ${accountDisplayName(account)}`}
-            className="rounded-full"
-            onClick={(event) => {
-              event.stopPropagation();
-              void onRemoveAccount(account.id);
-            }}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <X />
-          </Button>
-        </div>
-      ))}
-    </div>
+            <Button
+              className="aivo-type-body h-aivo-control-lg min-w-0 flex-1 justify-start gap-aivo-2 px-aivo-2"
+              onClick={() => onAccountClick(account)}
+              size="lg"
+              type="button"
+              variant="ghost"
+            >
+              <HugeiconsIcon
+                aria-hidden="true"
+                className="size-4 shrink-0"
+                icon={CheckmarkCircle01Icon}
+                strokeWidth={1.8}
+              />
+              <span className="min-w-0 truncate text-left">
+                {accountTypeLabel(account)} {accountDisplayName(account)}
+              </span>
+            </Button>
+            <Button
+              aria-label={`删除 ${accountDisplayName(account)}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                void onRemoveAccount(account.id);
+              }}
+              size="icon-lg"
+              type="button"
+              variant="ghost"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-export function ConnectedAccountModelDialog({
+export function ConnectedAccountDetailsDialog({
   account,
-  catalog,
-  config,
   onClose,
-  onSave,
 }: {
   account: ProviderAccountInfo | null;
-  catalog: CatalogState | null;
-  config: AppConfigWithAuxiliary | null;
   onClose: () => void;
-  onSave: (
-    providerId: string,
-    modelId: string,
-    auxiliaryModelId: string,
-  ) => Promise<void>;
 }) {
-  const provider = account
-    ? catalog?.providers.find((item) => item.id === account.providerId)
-    : undefined;
-  const modelOptions = provider
-    ? modelOptionsForConnectedProvider(provider, catalog)
-    : [];
-  const defaultModelId = provider
-    ? currentDefaultModelForProvider(config, provider, modelOptions)
-    : "";
-  const defaultAuxiliaryModelId = provider
-    ? currentAuxiliaryModelForProvider(
-        config,
-        provider,
-        modelOptions,
-        defaultModelId,
-      )
-    : "";
-  const [modelId, setModelId] = useState(defaultModelId);
-  const [auxiliaryModelId, setAuxiliaryModelId] = useState(
-    defaultAuxiliaryModelId,
-  );
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setModelId(defaultModelId);
-    setAuxiliaryModelId(defaultAuxiliaryModelId);
-  }, [defaultModelId, defaultAuxiliaryModelId, account?.id]);
-
-  async function handleSave() {
-    if (!account || !modelId || !auxiliaryModelId) return;
-    setSaving(true);
-    try {
-      await onSave(account.providerId, modelId, auxiliaryModelId);
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <Dialog
       open={Boolean(account)}
@@ -142,80 +109,136 @@ export function ConnectedAccountModelDialog({
       }}
     >
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
-        <div className="flex flex-col gap-4">
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <DialogTitle className="min-w-0 truncate">
-              {provider?.name || account?.providerId || "Provider"} 模型设置
-            </DialogTitle>
+        <div className="flex flex-col gap-aivo-4">
+          <div className="flex min-w-0 items-center justify-between gap-aivo-3">
+            <DialogTitle className="min-w-0 truncate">连接详情</DialogTitle>
             <DialogClose asChild>
               <Button aria-label="关闭" size="icon" type="button" variant="ghost">
-                <X />
+                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
               </Button>
             </DialogClose>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ConnectedModelSelect
-              label="主模型"
-              models={modelOptions}
-              onValueChange={setModelId}
-              value={modelId}
-            />
-            <ConnectedModelSelect
-              label="辅助模型"
-              models={modelOptions}
-              onValueChange={setAuxiliaryModelId}
-              value={auxiliaryModelId}
-            />
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <DialogClose asChild>
-              <Button type="button" variant="secondary">
-                取消
-              </Button>
-            </DialogClose>
-            <Button
-              disabled={!modelId || !auxiliaryModelId || saving}
-              onClick={handleSave}
-              type="button"
-            >
-              {saving ? "保存中" : "保存"}
-            </Button>
-          </div>
+          {account ? (
+            <dl className="grid gap-aivo-3 text-left">
+              <AccountDetail label="服务" value={providerNameForPrompt(account.providerId)} />
+              <AccountDetail
+                label="连接方式"
+                value={connectionMethodLabel(account)}
+              />
+              <AccountDetail label="账号" value={accountDisplayName(account)} />
+              <AccountDetail label="状态" value="已连接" />
+              <AccountDetail
+                label="连接时间"
+                value={formatConnectedAt(account.connectedAt)}
+              />
+            </dl>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ConnectedModelSelect({
-  label,
-  models,
-  onValueChange,
-  value,
-}: {
-  label: string;
-  models: ModelInfo[];
-  onValueChange: (value: string) => void;
-  value: string;
-}) {
+function AccountDetail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1.5 text-left">
-      <label className="text-sm">{label}</label>
-      <Select onValueChange={onValueChange} value={value}>
-        <SelectTrigger>
-          <SelectValue />
+    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-aivo-3 border-b border-border pb-aivo-3 last:border-b-0 last:pb-0">
+      <dt className="aivo-type-body text-muted-foreground">{label}</dt>
+      <dd className="aivo-type-body min-w-0 break-words text-foreground">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+export function AuxiliaryModelSelect({
+  accounts,
+  catalog,
+  config,
+  onSave,
+}: {
+  accounts: ProviderAccountInfo[];
+  catalog: CatalogState | null;
+  config: AppConfigWithAuxiliary | null;
+  onSave: (providerId: string, modelId: string) => Promise<boolean>;
+}) {
+  const options = auxiliaryModelOptions(accounts, catalog);
+  const configuredValue = modelRefValue(
+    config?.auxiliaryModel?.providerId,
+    config?.auxiliaryModel?.modelId,
+  );
+  const validConfiguredValue = options.some(
+    (option) => option.value === configuredValue,
+  )
+    ? configuredValue
+    : "";
+  const [selectedValue, setSelectedValue] = useState(validConfiguredValue);
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+
+  useEffect(() => {
+    if (!saving) setSelectedValue(validConfiguredValue);
+  }, [saving, validConfiguredValue]);
+
+  if (accounts.length === 0) return null;
+
+  async function handleValueChange(value: string) {
+    const option = options.find((item) => item.value === value);
+    if (!option) return;
+    setSaveFailed(false);
+    setSelectedValue(value);
+    setSaving(true);
+    const saved = await onSave(option.providerId, option.modelId);
+    if (!saved) {
+      setSelectedValue(validConfiguredValue);
+      setSaveFailed(true);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <section className="mt-aivo-4 flex w-full max-w-[640px] flex-col gap-aivo-3 text-left">
+      <div className="flex items-baseline justify-between gap-aivo-3">
+        <div>
+          <h2 className="aivo-type-headline font-semibold text-foreground">
+            辅助模型
+          </h2>
+          <p className="aivo-type-footnote mt-aivo-1 text-muted-foreground">
+            从已连接服务的模型中选择一个
+          </p>
+        </div>
+        <span
+          aria-live="polite"
+          className="aivo-type-footnote text-muted-foreground"
+        >
+          {saving ? "保存中" : selectedValue ? "已配置" : "待选择"}
+        </span>
+      </div>
+      <Select
+        disabled={options.length === 0 || saving}
+        onValueChange={(value) => void handleValueChange(value)}
+        value={selectedValue}
+      >
+        <SelectTrigger
+          aria-label="辅助模型"
+          className="h-aivo-control-lg w-full bg-background"
+        >
+          <SelectValue placeholder="选择辅助模型" />
         </SelectTrigger>
         <SelectContent>
-          {models.map((model) => (
-            <SelectItem key={model.id} value={model.id}>
-              {model.name || model.id}
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-    </div>
+      {saveFailed ? (
+        <p className="aivo-type-footnote text-destructive" role="alert">
+          保存失败，请重试
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -232,9 +255,49 @@ function accountTypeLabel(account: ProviderAccountInfo) {
   return providerNameForPrompt(account.providerId);
 }
 
+function connectionMethodLabel(account: ProviderAccountInfo) {
+  if (account.method === "oauth-browser") return "浏览器 OAuth";
+  if (account.method === "oauth-headless") return "设备授权";
+  if (account.method === "api-key") return "API Key";
+  return account.method || "默认方式";
+}
+
 function accountDisplayName(account: ProviderAccountInfo) {
   const displayName = account.displayName?.trim();
   const accountId = account.accountId?.trim();
   if (displayName) return displayName;
   return displayName || accountId || "默认账号";
+}
+
+function formatConnectedAt(value?: string) {
+  if (!value) return "未知";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function auxiliaryModelOptions(
+  accounts: ProviderAccountInfo[],
+  catalog: CatalogState | null,
+) {
+  const connectedProviderIds = new Set(
+    accounts.map((account) => account.providerId),
+  );
+  return (catalog?.providers ?? []).flatMap((provider) => {
+    if (!connectedProviderIds.has(provider.id)) return [];
+    return modelOptionsForConnectedProvider(provider, catalog).map((model) => ({
+      label: `${provider.name || provider.id} · ${model.name || model.id}`,
+      modelId: model.id,
+      providerId: provider.id,
+      value: modelRefValue(provider.id, model.id),
+    }));
+  });
+}
+
+function modelRefValue(providerId?: string, modelId?: string) {
+  if (!providerId || !modelId) return "";
+  return `${encodeURIComponent(providerId)}:${encodeURIComponent(modelId)}`;
 }

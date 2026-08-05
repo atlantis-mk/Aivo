@@ -97,23 +97,19 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 			bashTool.SetPersistentCWDHooks(s.loadAgentShellCWD, s.saveAgentShellCWD)
 		}
 	}
-	for _, tool := range newAgentRuntimeTools(s) {
-		_ = registry.Register(tool)
+	if s.extensionSupervisor != nil {
+		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}
-	_ = registry.Register(NewProjectSearchTool(s))
-	_ = registry.Register(NewSkillLoadTool(s, s.resolveSkillsWithAuxiliaryModel))
-	if s.pluginManager == nil {
-		s.pluginManager = NewPluginManager(s.store)
+	if s.pluginManager != nil {
+		s.pluginManager.RegisterCachedEnabledTools(context.Background(), registry)
 	}
-	if s.mcpManager == nil {
-		s.mcpManager = NewMCPManager(s.store, s.secrets)
+	if s.mcpManager != nil {
+		s.mcpManager.RegisterCachedEnabledTools(context.Background(), registry)
 	}
-	s.pluginManager.RegisterEnabledTools(context.Background(), registry)
-	s.mcpManager.RegisterEnabledTools(context.Background(), registry)
-	_ = registry.RegisterScoped(NewToolResolveTool(registry, s.resolveToolsWithAuxiliaryModel, s.rememberDeferredToolUsed), domain.ToolSourceBridge, "tool_discovery", "")
 	runtime := NewToolRuntime(registry, workspaceRoot)
-	runtime.PluginHooks = s.pluginManager
+	runtime.PluginHooks = s.extensionSupervisor
 	runtime.Permissions = NewPermissionEngine(s.store)
+	runtime.Permissions.ProjectPreflight = s.prepareProjectPermission
 	runtime.Permissions.notifier = s.permissionNotifier
 	runtime.Permissions.onRequest = func(request domain.PermissionRequest) {
 		if request.SessionID != "" && request.ToolCallID != "" {
@@ -162,7 +158,11 @@ func logToolCalls(calls []domain.ChatToolCall) {
 }
 
 func (s *Service) recordToolResult(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall, result domain.ToolResult) error {
-	return s.saveToolResult(ctx, sessionID, turnID, call, result)
+	err := s.saveToolResult(ctx, sessionID, turnID, call, result)
+	if warmErr := s.rememberWarmDeferredTool(ctx, sessionID, call.Name); err == nil {
+		err = warmErr
+	}
+	return err
 }
 
 func (s *Service) recordToolResultWithMetadata(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall, result domain.ToolResult, metadata map[string]any) error {

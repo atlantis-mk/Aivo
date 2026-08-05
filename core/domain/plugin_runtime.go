@@ -11,10 +11,11 @@ const (
 	PluginDiagnosticWarn  = "warn"
 	PluginDiagnosticError = "error"
 
-	ToolSourceBuiltin = "builtin"
-	ToolSourcePlugin  = "plugin"
-	ToolSourceMCP     = "mcp"
-	ToolSourceBridge  = "bridge"
+	ToolSourceBuiltin   = "builtin"
+	ToolSourcePlugin    = "plugin"
+	ToolSourceMCP       = "mcp"
+	ToolSourceExtension = "extension"
+	ToolSourceBridge    = "bridge"
 )
 
 type PluginManifest struct {
@@ -103,18 +104,22 @@ type SetPluginEnabledInput struct {
 }
 
 type ToolCatalogEntry struct {
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	InputSchema    map[string]any `json:"inputSchema,omitempty"`
-	Namespace      string         `json:"namespace,omitempty"`
-	Capability     string         `json:"capability,omitempty"`
-	RiskLevel      string         `json:"riskLevel,omitempty"`
-	Category       string         `json:"category,omitempty"`
-	Toolsets       []string       `json:"toolsets,omitempty"`
-	Source         string         `json:"source"`
-	SourceID       string         `json:"sourceId,omitempty"`
-	RegistrationID string         `json:"registrationId,omitempty"`
-	Enabled        bool           `json:"enabled"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description,omitempty"`
+	InputSchema        map[string]any `json:"inputSchema,omitempty"`
+	Namespace          string         `json:"namespace,omitempty"`
+	Capability         string         `json:"capability,omitempty"`
+	RiskLevel          string         `json:"riskLevel,omitempty"`
+	Category           string         `json:"category,omitempty"`
+	Toolsets           []string       `json:"toolsets,omitempty"`
+	Source             string         `json:"source"`
+	SourceID           string         `json:"sourceId,omitempty"`
+	RegistrationID     string         `json:"registrationId,omitempty"`
+	SchemaHash         string         `json:"schemaHash,omitempty"`
+	Version            string         `json:"version,omitempty"`
+	Enabled            bool           `json:"enabled"`
+	ActivationPolicy   string         `json:"activationPolicy,omitempty"`
+	ImplementationHash string         `json:"implementationHash,omitempty"`
 }
 
 type ToolCatalogInput struct {
@@ -139,11 +144,27 @@ type SessionActiveToolsResult struct {
 }
 
 type ToolRegistrationIdentity struct {
-	Name           string `json:"name"`
-	RegistrationID string `json:"registrationId,omitempty"`
-	Source         string `json:"source,omitempty"`
-	SourceID       string `json:"sourceId,omitempty"`
-	Version        string `json:"version,omitempty"`
+	Name               string `json:"name"`
+	RegistrationID     string `json:"registrationId,omitempty"`
+	SchemaHash         string `json:"schemaHash,omitempty"`
+	Source             string `json:"source,omitempty"`
+	SourceID           string `json:"sourceId,omitempty"`
+	Version            string `json:"version,omitempty"`
+	ImplementationHash string `json:"implementationHash,omitempty"`
+}
+
+type ToolSnapshotEntry struct {
+	Name             string `json:"name"`
+	RegistrationID   string `json:"registrationId"`
+	SchemaHash       string `json:"schemaHash"`
+	SourceID         string `json:"sourceId,omitempty"`
+	SourceVersion    string `json:"sourceVersion,omitempty"`
+	ActivationSource string `json:"activationSource"`
+}
+
+type ToolSnapshot struct {
+	Revision string              `json:"revision"`
+	Tools    []ToolSnapshotEntry `json:"tools"`
 }
 
 type ToolCatalogSnapshot struct {

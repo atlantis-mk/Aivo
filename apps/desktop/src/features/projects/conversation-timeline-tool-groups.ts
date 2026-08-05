@@ -45,6 +45,7 @@ export function groupToolCalls(
       continue;
     }
     groups.push({
+      description: toolGroupDescription(separators, toolCall),
       id: `${kind}:${toolCall.id}`,
       kind,
       calls: [toolCall],
@@ -53,6 +54,28 @@ export function groupToolCalls(
     });
   }
   return groups;
+}
+
+function toolGroupDescription(
+  separators: ConversationAssistantTextPart[],
+  toolCall: domain.ToolCall,
+) {
+  const toolTime = Date.parse(toolCall.timeCreated ?? "");
+  if (Number.isNaN(toolTime)) {
+    return separators.length === 1 ? separators[0].text.trim() : undefined;
+  }
+  return separators
+    .map((separator, index) => ({
+      index,
+      separator,
+      time: Date.parse(separator.timeCreated ?? ""),
+    }))
+    .filter(({ time }) => !Number.isNaN(time) && time <= toolTime)
+    .toSorted((left, right) => {
+      const timeDelta = right.time - left.time;
+      return timeDelta !== 0 ? timeDelta : right.index - left.index;
+    })[0]
+    ?.separator.text.trim();
 }
 
 export function filterVisibleToolCalls(toolCalls: domain.ToolCall[]) {

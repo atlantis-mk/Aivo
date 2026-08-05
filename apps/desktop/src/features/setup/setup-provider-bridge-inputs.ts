@@ -5,11 +5,6 @@ export type AuxiliaryModelPreferenceInput = domain.ModelPreferencesInput & {
   auxiliaryModel: domain.ModelRef;
 };
 
-export type ModelPreferencesWithAuxiliaryInput = domain.ModelPreferencesInput & {
-  model: domain.ModelRef;
-  auxiliaryModel: domain.ModelRef;
-};
-
 export function providerConnectInputForBridge(
   input: ProviderConnectInput,
 ): domain.ProviderConnectInput {
@@ -27,11 +22,4 @@ export function auxiliaryModelPreference(
   auxiliaryModel: domain.ModelRef,
 ): AuxiliaryModelPreferenceInput {
   return { auxiliaryModel } as AuxiliaryModelPreferenceInput;
-}
-
-export function modelPreferencesWithAuxiliary(
-  model: domain.ModelRef,
-  auxiliaryModel: domain.ModelRef,
-): ModelPreferencesWithAuxiliaryInput {
-  return { model, auxiliaryModel } as ModelPreferencesWithAuxiliaryInput;
 }

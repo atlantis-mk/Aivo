@@ -175,26 +175,26 @@ func TestLocalSandboxRunnerCapturesExitTimeoutAndRetainsOutput(t *testing.T) {
 	}
 }
 
-func TestBashToolReusesPersistentShellPerSession(t *testing.T) {
+func TestBashToolUsesIndependentForegroundProcesses(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	tool := NewBashTool(root, nil)
-	sessionID := "persistent-shell-session"
-	defer defaultAgentShellRegistry.CleanupSession(sessionID)
+	sessionID := "independent-shell-session"
 
 	first := tool.Execute(context.Background(), json.RawMessage(`{"command":"export AIVO_PERSISTED_FLAG=kept; cd sub"}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: sessionID, TurnID: "t1", ToolCallID: "c1"})
 	if !first.OK {
 		t.Fatalf("first = %#v, want successful command", first)
 	}
 	second := tool.Execute(context.Background(), json.RawMessage(`{"command":"printf '%s:%s' \"$AIVO_PERSISTED_FLAG\" \"$(basename \"$PWD\")\""}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: sessionID, TurnID: "t1", ToolCallID: "c2"})
-	if !second.OK || strings.TrimSpace(second.Structured["stdout"].(string)) != "kept:sub" {
-		t.Fatalf("second = %#v, want persisted env and cwd", second)
+	want := ":" + filepath.Base(root)
+	if !second.OK || strings.TrimSpace(second.Structured["stdout"].(string)) != want {
+		t.Fatalf("second = %#v, want independent env and workspace cwd %q", second, want)
 	}
 }
 
-func TestBashToolPersistsAndRestoresLastWorkspaceCWD(t *testing.T) {
+func TestBashToolDoesNotPersistWorkspaceCWD(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -210,10 +210,7 @@ func TestBashToolPersistsAndRestoresLastWorkspaceCWD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer defaultAgentShellRegistry.CleanupSession(session.ID)
-
 	tool := NewBashTool(root, nil)
-	tool.SetPersistentCWDHooks(service.loadAgentShellCWD, service.saveAgentShellCWD)
 	first := tool.Execute(ctx, json.RawMessage(`{"command":"cd sub"}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "c1"})
 	if !first.OK {
 		t.Fatalf("first = %#v, want cd command to succeed", first)
@@ -222,16 +219,14 @@ func TestBashToolPersistsAndRestoresLastWorkspaceCWD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cc.CWD != filepath.ToSlash(filepath.Join(realRoot, "sub")) {
-		t.Fatalf("persisted cwd = %q, want subdir", cc.CWD)
+	if cc.CWD != filepath.ToSlash(realRoot) {
+		t.Fatalf("coding cwd = %q, want unchanged workspace root", cc.CWD)
 	}
 
-	defaultAgentShellRegistry.CleanupSession(session.ID)
 	restoredTool := NewBashTool(root, nil)
-	restoredTool.SetPersistentCWDHooks(service.loadAgentShellCWD, service.saveAgentShellCWD)
 	second := restoredTool.Execute(ctx, json.RawMessage(`{"command":"printf '%s' \"$(basename \"$PWD\")\""}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t2", ToolCallID: "c2"})
-	if !second.OK || strings.TrimSpace(second.Structured["stdout"].(string)) != "sub" {
-		t.Fatalf("second = %#v, want restored cwd only", second)
+	if !second.OK || strings.TrimSpace(second.Structured["stdout"].(string)) != filepath.Base(root) {
+		t.Fatalf("second = %#v, want workspace root cwd", second)
 	}
 }
 
@@ -270,9 +265,16 @@ func TestBashRequiresApprovalThenSavedApprovalIsExact(t *testing.T) {
 
 	approvalCtx, cancel := context.WithTimeout(ctx, 30*time.Millisecond)
 	defer cancel()
-	third := runtime.ExecuteWithContext(approvalCtx, domain.ChatToolCall{ID: "call_pwd_3", Name: "bash", Arguments: json.RawMessage(`{"command":"pwd","cwd":"sub"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_pwd_3"})
-	if third.OK || !third.PermissionRequested {
-		t.Fatalf("third = %#v, want different cwd to require approval", third)
+	third := runtime.ExecuteWithContext(approvalCtx, domain.ChatToolCall{ID: "call_pwd_3", Name: "bash", Arguments: json.RawMessage(`{"command":"printf changed"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_pwd_3"})
+	if third.OK || third.PermissionRequested || third.ToolError == nil || third.ToolError.Code != "permission_denied" {
+		t.Fatalf("third = %#v, want cancelled approval wait to deny execution", third)
+	}
+	pending, err := service.ListPermissionRequests(ctx, "s1", domain.PermissionRequestStatusPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending permissions after cancelled wait = %#v", pending)
 	}
 }
 
@@ -328,51 +330,24 @@ func TestRunTestsMappingRejectsUnsupportedFilterAndUsesDeclaredCommand(t *testin
 	}
 }
 
-func TestBashBackgroundModeReturnsManagedProcessRef(t *testing.T) {
+func TestBashRejectsLegacyBackgroundMode(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
 	root := t.TempDir()
-	outputCh := make(chan ShellOutputEvent, 4)
-	service.SetShellOutputHook(func(event ShellOutputEvent) {
-		outputCh <- event
-	})
 	_, runtime := service.toolsForWorkspace(root)
 	registered, _, ok := runtime.Registry.GetRegistered("bash")
 	if !ok {
 		t.Fatal("bash tool was not registered")
 	}
-	if bashTool, ok := registered.(*BashTool); !ok || bashTool.outputSink == nil {
-		t.Fatalf("bash tool = %#v, want output sink", registered)
+	if _, ok := registered.(*BashTool); !ok {
+		t.Fatalf("bash tool = %#v", registered)
 	}
 	call := domain.ChatToolCall{ID: "call_bg", Name: "bash", Arguments: json.RawMessage(`{"command":"printf ready","mode":"background"}`)}
 	execCtx := domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s-bg", TurnID: "t1", ToolCallID: call.ID}
-	resultCh := make(chan domain.ToolResult, 1)
-	go func() {
-		resultCh <- runtime.ExecuteWithContext(ctx, call, execCtx)
-	}()
-	request := waitForPermissionRequest(t, service, "s-bg")
-	if caps, ok := request.Arguments["capabilities"].([]any); !ok || !containsAnyString(caps, "shell.exec.background") {
-		t.Fatalf("request capabilities = %#v, want shell.exec.background", request.Arguments["capabilities"])
-	}
-	if _, err := service.ApprovePermissionRequest(ctx, domain.ApprovePermissionRequestInput{RequestID: request.ID}); err != nil {
-		t.Fatal(err)
-	}
-	result := waitForToolResult(t, resultCh)
-	ref, _ := result.Structured["processRef"].(string)
-	if !result.OK || ref == "" {
-		t.Fatalf("result = %#v, want processRef", result)
-	}
-	info, err := service.WaitShellProcess(ctx, ref)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(info.Stdout, "ready") {
-		t.Fatalf("process info = %#v, want stdout ready", info)
-	}
-	event := waitForShellOutputEvent(t, outputCh, "stdout", "ready", "s-bg", "t1", call.ID)
-	if event.ProcessRef != ref {
-		t.Fatalf("event processRef = %q, want %q", event.ProcessRef, ref)
+	result := runtime.ExecuteWithContext(ctx, call, execCtx)
+	if result.OK || result.ToolError == nil || result.ToolError.Code != "invalid_arguments" || result.PermissionRequested {
+		t.Fatalf("result = %#v, want strict-schema rejection before approval", result)
 	}
 }
 

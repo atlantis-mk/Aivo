@@ -6,6 +6,7 @@ import {
   filterSkillCandidates,
   filterSkills,
   filterTools,
+  isApplicationPlugin,
   mergeToolCatalogEntries,
   pluginToolsForDisplay,
   type PluginSettingsSection,
@@ -61,14 +62,7 @@ export function usePluginMcpSettingsDerivedState({
     [plugins, servers, tools, workspaceRoot],
   );
   const applicationPlugins = useMemo(
-    () =>
-      plugins.filter((item) => {
-        const keywords = item.plugin.manifest.keywords ?? [];
-        return (
-          keywords.some((keyword) => /app|application|connector/i.test(keyword)) ||
-          Boolean(item.plugin.manifest.hooks?.length)
-        );
-      }),
+    () => plugins.filter(isApplicationPlugin),
     [plugins],
   );
   const visibleSkills = useMemo(

@@ -3,6 +3,7 @@ import { memo, useMemo, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import { constructConversationTimelineRows } from "@/features/projects/conversation-timeline-row-model";
+import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
 import { ConversationTimelineRowView } from "./conversation-timeline-row-view";
 import type { ConversationTimelineActions } from "./conversation-timeline-types";
 import type { AgentRun } from "@/services/aivo";
@@ -15,6 +16,7 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   onDeleteTurn,
   onEditUserMessage,
   onOpenSession,
+  onOpenToolActivity,
   onRetryTurn,
   revealFromHistory,
   reservePermissionDock,
@@ -27,6 +29,7 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   onDeleteTurn?: (turn: ConversationTurn) => void;
   onEditUserMessage?: (turn: ConversationTurn) => void;
   onOpenSession?: (sessionId: string) => void;
+  onOpenToolActivity?: (activity: ToolCallActivity) => void;
   onRetryTurn?: (turn: ConversationTurn) => void;
   revealFromHistory: boolean;
   reservePermissionDock: boolean;
@@ -68,6 +71,7 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
           agentRuns={agentRuns}
           key={row.key}
           onOpenSession={onOpenSession}
+          onOpenToolActivity={onOpenToolActivity}
           row={row}
         />
       ))}

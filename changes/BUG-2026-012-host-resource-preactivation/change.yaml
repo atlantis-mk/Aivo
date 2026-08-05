@@ -1,0 +1,38 @@
+id: "BUG-2026-012-host-resource-preactivation"
+title: "Restore Host pre-call activation for skills and extensions"
+type: "bug"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-EXTENSION-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-EXTENSION-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+  - "CHG-2026-011-session-scoped-tool-activation"
+affected_surfaces:
+  - "Host pre-call resource resolution and primary-model context assembly"
+  - "skills, legacy plugins, Manifest v1 extensions, and MCP adapters"
+  - "per-request Tool Snapshot construction"
+affected_formats:
+  - "sanitized auxiliary resolver catalog and model-visible dynamic context"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Restores selection only across already trusted and enabled resources; the resolver still cannot install, trust, bind credentials, authorize, or execute a tool"
+migration: "none"
+supersedes: []

@@ -46,7 +46,7 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 			out = append(out, spec)
 		}
 	}
-	out = appendNativeHostedToolSpecs(ctx, s, route, nativeTools, out)
+	_ = nativeTools // Hosted provider capabilities are extension candidates, never implicit core tools.
 	return out
 }
 

@@ -27,7 +27,10 @@ func safeTargetForWrite(workspaceRoot string, relPath string) (string, error) {
 	if clean == "" || clean == "." {
 		return "", errors.New("path is required")
 	}
-	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+	if filepath.IsAbs(clean) {
+		return "", workspaceRelativePathError()
+	}
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
 		return "", errors.New("path escapes workspace root")
 	}
 	target := filepath.Join(root, clean)

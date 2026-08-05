@@ -589,14 +589,14 @@ func TestSanitizeInteractivePermissionArgumentsRemovesInput(t *testing.T) {
 	}
 }
 
-func TestCodingRegistryIncludesInteractiveTerminalTools(t *testing.T) {
+func TestCodingRegistryOmitsInteractiveTerminalTools(t *testing.T) {
 	registry, err := NewCodingToolRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{ExecCommandToolName, WriteStdinToolName} {
-		if _, ok := registry.Get(name); !ok {
-			t.Fatalf("tool %s is not registered", name)
+		if _, ok := registry.Get(name); ok {
+			t.Fatalf("legacy interactive tool %s must not be registered", name)
 		}
 	}
 }

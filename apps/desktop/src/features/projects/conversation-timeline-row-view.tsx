@@ -6,7 +6,11 @@ import {
   type ConversationTimelineRow,
 } from "@/features/projects/conversation-timeline-row-model";
 import { sameAgentRuns } from "@/features/projects/conversation-timeline-subagent-model";
-import { TimelineToolGroup } from "@/features/projects/conversation-timeline-tool-components";
+import {
+  TimelineToolCluster,
+  TimelineToolGroup,
+} from "@/features/projects/conversation-timeline-tool-components";
+import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
 import {
   AssistantPreamble,
   AssistantResponse,
@@ -23,11 +27,13 @@ export const ConversationTimelineRowView = memo(function ConversationTimelineRow
   actions,
   agentRuns,
   onOpenSession,
+  onOpenToolActivity,
   row,
 }: {
   actions: ConversationTimelineActions;
   agentRuns: AgentRun[];
   onOpenSession?: (sessionId: string) => void;
+  onOpenToolActivity?: (activity: ToolCallActivity) => void;
   row: ConversationTimelineRow;
 }) {
   switch (row.type) {
@@ -48,6 +54,17 @@ export const ConversationTimelineRowView = memo(function ConversationTimelineRow
             agentRuns={agentRuns}
             group={row.group}
             onOpenSession={onOpenSession}
+            onOpenToolActivity={onOpenToolActivity}
+          />
+        </TimelineRowFrame>
+      );
+    case "tool-cluster":
+      return (
+        <TimelineRowFrame role="assistant" turnId={row.turnId}>
+          <TimelineToolCluster
+            activityId={row.key}
+            groups={row.groups}
+            onOpenToolActivity={onOpenToolActivity}
           />
         </TimelineRowFrame>
       );
@@ -101,12 +118,14 @@ function areTimelineRowPropsEqual(
     actions: ConversationTimelineActions;
     agentRuns: AgentRun[];
     onOpenSession?: (sessionId: string) => void;
+    onOpenToolActivity?: (activity: ToolCallActivity) => void;
     row: ConversationTimelineRow;
   },
   next: {
     actions: ConversationTimelineActions;
     agentRuns: AgentRun[];
     onOpenSession?: (sessionId: string) => void;
+    onOpenToolActivity?: (activity: ToolCallActivity) => void;
     row: ConversationTimelineRow;
   },
 ) {
@@ -114,6 +133,7 @@ function areTimelineRowPropsEqual(
     sameTimelineRow(previous.row, next.row) &&
     previous.actions === next.actions &&
     previous.onOpenSession === next.onOpenSession &&
+    previous.onOpenToolActivity === next.onOpenToolActivity &&
     (!timelineRowUsesAgentRuns(previous.row) ||
       sameAgentRuns(previous.agentRuns, next.agentRuns))
   );

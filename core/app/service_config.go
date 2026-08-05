@@ -12,6 +12,14 @@ func (s *Service) appConfig(ctx context.Context) (domain.AppConfig, error) {
 	if err != nil {
 		return domain.AppConfig{}, err
 	}
+	if cfg.Provider != nil {
+		provider := cloneProviderConfig(*cfg.Provider)
+		if saved, ok := s.savedProviderConfig(ctx, provider.ID); ok {
+			provider = mergeMissingProviderConfig(provider, saved)
+		}
+		provider = s.providerConfigWithDefaults(provider)
+		cfg.Provider = &provider
+	}
 	normalizeLegacyConfigModels(&cfg)
 	cfg.Persistence.Configured = true
 	cfg.Persistence.JournalEnabled = true
@@ -25,6 +33,11 @@ func (s *Service) appConfig(ctx context.Context) (domain.AppConfig, error) {
 	if cfg.Persistence.ReadPath == "" {
 		cfg.Persistence.ReadPath = "sqlite"
 	}
+	defaultWorkspacePath, err := managedWorkspaceRoot()
+	if err != nil {
+		return domain.AppConfig{}, err
+	}
+	cfg.DefaultInitialWorkspacePath = defaultWorkspacePath
 	return cfg, nil
 }
 

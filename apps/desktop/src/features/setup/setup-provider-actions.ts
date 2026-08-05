@@ -7,19 +7,17 @@ import type {
 } from "@/features/providers/provider-types";
 import {
   connectedProviderConfig,
-  modelPreferencesForProvider,
-  previewConfigForConnectedAccountModels,
+  previewConfigForAuxiliaryModel,
   providerConnectionDraft,
 } from "@/features/setup/setup-provider-action-builders";
 import type { ProviderValidationResult } from "@/features/setup/setup-provider-step-state";
 import {
   catalogDefaultModelForProvider,
-  updateCatalogDefaultModel,
   type AppConfigWithAuxiliary,
 } from "@/features/setup/setup-provider-models";
 import {
   auxiliaryModelPreference,
-  modelPreferencesWithAuxiliary,
+  modelRefForProvider,
   providerConnectInputForBridge,
 } from "@/features/setup/setup-provider-bridge-inputs";
 import { hasAppBridge } from "@/lib/app-config";
@@ -64,17 +62,15 @@ export function useSetupProviderActions({
     apiKey?: string,
     customProvider?: CustomProviderForm,
     selectedModelId?: string,
-    selectedAuxiliaryModelId?: string,
   ) {
     setSaving(true);
     setError("");
-    const { auxiliaryModel, input, isCustomProvider } = providerConnectionDraft({
+    const { input, isCustomProvider } = providerConnectionDraft({
       apiKey,
       authMode,
       catalog,
       customProvider,
       provider,
-      selectedAuxiliaryModelId,
       selectedModelId,
     });
     try {
@@ -96,10 +92,13 @@ export function useSetupProviderActions({
           providerConnectInputForBridge(input),
         );
         setCatalog(nextCatalog);
-        const nextConfig = connectedProviderConfig(input, auxiliaryModel);
-        if (auxiliaryModel) {
+        const existingAuxiliaryModel = configAuxiliaryModel(config);
+        const nextConfig = connectedProviderConfig(input, existingAuxiliaryModel);
+        if (!existingAuxiliaryModel && input.modelId) {
           const savedConfig = await updateModelPreferences(
-            auxiliaryModelPreference(auxiliaryModel),
+            auxiliaryModelPreference(
+              modelRefForProvider(input.providerId, input.modelId),
+            ),
           );
           setConfig(savedConfig as AppConfigWithAuxiliary);
         } else {
@@ -107,10 +106,16 @@ export function useSetupProviderActions({
         }
       } else {
         const next = connectPreviewProvider(input);
-        (next.config as AppConfigWithAuxiliary).auxiliaryModel = auxiliaryModel;
-        setPreviewInitialized(next.config);
+        const nextConfig =
+          !configAuxiliaryModel(config) && input.modelId
+            ? previewConfigForAuxiliaryModel(
+                next.config,
+                modelRefForProvider(input.providerId, input.modelId),
+              )
+            : next.config;
+        setPreviewInitialized(nextConfig);
         setCatalog(next.catalog);
-        setConfig(next.config);
+        setConfig(nextConfig);
       }
       return true;
     } catch (err) {
@@ -191,35 +196,24 @@ export function useSetupProviderActions({
     }
   }
 
-  async function saveConnectedAccountModels(
-    providerId: string,
-    modelId: string,
-    auxiliaryModelId: string,
-  ) {
-    const { auxiliaryModel, model } = modelPreferencesForProvider(
-      providerId,
-      modelId,
-      auxiliaryModelId,
-    );
+  async function saveAuxiliaryModel(providerId: string, modelId: string) {
+    const auxiliaryModel = modelRefForProvider(providerId, modelId);
     try {
       if (hasAppBridge()) {
         const savedConfig = await updateModelPreferences(
-          modelPreferencesWithAuxiliary(model, auxiliaryModel),
+          auxiliaryModelPreference(auxiliaryModel),
         );
         setConfig(savedConfig as AppConfigWithAuxiliary);
       } else {
-        const nextConfig = previewConfigForConnectedAccountModels({
-          auxiliaryModel,
-          config,
-          model,
-        });
+        const nextConfig = previewConfigForAuxiliaryModel(config, auxiliaryModel);
         setPreviewInitialized(nextConfig);
         setConfig(nextConfig);
       }
-      setCatalog(updateCatalogDefaultModel(catalog, providerId, modelId));
       setError("");
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     }
   }
 
@@ -241,9 +235,13 @@ export function useSetupProviderActions({
     completeProviderDialog,
     refreshProviderCatalog,
     removeProviderAccount,
-    saveConnectedAccountModels,
+    saveAuxiliaryModel,
     validateProvider,
   };
+}
+
+function configAuxiliaryModel(config: domain.AppConfig | null) {
+  return (config as AppConfigWithAuxiliary | null)?.auxiliaryModel;
 }
 
 async function openExternalURL(url: string) {

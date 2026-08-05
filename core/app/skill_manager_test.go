@@ -81,8 +81,8 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 	if registry == nil {
 		t.Fatal("registry is nil")
 	}
-	if _, ok := registry.Get("skill"); !ok {
-		t.Fatal("model tool should be registered as skill")
+	if _, ok := registry.Get("skill"); ok {
+		t.Fatal("skill is a Host context protocol and must not be a model execution tool")
 	}
 	if _, ok := registry.Get("skill_load"); ok {
 		t.Fatal("model tool should not be registered as skill_load")

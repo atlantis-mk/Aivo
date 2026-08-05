@@ -359,6 +359,36 @@ func (m *MCPManager) RegisterCachedEnabledTools(ctx context.Context, registry *R
 	m.registerEnabledTools(ctx, registry, false)
 }
 
+func (m *MCPManager) PrepareEnabledCatalogs(ctx context.Context) map[string]bool {
+	failed := map[string]bool{}
+	if m == nil || m.store == nil {
+		return failed
+	}
+	servers, err := m.store.ListMCPServers(ctx, false)
+	if err != nil {
+		return failed
+	}
+	for _, server := range servers {
+		if !server.Enabled {
+			continue
+		}
+		tools, listErr := m.store.ListMCPTools(ctx, server.ID)
+		if listErr == nil && len(tools) > 0 {
+			continue
+		}
+		resources, resourcesErr := m.store.ListMCPResources(ctx, server.ID, false)
+		templates, templatesErr := m.store.ListMCPResources(ctx, server.ID, true)
+		if resourcesErr == nil && templatesErr == nil && (len(resources) > 0 || len(templates) > 0) {
+			continue
+		}
+		probe, probeErr := m.Probe(ctx, domain.MCPProbeInput{ServerID: server.ID})
+		if probeErr != nil || !probe.OK {
+			failed[toolSourceEligibilityKey(domain.ToolSourceExtension, mcpServerToolPrefix(server))] = true
+		}
+	}
+	return failed
+}
+
 func (m *MCPManager) registerEnabledTools(ctx context.Context, registry *Registry, allowProbe bool) {
 	if m == nil || m.store == nil || registry == nil {
 		return
@@ -372,18 +402,26 @@ func (m *MCPManager) registerEnabledTools(ctx context.Context, registry *Registr
 			continue
 		}
 		tools, err := m.store.ListMCPTools(ctx, server.ID)
-		if err != nil || len(tools) == 0 {
-			probe, _ := m.Probe(ctx, domain.MCPProbeInput{ServerID: server.ID})
-			tools = probe.Tools
+		if (err != nil || len(tools) == 0) && allowProbe {
+			probe, probeErr := m.Probe(ctx, domain.MCPProbeInput{ServerID: server.ID})
+			if probeErr == nil {
+				tools, err = probe.Tools, nil
+			}
+		}
+		if err != nil {
+			continue
 		}
 		for _, tool := range tools {
 			spec := domain.ToolSpec{
 				Name: mcpToolName(server, tool), Description: tool.Description, InputSchema: tool.InputSchema,
-				Namespace: server.Name, NamespaceDescription: server.Description,
+				Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description,
 				Capability: firstNonEmptyApp(tool.Capability, "mcp.read"), RiskLevel: firstNonEmptyApp(tool.RiskLevel, "medium"),
 				Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio,
+				ActivationPolicy: "auto", ImplementationHash: mcpAdapterImplementationHash(server, tool),
 			}
-			_ = registry.RegisterScoped(&MCPRuntimeTool{manager: m, server: server, tool: tool, spec: spec}, domain.ToolSourceMCP, server.ID, server.TimeUpdated)
+			if registerErr := registry.RegisterScoped(&MCPRuntimeTool{manager: m, server: server, tool: tool, spec: spec}, domain.ToolSourceExtension, mcpServerToolPrefix(server), firstNonEmptyApp(tool.TimeUpdated, server.TimeUpdated, "v1")); registerErr != nil {
+				m.diagnostic(ctx, server.ID, "error", "MCP tool registration failed", map[string]any{"tool": tool.Name, "error": registerErr.Error()})
+			}
 		}
 		m.registerMCPResourceUtilityTools(ctx, registry, server)
 	}

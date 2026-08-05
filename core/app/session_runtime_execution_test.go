@@ -157,6 +157,144 @@ func TestCancelSessionTurnStopsStreamingProviderRequest(t *testing.T) {
 	}
 }
 
+func TestCancelTurnIsolatesLaterModelHistoryAndPendingInteractions(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{
+		Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelledUser, err := service.AppendEvent(ctx, domain.AppendEventRequest{
+		SessionID: session.ID, Type: domain.EventTypeUserMessage, Role: domain.EventRoleUser, Content: "run Bash command sleep 20",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelledTurn, err := service.StartTurn(ctx, domain.StartTurnRequest{SessionID: session.ID, UserEventID: cancelledUser.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{
+		ID: "cancelled-bash", SessionID: session.ID, TurnID: cancelledTurn.ID, Name: "bash", Status: domain.ToolCallStatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	permission, err := service.store.CreatePermissionRequest(ctx, domain.PermissionRequest{
+		SessionID: session.ID, TurnID: cancelledTurn.ID, ToolCallID: "cancelled-bash", ToolName: "bash", Action: "shell",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	question, err := service.store.CreateQuestionRequest(ctx, domain.QuestionRequest{
+		SessionID: session.ID, TurnID: cancelledTurn.ID, ToolCallID: "cancelled-question", ToolName: "question",
+		Questions: []domain.QuestionPrompt{{Question: "Continue the old command?"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	otherSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeGeneric})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherUser, err := service.AppendEvent(ctx, domain.AppendEventRequest{
+		SessionID: otherSession.ID, Type: domain.EventTypeUserMessage, Role: domain.EventRoleUser, Content: "other session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTurn, err := service.StartTurn(ctx, domain.StartTurnRequest{SessionID: otherSession.ID, UserEventID: otherUser.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPermission, err := service.store.CreatePermissionRequest(ctx, domain.PermissionRequest{
+		SessionID: otherSession.ID, TurnID: otherTurn.ID, ToolCallID: "other-bash", ToolName: "bash", Action: "shell",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.CancelTurn(ctx, domain.CancelTurnRequest{TurnID: cancelledTurn.ID, Reason: "User stopped generation"}); err != nil {
+		t.Fatal(err)
+	}
+	permission, err = service.store.GetPermissionRequest(ctx, permission.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if permission.Status != domain.PermissionRequestStatusDenied {
+		t.Fatalf("cancelled permission status = %q, want denied", permission.Status)
+	}
+	permission, err = service.ApprovePermissionRequest(ctx, domain.ApprovePermissionRequestInput{RequestID: permission.ID, Remember: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if permission.Status != domain.PermissionRequestStatusDenied {
+		t.Fatalf("stale approval revived cancelled permission: %#v", permission)
+	}
+	question, err = service.store.GetQuestionRequest(ctx, question.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if question.Status != domain.QuestionRequestStatusRejected {
+		t.Fatalf("cancelled question status = %q, want rejected", question.Status)
+	}
+	otherPermission, err = service.store.GetPermissionRequest(ctx, otherPermission.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if otherPermission.Status != domain.PermissionRequestStatusPending {
+		t.Fatalf("other turn permission status = %q, want pending", otherPermission.Status)
+	}
+	calls, err := service.ListToolCalls(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0].Status != domain.ToolCallStatusInterrupted {
+		t.Fatalf("cancelled tool calls = %#v, want one interrupted call", calls)
+	}
+
+	currentUser, err := service.AppendEvent(ctx, domain.AppendEventRequest{
+		SessionID: session.ID, Type: domain.EventTypeUserMessage, Role: domain.EventRoleUser, Content: "edit ambiguous.txt only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.StartTurn(ctx, domain.StartTurnRequest{SessionID: session.ID, UserEventID: currentUser.ID}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := service.modelVisibleSessionHistory(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, message := range history {
+		if message.Role == domain.EventRoleSystem {
+			continue
+		}
+		joined += "\n" + message.Text
+	}
+	if strings.Contains(joined, "sleep 20") {
+		t.Fatalf("cancelled instruction leaked into later model history: %s", joined)
+	}
+	if !strings.Contains(joined, "edit ambiguous.txt only") {
+		t.Fatalf("latest instruction missing from model history: %s", joined)
+	}
+	events, err := service.ListEvents(ctx, session.ID, false, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visibleCancelledPrompt := false
+	for _, event := range events {
+		visibleCancelledPrompt = visibleCancelledPrompt || event.ID == cancelledUser.ID
+	}
+	if !visibleCancelledPrompt {
+		t.Fatal("cancelled prompt disappeared from user-visible history")
+	}
+}
+
 func TestExecutionControlInterruptCompactCursorAndQueuedInput(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()

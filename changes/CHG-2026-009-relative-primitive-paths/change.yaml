@@ -1,0 +1,31 @@
+id: "CHG-2026-009-relative-primitive-paths"
+title: "Guide primitive file tools to workspace-relative paths"
+type: "bug"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-TOOL-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-TOOL-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+affected_surfaces:
+  - "Agent-visible read, edit, and write schemas"
+  - "workspace path validation and permission denial messages"
+affected_formats:
+  - "core primitive JSON schema descriptions and error text"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Absolute workspace paths remain rejected for mutation; clearer relative-path guidance reduces retries without weakening path escape checks"
+migration: "none"
+supersedes: []

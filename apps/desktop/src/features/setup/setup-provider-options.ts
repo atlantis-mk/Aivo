@@ -4,13 +4,20 @@ import openAIIcon from "@/assets/icons/provider/openai.svg";
 import syntheticIcon from "@/assets/icons/provider/synthetic.svg";
 import { providerDisplayName } from "@/features/providers/provider-defaults";
 import type { ProviderChoice } from "@/features/providers/provider-types";
+import {
+  AiComputerIcon,
+  File01Icon,
+  Grid2X2Icon,
+  Search01Icon,
+  TextAlignLeft01Icon,
+} from "@hugeicons/core-free-icons";
 
-export const capabilityPills = [
-  "我能帮你整理文件",
-  "我能帮你浏览总结",
-  "我可以帮你使用电脑",
-  "我能帮你操作 App",
-  "我能搜集全网信息",
+export const welcomeCapabilities = [
+  { icon: File01Icon, label: "整理文件" },
+  { icon: TextAlignLeft01Icon, label: "浏览与总结" },
+  { icon: AiComputerIcon, label: "操作电脑" },
+  { icon: Grid2X2Icon, label: "使用应用" },
+  { icon: Search01Icon, label: "搜集资料" },
 ];
 
 const providerIconModules = import.meta.glob<string>(

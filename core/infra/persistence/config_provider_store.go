@@ -22,6 +22,7 @@ func (s *Store) LoadConfig(ctx context.Context) (domain.AppConfig, error) {
 	}
 	cfg := defaultAppConfig()
 	cfg.Initialized = row.Initialized == 1
+	cfg.InitialWorkspacePath = row.InitialWorkspacePath
 	cfg.ReasoningEffort = row.ReasoningEffort
 	cfg.ServiceTier = row.ServiceTier
 	cfg.AuxiliaryModel = decodeModelRef(row.AuxiliaryModel)
@@ -81,6 +82,6 @@ func (s *Store) SaveConfig(ctx context.Context, cfg domain.AppConfig) error {
 	if cfg.Initialized {
 		initialized = 1
 	}
-	row := appConfigRow{ID: 1, Initialized: initialized, ProviderID: providerID, ProviderType: providerType, BaseURL: baseURL, APIKeyEnv: apiKeyEnv, Model: model, AuxiliaryModel: encodeModelRef(cfg.AuxiliaryModel), ReasoningEffort: cfg.ReasoningEffort, ServiceTier: cfg.ServiceTier, FallbackModels: encodeModelRefs(cfg.FallbackModels), ProviderPolicy: encodeProviderRuntimePolicy(cfg.ProviderPolicy), WebSearch: encodeWebSearchConfig(cfg.WebSearch), NativeTools: encodeNativeToolsConfig(cfg.NativeTools), Headers: headers, RequestParams: requestParams, UpdatedAt: domain.NowString(time.Now())}
+	row := appConfigRow{ID: 1, Initialized: initialized, InitialWorkspacePath: cfg.InitialWorkspacePath, ProviderID: providerID, ProviderType: providerType, BaseURL: baseURL, APIKeyEnv: apiKeyEnv, Model: model, AuxiliaryModel: encodeModelRef(cfg.AuxiliaryModel), ReasoningEffort: cfg.ReasoningEffort, ServiceTier: cfg.ServiceTier, FallbackModels: encodeModelRefs(cfg.FallbackModels), ProviderPolicy: encodeProviderRuntimePolicy(cfg.ProviderPolicy), WebSearch: encodeWebSearchConfig(cfg.WebSearch), NativeTools: encodeNativeToolsConfig(cfg.NativeTools), Headers: headers, RequestParams: requestParams, UpdatedAt: domain.NowString(time.Now())}
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error
 }

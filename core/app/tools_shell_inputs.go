@@ -11,6 +11,7 @@ import (
 
 type bashInput struct {
 	Command        string            `json:"command"`
+	Timeout        int               `json:"timeout"`
 	CWD            string            `json:"cwd"`
 	TimeoutSeconds int               `json:"timeoutSeconds"`
 	Network        string            `json:"network"`
@@ -22,7 +23,7 @@ type bashInput struct {
 
 func parseBashArgs(args json.RawMessage) (bashInput, error) {
 	var input bashInput
-	if err := json.Unmarshal(args, &input); err != nil {
+	if err := decodeStrictToolArgs(args, &input); err != nil {
 		return input, errors.New("invalid bash arguments")
 	}
 	input.Command = strings.TrimSpace(input.Command)
@@ -45,6 +46,24 @@ func parseBashArgs(args json.RawMessage) (bashInput, error) {
 		}
 	}
 	return input, nil
+}
+
+func parsePrimitiveBashArgs(args json.RawMessage) (bashInput, error) {
+	var input struct {
+		Command string `json:"command"`
+		Timeout int    `json:"timeout"`
+	}
+	if err := decodeStrictToolArgs(args, &input); err != nil {
+		return bashInput{}, errors.New("invalid bash arguments")
+	}
+	input.Command = strings.TrimSpace(input.Command)
+	if input.Command == "" {
+		return bashInput{}, errors.New("command is required")
+	}
+	if input.Timeout < 0 || input.Timeout > int(maxCommandTimeout.Seconds()) {
+		return bashInput{}, fmt.Errorf("timeout must be between 1 and %d seconds", int(maxCommandTimeout.Seconds()))
+	}
+	return bashInput{Command: input.Command, Timeout: input.Timeout, TimeoutSeconds: input.Timeout, Mode: "foreground"}, nil
 }
 
 func shouldUsePersistentAgentShell(input bashInput, execCtx domain.ToolExecutionContext) bool {

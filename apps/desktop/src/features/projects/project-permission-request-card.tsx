@@ -8,6 +8,8 @@ import {
   permissionApprovalTitle,
   permissionCommand,
   permissionFiles,
+  permissionProject,
+  permissionRememberLabel,
   permissionToolsets,
   type PermissionActionState,
 } from "@/features/projects/project-permission-approval-model";
@@ -31,6 +33,7 @@ export function PermissionRequestCard({
   const [remember, setRemember] = useState(false);
   const files = permissionFiles(permission);
   const command = permissionCommand(permission);
+  const project = permissionProject(permission);
   const title = permissionApprovalTitle(permission, command);
   const target = permissionApprovalTarget(permission, command);
   const permissionModeLabel = permissionAgentMode(permission);
@@ -108,6 +111,28 @@ export function PermissionRequestCard({
           ))}
         </div>
       ) : null}
+      {project ? (
+        <div className="mt-3 grid gap-2 rounded-md bg-muted/70 p-3 text-xs">
+          <div className="min-w-0">
+            <div className="mb-1 text-[11px] font-semibold text-muted-foreground">
+              {project.operation === "add" ? "项目目录" : "绑定到项目"}
+            </div>
+            {project.name ? (
+              <div className="mb-1 font-medium text-foreground">
+                {project.name}
+              </div>
+            ) : null}
+            <div className="break-all font-mono text-[11px] leading-relaxed text-foreground">
+              {project.rootPath}
+            </div>
+          </div>
+          <div className="rounded border border-border/70 bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            {project.immutableAssociation
+              ? "绑定后不可切换或解除。如需使用其他项目，请新建会话。"
+              : "仅登记已有目录，不会创建文件，也不会自动绑定当前会话。"}
+          </div>
+        </div>
+      ) : null}
       {command ? (
         <div className="mt-3 grid gap-2 rounded-md bg-muted/70 p-3 text-xs">
           <div className="min-w-0">
@@ -141,7 +166,7 @@ export function PermissionRequestCard({
             type="checkbox"
           />
           <span className="truncate">
-            {command ? "记住此命令和 cwd" : "记住这类权限"}
+            {permissionRememberLabel(permission, command)}
           </span>
         </label>
         <div className="flex shrink-0 items-center gap-2">

@@ -52,11 +52,11 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   } = useProjectWorkspaceScreenState();
   const {
     archivedConversationIds,
-    defaultActiveToolNames,
+    pendingActiveToolNames,
     hiddenTodoPlanKeys,
     pinnedConversationIds,
     setArchivedConversationIds,
-    setDefaultActiveToolNames,
+    setPendingActiveToolNames,
     setHiddenTodoPlanKeyForSession,
     setPinnedConversationIds,
   } = useProjectWorkspacePreferencesState();
@@ -183,9 +183,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   });
   const {
     applyToolActivityFileState,
-    closeToolActivityTab,
     closedToolActivityItemIdsRef,
-    activeToolActivityTabId,
     isRightSidebarOpen,
     mergeToolActivityFromCall,
     restoreToolActivitySessionState,
@@ -193,7 +191,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setActiveToolActivityTabId,
     setRightSidebarOpen,
     setToolActivityTabs,
-    toolActivityTabs,
   } = useProjectWorkspaceToolActivityController({
     activeSessionId,
     activeSessionIdRef,
@@ -254,7 +251,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     agentMode,
     catalog,
     config,
-    defaultActiveToolNames,
+    pendingActiveToolNames,
     hasPendingTurn,
     loadConversationTurns,
     pendingStopRequestedRef,
@@ -267,6 +264,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setCodingWorkspaceRoot,
     setConversationRunning,
     setPrompt,
+    setPendingActiveToolNames,
     setSessions,
     setTurns,
   });
@@ -283,7 +281,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     startNewConversation,
     startNewProjectConversation,
     togglePinnedConversation,
-    visibleConversations,
+    visibleSessions,
   } = useProjectWorkspaceSidebarController({
     activeSessionIdRef,
     archivedConversationIds,
@@ -360,7 +358,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   });
   const {
     addProjectToComposer,
-    applyToolActivityFileStateFromSidebar,
     conversationTimelineHandlers,
     openParentSession,
     openToolActivationDialog,
@@ -386,14 +383,10 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   });
 
   return buildProjectWorkspaceScreenViewProps({
-    bottomPanel: {
-      canUseTerminalPanel,
-      workspaceRoot: activeWorkspaceRoot,
-    },
     dialogs: {
       activeSessionId,
-      defaultActiveToolNames,
-      onDefaultActiveToolNamesChange: setDefaultActiveToolNames,
+      pendingActiveToolNames,
+      onPendingActiveToolNamesChange: setPendingActiveToolNames,
       onToolActivationOpenChange: setToolActivationDialogOpen,
       toolActivationDialogOpen,
       turns,
@@ -402,7 +395,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     leftSidebar: {
       activeConversationId: activeSessionId,
       activeProjectPage,
-      conversations: visibleConversations,
+      conversations: visibleSessions,
       archiveConversation,
       onHideProject: hideSidebarProject,
       onNewConversation: startChatConversation,
@@ -504,17 +497,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       todoItems: visibleTodoPlanItems,
       turns,
       viewportHandlers: conversationTimelineHandlers,
-      workspaceRoot: activeWorkspaceRoot,
-    },
-    rightOpen: activeProjectPage === "chat" && isRightSidebarOpen,
-    onRightOpenChange: setRightSidebarOpen,
-    rightSidebar: {
-      activeProjectPage,
-      activeTabId: activeToolActivityTabId,
-      onActiveTabChange: setActiveToolActivityTabId,
-      onApplyFileState: applyToolActivityFileStateFromSidebar,
-      onCloseTab: closeToolActivityTab,
-      tabs: toolActivityTabs,
       workspaceRoot: activeWorkspaceRoot,
     },
   });

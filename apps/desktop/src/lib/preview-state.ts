@@ -39,8 +39,13 @@ type PreviewPendingAuth = BrowserAuthSessionInfo & {
   codeVerifier: string;
 };
 
+type PreviewAppConfig = domain.AppConfig & {
+  initialWorkspacePath?: string;
+  defaultInitialWorkspacePath?: string;
+};
+
 type PreviewState = {
-  config?: domain.AppConfig;
+  config?: PreviewAppConfig;
   auth?: Record<string, PreviewStoredAuth | PreviewStoredAuth[]>;
   pendingAuth?: PreviewPendingAuth | null;
 };
@@ -92,12 +97,13 @@ function currentTimestamp() {
   return new Date().toISOString();
 }
 
-function normalizePreviewConfig(config?: domain.AppConfig | null): domain.AppConfig {
+function normalizePreviewConfig(config?: domain.AppConfig | null): PreviewAppConfig {
   return {
     initialized: false,
+    defaultInitialWorkspacePath: "~/Documents/Aivo Workspaces",
     providers: { custom: {}, disabled: [] },
     ...(config ?? {}),
-  } as domain.AppConfig;
+  } as unknown as PreviewAppConfig;
 }
 
 function buildPreviewCatalog(state: PreviewState): CatalogState {
@@ -189,7 +195,6 @@ function persistPreviewProvider(input: ProviderConnectInput, authType: string, a
     [providerID]: [nextAuth, ...existingAuth],
   };
 
-  config.initialized = true;
   config.provider = {
     id: providerID,
     type: input.type?.trim() || (providerID === "openai" ? "openai" : "openai-compatible"),
@@ -259,11 +264,20 @@ export function setPreviewInitialized(config: domain.AppConfig) {
   writePreviewState(state);
 }
 
+export function completePreviewInitialization(initialWorkspacePath: string) {
+  const state = readPreviewState();
+  const config = normalizePreviewConfig(state.config) as PreviewAppConfig;
+  config.initialized = true;
+  config.initialWorkspacePath = initialWorkspacePath;
+  state.config = config;
+  writePreviewState(state);
+  return config;
+}
+
 export function connectPreviewProvider(input: ProviderConnectInput) {
   if (input.method?.trim() === "env") {
     const state = readPreviewState();
     const config = normalizePreviewConfig(state.config);
-    config.initialized = true;
     config.provider = {
       id: input.providerId.trim(),
       type: input.type?.trim() || input.providerId.trim(),

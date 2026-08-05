@@ -16,7 +16,7 @@ import (
 	"aivo/core/domain"
 )
 
-func TestApplyPatchRequiresApprovalThenAppliesAfterSavedRule(t *testing.T) {
+func TestEditRequiresApprovalThenAppliesAfterSavedRule(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -32,8 +32,7 @@ func TestApplyPatchRequiresApprovalThenAppliesAfterSavedRule(t *testing.T) {
 	service.SetPermissionResolvedHook(func(request domain.PermissionRequest) {
 		resolvedCh <- request
 	})
-	patch := "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch\n"
-	call := domain.ChatToolCall{ID: "call_patch", Name: "apply_patch", Arguments: json.RawMessage(`{"patchText":` + strconv.Quote(patch) + `}`)}
+	call := domain.ChatToolCall{ID: "call_edit", Name: "edit", Arguments: json.RawMessage(`{"path":"README.md","edits":[{"oldText":"old","newText":"new"}]}`)}
 	execCtx := domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1"}
 	resultCh := make(chan domain.ToolResult, 1)
 	go func() {
@@ -75,10 +74,10 @@ func TestApplyPatchRequiresApprovalThenAppliesAfterSavedRule(t *testing.T) {
 		t.Fatal("tool execution was not woken after approval")
 	}
 	if !result.OK {
-		t.Fatalf("approved patch failed: %#v", result)
+		t.Fatalf("approved edit failed: %#v", result)
 	}
 	if len(result.Files) != 1 || result.Files[0].FullPath != filepath.ToSlash(filepath.Join(root, "README.md")) {
-		t.Fatalf("files = %#v, want full path for patched file", result.Files)
+		t.Fatalf("files = %#v, want full path for edited file", result.Files)
 	}
 	if content, _ := os.ReadFile(filepath.Join(root, "README.md")); string(content) != "new\n" {
 		t.Fatalf("file content = %q, want new", content)
@@ -95,10 +94,20 @@ func TestAgentLoopPersistsToolCallWhilePermissionPending(t *testing.T) {
 	}
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		var body struct {
+			Tools []any `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
 		w.Header().Set("Content-Type", "application/json")
+		if len(body.Tools) == 0 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"reason\":\"core edit is sufficient\"}"}}]}`))
+			return
+		}
+		requestCount++
 		if requestCount == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_edit","type":"function","function":{"name":"edit_file","arguments":"{\"path\":\"README.md\",\"oldString\":\"old\",\"newString\":\"new\"}"}}]}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_edit","type":"function","function":{"name":"edit","arguments":"{\"path\":\"README.md\",\"edits\":[{\"oldText\":\"old\",\"newText\":\"new\"}]}"}}]}}]}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"done"}}]}`))
@@ -164,7 +173,7 @@ func TestAgentLoopPersistsToolCallWhilePermissionPending(t *testing.T) {
 	t.Fatalf("toolCalls = %#v, want call_edit to complete after approval", toolCalls)
 }
 
-func TestApplyPatchRejectsSensitivePathDeterministically(t *testing.T) {
+func TestWriteRejectsSensitivePathDeterministically(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	root := t.TempDir()
@@ -172,9 +181,8 @@ func TestApplyPatchRejectsSensitivePathDeterministically(t *testing.T) {
 	if registry == nil || runtime == nil {
 		t.Fatal("tool runtime was not created")
 	}
-	patch := "*** Begin Patch\n*** Add File: .env\n+TOKEN=x\n*** End Patch\n"
 	result := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{
-		ID: "call_secret", Name: "apply_patch", Arguments: json.RawMessage(`{"patchText":` + strconv.Quote(patch) + `}`),
+		ID: "call_secret", Name: "write", Arguments: json.RawMessage(`{"path":".env","content":"TOKEN=x"}`),
 	}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1"})
 	if result.OK || result.PermissionRequested || result.ToolError == nil || result.ToolError.Code != "permission_denied" {
 		t.Fatalf("result = %#v, want deterministic permission denial", result)
@@ -197,9 +205,8 @@ func TestPermissionModeFullAccessAllowsWorkspaceWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, runtime := service.toolsForWorkspace(root)
-	patch := "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch\n"
 	result := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{
-		ID: "call_patch", Name: "apply_patch", Arguments: json.RawMessage(`{"patchText":` + strconv.Quote(patch) + `}`),
+		ID: "call_edit", Name: "edit", Arguments: json.RawMessage(`{"path":"README.md","edits":[{"oldText":"old","newText":"new"}]}`),
 	}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1"})
 	if !result.OK || result.PermissionRequested {
 		t.Fatalf("result = %#v, want full access to allow workspace patch", result)
@@ -228,14 +235,22 @@ func TestPermissionModeRequestApprovalOverridesFullAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, runtime := service.toolsForWorkspace(root)
-	patch := "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch\n"
-	approvalCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
-	defer cancel()
-	result := runtime.ExecuteWithContext(approvalCtx, domain.ChatToolCall{
-		ID: "call_patch", Name: "apply_patch", Arguments: json.RawMessage(`{"patchText":` + strconv.Quote(patch) + `}`),
-	}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1"})
-	if result.OK || !result.PermissionRequested || result.PendingApprovalID == "" {
-		t.Fatalf("result = %#v, want request approval to create pending request", result)
+	resultCh := make(chan domain.ToolResult, 1)
+	go func() {
+		resultCh <- runtime.ExecuteWithContext(ctx, domain.ChatToolCall{
+			ID: "call_edit", Name: "edit", Arguments: json.RawMessage(`{"path":"README.md","edits":[{"oldText":"old","newText":"new"}]}`),
+		}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1"})
+	}()
+	request := waitForPermissionRequest(t, service, session.ID)
+	if request.ToolName != "edit" || request.Status != domain.PermissionRequestStatusPending {
+		t.Fatalf("request = %#v, want pending edit approval", request)
+	}
+	if _, err := service.DenyPermissionRequest(ctx, domain.DenyPermissionRequestInput{RequestID: request.ID, Reason: "test denial"}); err != nil {
+		t.Fatal(err)
+	}
+	result := waitForToolResult(t, resultCh)
+	if result.OK || result.PermissionRequested || result.ToolError == nil || result.ToolError.Code != "permission_denied" {
+		t.Fatalf("result = %#v, want denied edit after explicit approval request", result)
 	}
 	if content, _ := os.ReadFile(filepath.Join(root, "README.md")); string(content) != "old\n" {
 		t.Fatalf("file changed before approval: %q", content)
@@ -257,7 +272,7 @@ func TestRememberedPermissionAppliesToNewSessionInWorkspace(t *testing.T) {
 	_, runtime := service.toolsForWorkspace(root)
 	firstResult := make(chan domain.ToolResult, 1)
 	go func() {
-		firstResult <- runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "first_edit", Name: "edit_file", Arguments: json.RawMessage(`{"path":"README.md","oldString":"old","newString":"new"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: firstSession.ID, TurnID: "t1"})
+		firstResult <- runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "first_edit", Name: "edit", Arguments: json.RawMessage(`{"path":"README.md","edits":[{"oldText":"old","newText":"new"}]}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: firstSession.ID, TurnID: "t1"})
 	}()
 	request := waitForPermissionRequest(t, service, firstSession.ID)
 	if _, err := service.ApprovePermissionRequest(ctx, domain.ApprovePermissionRequestInput{RequestID: request.ID, Remember: true}); err != nil {
@@ -271,7 +286,7 @@ func TestRememberedPermissionAppliesToNewSessionInWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "second_edit", Name: "edit_file", Arguments: json.RawMessage(`{"path":"README.md","oldString":"new","newString":"newer"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: secondSession.ID, TurnID: "t2"})
+	second := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "second_edit", Name: "edit", Arguments: json.RawMessage(`{"path":"README.md","edits":[{"oldText":"new","newText":"newer"}]}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: secondSession.ID, TurnID: "t2"})
 	if !second.OK || second.PermissionRequested {
 		t.Fatalf("second edit result = %#v, want remembered workspace permission", second)
 	}

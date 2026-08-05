@@ -28,6 +28,12 @@ export type ConversationTimelineRow =
       turnId: string;
     }
   | {
+      type: "tool-cluster";
+      key: string;
+      groups: ToolCallGroup[];
+      turnId: string;
+    }
+  | {
       type: "assistant-status";
       key: string;
       turn: ConversationTurn;

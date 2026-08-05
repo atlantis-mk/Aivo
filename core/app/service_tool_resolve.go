@@ -10,93 +10,128 @@ import (
 	"aivo/core/domain"
 )
 
-func (s *Service) resolveToolsWithAuxiliaryModel(ctx context.Context, request ToolResolveRequest) (ToolResolveDecision, error) {
-	if len(request.Candidates) == 0 {
-		return ToolResolveDecision{}, nil
+func (s *Service) preCallToolCandidates(ctx context.Context, sessionID, turnID string, registry *Registry, specs []domain.ToolSpec) (map[string]string, []domain.ToolCatalogEntry) {
+	activated := map[string]string{}
+	for name := range s.rememberedDeferredTools(ctx, sessionID) {
+		activated[name] = "pinned"
 	}
-	maxTools := request.MaxTools
-	if maxTools <= 0 {
-		maxTools = 8
+	for name := range s.warmDeferredToolsForTurn(ctx, sessionID, turnID) {
+		if activated[name] == "" {
+			activated[name] = "warm"
+		}
 	}
-	catalog := make([]map[string]any, 0, len(request.Candidates))
-	for _, entry := range request.Candidates {
-		catalog = append(catalog, map[string]any{
-			"name":        entry.Name,
-			"description": bounded(entry.Description, 400),
-			"source":      entry.Source,
-			"sourceId":    entry.SourceID,
-			"category":    entry.Category,
-			"namespace":   entry.Namespace,
-			"capability":  entry.Capability,
-			"riskLevel":   entry.RiskLevel,
-		})
+	if registry == nil {
+		return activated, nil
 	}
-	payload := map[string]any{
-		"intent":    request.Intent,
-		"maxTools":  maxTools,
-		"agentMode": request.AgentMode,
-		"catalog":   catalog,
+	allowed := map[string]bool{}
+	for _, spec := range specs {
+		allowed[spec.Name] = true
 	}
-	rawPayload, _ := json.MarshalIndent(payload, "", "  ")
-	messages := []domain.ChatMessage{
-		{Role: "system", Text: "Select tools only from the provided catalog for the requested missing capability. Return strict JSON: {\"tools\":[\"exact_tool_name\"],\"reason\":\"short reason\"}. Select only clear matches. Do not invent names, infer hidden tools, or choose adjacent tools. If uncertain or no clear match exists, return {\"tools\":[],\"reason\":\"no matching allowed tool\"}."},
-		{Role: "user", Text: string(rawPayload)},
-	}
-	models := s.resolveAuxiliaryModels(ctx, nil)
-	var lastErr error
-	for _, model := range models {
-		reply, _, err := s.GenerateChatReply(ctx, messages, &model, "low", "default")
-		if err != nil {
-			lastErr = err
+	candidates := make([]domain.ToolCatalogEntry, 0)
+	for _, entry := range deferrableCatalogEntries(registry) {
+		if !allowed[entry.Name] {
 			continue
 		}
-		decision, err := parseToolResolveDecision(reply)
-		if err != nil {
-			lastErr = err
+		if entry.ActivationPolicy == "default" && activated[entry.Name] == "" {
+			activated[entry.Name] = "mode"
 			continue
 		}
-		if len(decision.Names) > maxTools {
-			decision.Names = decision.Names[:maxTools]
+		if firstNonEmpty(entry.ActivationPolicy, "auto") == "auto" && activated[entry.Name] == "" {
+			candidates = append(candidates, entry)
 		}
-		return decision, nil
 	}
-	if lastErr != nil {
-		return ToolResolveDecision{}, lastErr
-	}
-	return ToolResolveDecision{}, errors.New("auxiliary model is not configured")
+	return activated, candidates
 }
 
-func parseToolResolveDecision(raw string) (ToolResolveDecision, error) {
-	text := strings.TrimSpace(stripThinkBlocks(raw))
-	text = strings.TrimPrefix(text, "```json")
-	text = strings.TrimPrefix(text, "```")
-	text = strings.TrimSuffix(text, "```")
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start >= 0 && end >= start {
-		text = text[start : end+1]
+func (s *Service) warmDeferredToolsForTurn(ctx context.Context, sessionID, turnID string) map[string]bool {
+	result := map[string]bool{}
+	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
+		return result
 	}
-	var decoded struct {
-		Tools  []string `json:"tools"`
-		Names  []string `json:"names"`
-		Reason string   `json:"reason"`
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil {
+		return result
 	}
-	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
-		return ToolResolveDecision{}, err
+	leases := intMapFromAny(state.Metadata[sessionMetadataWarmDeferredTools])
+	lastTurn, _ := state.Metadata[sessionMetadataWarmDeferredTurn].(string)
+	if strings.TrimSpace(turnID) != "" && lastTurn != turnID {
+		for name, remaining := range leases {
+			remaining--
+			if remaining <= 0 {
+				delete(leases, name)
+			} else {
+				leases[name] = remaining
+			}
+		}
+		if state.Metadata == nil {
+			state.Metadata = map[string]any{}
+		}
+		state.Metadata[sessionMetadataWarmDeferredTools] = leases
+		state.Metadata[sessionMetadataWarmDeferredTurn] = turnID
+		_, _ = s.store.UpsertSessionExecutionState(ctx, state)
 	}
-	names := decoded.Tools
-	if len(names) == 0 {
-		names = decoded.Names
-	}
-	out := make([]string, 0, len(names))
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			out = append(out, name)
+	for name, remaining := range leases {
+		if remaining > 0 {
+			result[name] = true
 		}
 	}
-	return ToolResolveDecision{Names: out, Reason: strings.TrimSpace(decoded.Reason)}, nil
+	return result
+}
+
+func (s *Service) rememberWarmDeferredTool(ctx context.Context, sessionID, toolName string) error {
+	toolName = strings.TrimSpace(toolName)
+	if s == nil || s.store == nil || sessionID == "" || toolName == "" || isReservedCoreToolName(toolName) || isBridgeToolName(toolName) {
+		return nil
+	}
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if state.Metadata == nil {
+		state.Metadata = map[string]any{}
+	}
+	leases := intMapFromAny(state.Metadata[sessionMetadataWarmDeferredTools])
+	leases[toolName] = 3
+	order := stringSliceFromAny(state.Metadata[sessionMetadataWarmDeferredOrder])
+	next := make([]string, 0, len(order)+1)
+	for _, name := range order {
+		if name != toolName && leases[name] > 0 {
+			next = append(next, name)
+		}
+	}
+	next = append(next, toolName)
+	for len(next) > 8 {
+		delete(leases, next[0])
+		next = next[1:]
+	}
+	state.Metadata[sessionMetadataWarmDeferredTools] = leases
+	state.Metadata[sessionMetadataWarmDeferredOrder] = next
+	_, err = s.store.UpsertSessionExecutionState(ctx, state)
+	return err
+}
+
+func intMapFromAny(value any) map[string]int {
+	out := map[string]int{}
+	if typed, ok := value.(map[string]int); ok {
+		for key, item := range typed {
+			out[key] = item
+		}
+		return out
+	}
+	if typed, ok := value.(map[string]any); ok {
+		for key, item := range typed {
+			switch number := item.(type) {
+			case float64:
+				out[key] = int(number)
+			case int:
+				out[key] = number
+			case json.Number:
+				parsed, _ := number.Int64()
+				out[key] = int(parsed)
+			}
+		}
+	}
+	return out
 }
 
 func (s *Service) rememberedDeferredTools(ctx context.Context, sessionID string) map[string]bool {

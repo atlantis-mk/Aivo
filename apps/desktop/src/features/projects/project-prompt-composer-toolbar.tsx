@@ -3,6 +3,7 @@ import { ArrowUp, Mic, Pause, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ModelSettingsMenu } from "@/features/projects/project-model-settings-menu";
+import { ProjectPicker } from "@/features/projects/project-picker-popover";
 import {
   AgentModeMenu,
   PermissionModeMenu,
@@ -21,15 +22,21 @@ type PromptComposerToolbarProps = Pick<
   | "onAgentModeSelect"
   | "onModelSelect"
   | "onPermissionModeSelect"
+  | "onProjectAdd"
+  | "onProjectClear"
+  | "onProjectSelect"
   | "onReasoningEffortSelect"
   | "onServiceTierSelect"
   | "onSubmit"
   | "pending"
   | "permissionMode"
   | "prompt"
+  | "project"
   | "projectPath"
+  | "projects"
   | "reasoningEffort"
   | "serviceTier"
+  | "showProjectPicker"
   | "showServiceTier"
 > & {
   compact: boolean;
@@ -51,15 +58,21 @@ export function PromptComposerToolbar({
   onAgentModeSelect,
   onModelSelect,
   onPermissionModeSelect,
+  onProjectAdd,
+  onProjectClear,
+  onProjectSelect,
   onReasoningEffortSelect,
   onServiceTierSelect,
   onSubmit,
   pending,
   permissionMode,
   prompt,
+  project,
   projectPath,
+  projects,
   reasoningEffort,
   serviceTier,
+  showProjectPicker,
   showServiceTier,
 }: PromptComposerToolbarProps) {
   return (
@@ -97,6 +110,16 @@ export function PromptComposerToolbar({
           modes={agentModes}
           onModeSelect={onAgentModeSelect}
         />
+        {showProjectPicker ? (
+          <ProjectPicker
+            onAddProject={onProjectAdd}
+            onProjectClear={onProjectClear}
+            onProjectSelect={onProjectSelect}
+            project={project}
+            projectPath={projectPath}
+            projects={projects}
+          />
+        ) : null}
       </div>
 
       <div className="flex h-9 min-w-0 items-center gap-1.5 sm:gap-2.5">

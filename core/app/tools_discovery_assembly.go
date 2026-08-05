@@ -1,6 +1,9 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 
 	"aivo/core/domain"
@@ -19,46 +22,68 @@ type ToolAssemblyResult struct {
 	Activated             bool
 	DeferredCount         int
 	ExpectedRegistrations map[string]domain.ToolRegistrationIdentity
+	Snapshot              domain.ToolSnapshot
 }
 
 func AssembleToolSpecs(registry *Registry, specs []domain.ToolSpec) ToolAssemblyResult {
-	return AssembleToolSpecsWithActivated(registry, specs, nil)
+	return AssembleToolSpecsWithSources(registry, specs, nil)
 }
 
 func AssembleToolSpecsWithActivated(registry *Registry, specs []domain.ToolSpec, activated map[string]bool) ToolAssemblyResult {
-	identities := map[string]domain.ToolRegistrationIdentity{}
+	sources := map[string]string{}
+	for name, active := range activated {
+		if active {
+			sources[name] = "currentTurn"
+		}
+	}
+	return AssembleToolSpecsWithSources(registry, specs, sources)
+}
+
+func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, activationSources map[string]string) ToolAssemblyResult {
+	allIdentities := map[string]domain.ToolRegistrationIdentity{}
 	if registry != nil {
 		for _, entry := range registry.CatalogEntries() {
-			identities[entry.Name] = domain.ToolRegistrationIdentity{
-				Name: entry.Name, RegistrationID: entry.RegistrationID, Source: entry.Source, SourceID: entry.SourceID,
+			allIdentities[entry.Name] = domain.ToolRegistrationIdentity{
+				Name: entry.Name, RegistrationID: entry.RegistrationID, SchemaHash: entry.SchemaHash, Source: entry.Source, SourceID: entry.SourceID, Version: entry.Version, ImplementationHash: entry.ImplementationHash,
 			}
 		}
 	}
 	visible := make([]domain.ToolSpec, 0, len(specs))
-	deferred := make([]domain.ToolSpec, 0)
+	deferredCount := 0
 	for _, spec := range specs {
 		if isBridgeToolName(spec.Name) {
-			if spec.Name == ToolResolveName {
-				visible = append(visible, spec)
-			}
 			continue
 		}
-		if !isDeferrableToolSpec(spec, identities[spec.Name]) {
+		if isCoreVisibleToolSpec(spec) {
 			visible = append(visible, spec)
 			continue
 		}
-		if isDeferredToolActivated(spec, activated) {
-			visible = append(visible, spec)
+		if !isDeferrableToolSpec(spec, allIdentities[spec.Name]) {
 			continue
 		}
-		deferred = append(deferred, spec)
+		deferredCount++
+		if strings.TrimSpace(activationSources[spec.Name]) != "" {
+			visible = append(visible, spec)
+		}
 	}
-	bridgeActivated := len(deferred) > 0
-	if !bridgeActivated {
-		return ToolAssemblyResult{Specs: specs, ExpectedRegistrations: identities, DeferredCount: len(deferred)}
+	identities := map[string]domain.ToolRegistrationIdentity{}
+	entries := make([]domain.ToolSnapshotEntry, 0, len(visible))
+	for _, spec := range visible {
+		identity, ok := allIdentities[spec.Name]
+		if !ok {
+			continue
+		}
+		identities[spec.Name] = identity
+		activationSource := firstNonEmpty(activationSources[spec.Name], "currentTurn")
+		if isCoreVisibleToolSpec(spec) {
+			activationSource = "core"
+		}
+		entries = append(entries, domain.ToolSnapshotEntry{Name: spec.Name, RegistrationID: identity.RegistrationID, SchemaHash: identity.SchemaHash, SourceID: identity.SourceID, SourceVersion: identity.Version, ActivationSource: activationSource})
 	}
-	visible = appendBridgeSpecsIfMissing(visible, len(deferred))
-	return ToolAssemblyResult{Specs: visible, Activated: bridgeActivated, DeferredCount: len(deferred), ExpectedRegistrations: identities}
+	snapshotRaw, _ := json.Marshal(entries)
+	sum := sha256.Sum256(snapshotRaw)
+	snapshot := domain.ToolSnapshot{Revision: hex.EncodeToString(sum[:]), Tools: entries}
+	return ToolAssemblyResult{Specs: visible, Activated: len(visible) > 4, DeferredCount: deferredCount, ExpectedRegistrations: identities, Snapshot: snapshot}
 }
 
 func appendBridgeSpecsIfMissing(specs []domain.ToolSpec, deferredCount int) []domain.ToolSpec {
@@ -85,33 +110,16 @@ func isDeferrableToolSpec(spec domain.ToolSpec, identity domain.ToolRegistration
 	if isCoreVisibleToolSpec(spec) {
 		return false
 	}
-	if identity.Source == domain.ToolSourceMCP || identity.Source == domain.ToolSourcePlugin {
-		return true
+	if isBridgeToolName(spec.Name) || spec.Name == "update_plan" || spec.Name == "ask_user" || spec.Name == SkillToolName {
+		return false
 	}
-	switch spec.Category {
-	case "mcp", "plugin", "agent", "automation", "admin":
-		return true
-	}
-	for _, toolset := range spec.Toolsets {
-		if toolset == "mcp" || toolset == "plugin" || toolset == "admin" ||
-			strings.HasPrefix(toolset, "mcp:") || strings.HasPrefix(toolset, "plugin:") {
-			return true
-		}
-	}
-	return false
+	_ = identity
+	return true
 }
 
 func isCoreVisibleToolSpec(spec domain.ToolSpec) bool {
 	switch spec.Name {
-	case ToolResolveName, ToolSearchName, ToolListName, ToolDetailName, ToolCallName,
-		"read_file", "list_files", "glob", "search_files",
-		"lsp_diagnostics", "lsp_definition", "lsp_references", "lsp_symbol_search",
-		"web_fetch", "web_search",
-		SkillToolName,
-		"git_status", "git_diff",
-		"write_file", "edit_file", "apply_patch", "format_code",
-		"read_diagnostics", "run_tests", "bash",
-		"update_plan", "ask_user":
+	case "read", "bash", "edit", "write":
 		return true
 	default:
 		return false

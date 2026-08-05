@@ -3,6 +3,9 @@ const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { createExtensionViewManager, registerExtensionScheme } = require('./extension-views.cjs')
+
+registerExtensionScheme()
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 const isMac = process.platform === 'darwin'
@@ -10,6 +13,7 @@ const coreUrl = process.env.AIVO_CORE_URL || 'http://127.0.0.1:43117'
 
 let coreProcess = null
 let logFile = null
+let extensionViewManager = null
 
 function appendLog(level, message, metadata = {}) {
   const line = JSON.stringify({
@@ -231,6 +235,7 @@ app.whenReady().then(async () => {
     )
   }
 
+  extensionViewManager = createExtensionViewManager({ ipcMain, coreUrl })
   createWindow()
 
   app.on('activate', () => {
@@ -247,6 +252,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  extensionViewManager?.closeAll()
   if (coreProcess && coreProcess.exitCode === null) {
     coreProcess.kill()
   }

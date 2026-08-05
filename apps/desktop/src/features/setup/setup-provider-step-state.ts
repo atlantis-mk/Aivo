@@ -19,7 +19,6 @@ import type {
 import {
   canRefreshProviderModels,
   catalogDefaultModelForProvider,
-  defaultAuxiliaryModelForProvider,
   defaultModelForProvider,
   providerRefreshInput,
 } from "@/features/setup/setup-provider-models";
@@ -27,7 +26,6 @@ import {
   modelsForActiveProvider,
   oauthReady,
   oauthStatusFromAuthStart,
-  selectedAuxiliaryModelIdForProvider,
   selectedModelIdForProvider,
   shouldShowModelSelect,
   successfulOpenAIStatus,
@@ -52,7 +50,6 @@ type UseSetupProviderStepStateParams = {
     apiKey?: string,
     customProvider?: CustomProviderForm,
     selectedModelId?: string,
-    selectedAuxiliaryModelId?: string,
   ) => Promise<boolean>;
   onRefreshModels: (input: ProviderConnectInput) => Promise<CatalogState | null>;
   onResetValidation: () => void;
@@ -92,7 +89,6 @@ export function useSetupProviderStepState({
   const [otherProviderPickerOpen, setOtherProviderPickerOpen] = useState(false);
   const [otherProviderSearch, setOtherProviderSearch] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [selectedAuxiliaryModelId, setSelectedAuxiliaryModelId] = useState("");
   const [settingsAccount, setSettingsAccount] =
     useState<ProviderAccountInfo | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState("");
@@ -119,16 +115,6 @@ export function useSetupProviderStepState({
     });
   }
 
-  function effectiveSelectedAuxiliaryModelId() {
-    return selectedAuxiliaryModelIdForProvider({
-      catalog,
-      models: activeProviderModels,
-      provider: activeProvider,
-      selectedAuxiliaryModelId,
-      selectedModelId: effectiveSelectedModelId(),
-    });
-  }
-
   const refreshModelsForProvider = useCallback(
     async (
       provider: ProviderChoice,
@@ -150,13 +136,6 @@ export function useSetupProviderStepState({
       if (refreshedDefault) {
         setSelectedModelId(refreshedDefault);
       }
-      setSelectedAuxiliaryModelId(
-        defaultAuxiliaryModelForProvider(
-          nextCatalog,
-          input.providerId,
-          refreshedDefault || input.modelId || "",
-        ),
-      );
     },
     [catalog, onRefreshModels, selectedModelId],
   );
@@ -177,9 +156,6 @@ export function useSetupProviderStepState({
       catalogDefaultModelForProvider(catalog, provider.id) ||
       defaultModelForProvider(provider.id, catalog);
     setSelectedModelId(nextModelId);
-    setSelectedAuxiliaryModelId(
-      defaultAuxiliaryModelForProvider(catalog, provider.id, nextModelId),
-    );
     setProviderDialogStep(provider.id === "openai" ? "options" : "details");
     setActiveProvider(provider);
     void refreshModelsForProvider(provider, nextForm, nextAuthMode, "");
@@ -190,7 +166,6 @@ export function useSetupProviderStepState({
     resetTransientAuthState();
     setCustomProviderForm(emptyCustomProviderForm());
     setSelectedModelId("");
-    setSelectedAuxiliaryModelId("");
     setProviderDialogStep("details");
     setActiveProvider(null);
   }, [onResetValidation]);
@@ -270,7 +245,6 @@ export function useSetupProviderStepState({
       apiKey,
       isCustomProviderChoice(activeProvider) ? customProviderForm : undefined,
       effectiveSelectedModelId(),
-      effectiveSelectedAuxiliaryModelId(),
     );
     if (completed) closeProvider();
   }
@@ -356,7 +330,6 @@ export function useSetupProviderStepState({
     otherProviderSearch,
     providerDialogStep,
     resetAuthMode,
-    selectedAuxiliaryModelId: effectiveSelectedAuxiliaryModelId(),
     selectOpenAIAuthMode,
     selectOtherProvider,
     setApiKey,
@@ -365,7 +338,6 @@ export function useSetupProviderStepState({
     setOtherProviderPickerOpen,
     setOtherProviderSearch,
     setProviderDialogStep,
-    setSelectedAuxiliaryModelId,
     setSelectedModelId,
     setSettingsAccount,
     settingsAccount,

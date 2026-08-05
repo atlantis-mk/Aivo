@@ -18,6 +18,15 @@ import (
 
 var errStopWalk = errors.New("stop walk")
 
+const (
+	workspaceRelativePathDescription  = `Workspace file path relative to the active workspace root, for example "notes.txt" or "src/app.go". Never pass the workspace root or an absolute workspace path.`
+	workspaceRelativePathErrorMessage = `path must be relative to the active workspace root; remove the workspace-root prefix (for example, use "notes.txt")`
+)
+
+func workspaceRelativePathError() error {
+	return errors.New(workspaceRelativePathErrorMessage)
+}
+
 func compileGlobMatcher(pattern string) (*regexp.Regexp, error) {
 	pattern = filepath.ToSlash(strings.TrimSpace(pattern))
 	expanded := expandGlobBraces(pattern)
@@ -92,7 +101,7 @@ func safeJoin(workspaceRoot string, relPath string) (string, error) {
 		relPath = "."
 	}
 	if filepath.IsAbs(relPath) {
-		return "", errors.New("path must be relative to workspace root")
+		return "", workspaceRelativePathError()
 	}
 	clean := filepath.Clean(relPath)
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {

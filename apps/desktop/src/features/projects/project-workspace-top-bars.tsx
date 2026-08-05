@@ -1,76 +1,201 @@
-import type React from "react";
+import { useState, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import {
-  ArrowLeft,
-  ArrowRight,
+  Add01Icon,
+  HistoryIcon,
+  LayoutGridIcon,
+  Plug01Icon,
+  Settings01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Archive,
   Ellipsis,
   FileText,
   LayoutGrid,
-  PanelLeft,
-  SquarePen,
+  Pin,
 } from "lucide-react";
 
 import { AnimatedTitle } from "@/components/animated-title";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ProjectTopBarIconButton } from "@/features/projects/project-workspace-layout";
 import { cn } from "@/lib/utils";
 import { ProjectWorktreeDialog } from "@/features/projects/project-worktree-dialog";
+import { projectNameFromPath } from "@/features/projects/project-sidebar-model";
 
 export { SubagentSessionActionBar } from "@/features/projects/project-subagent-session-action-bar";
 export function ProjectTopBar({
-  leftSidebarState,
+  conversationTitle,
+  hasConversation,
+  historyContent,
+  isConversationPinned,
+  isLayoutPanelOpen,
   onNewPage,
-  onToggleLeftSidebar,
+  onArchiveConversation,
+  onToggleLayoutPanel,
+  onTogglePinnedConversation,
+  pageTitle,
+  repositoryPath,
+  sessionId,
 }: {
   canShowTerminalPanel: boolean;
   conversationTitle: string;
   hasConversation: boolean;
-  leftSidebarState: "expanded" | "collapsed";
+  historyContent: ReactNode;
+  isConversationPinned: boolean;
+  isLayoutPanelOpen?: boolean;
   onNewPage: () => void;
-  onToggleLeftSidebar: () => void;
+  onArchiveConversation: () => void;
+  onToggleLayoutPanel?: () => void;
+  onTogglePinnedConversation: () => void;
   pageIcon?: React.ReactNode;
   pageTitle?: string;
+  repositoryPath?: string;
+  sessionId?: string;
   showTerminalButton?: boolean;
 }) {
   const isMac = window.aivo?.platform === "darwin";
-  const leftCompactWidth = isMac ? 202 : 148;
+  const projectLabel = repositoryPath
+    ? projectNameFromPath(repositoryPath)
+    : "Aivo";
+  const conversationLabel =
+    pageTitle || (hasConversation ? conversationTitle.trim() || "未命名会话" : "新对话");
 
   return (
-    <header className="pointer-events-none relative flex h-full min-w-0 text-foreground">
-      <div
-        className={cn(
-          "pointer-events-auto relative flex h-full shrink-0 items-center overflow-hidden text-sidebar-foreground transition-[width] duration-[var(--project-panel-transition-duration,200ms)] ease-linear",
-          leftSidebarState === "collapsed" && "border-b border-border/60",
-        )}
-        style={{
-          width:
-            leftSidebarState === "expanded"
-              ? "var(--project-left-sidebar-width)"
-              : `${leftCompactWidth}px`,
-        }}
-      >
+    <header
+      className="pointer-events-auto relative flex h-full min-w-0 items-center border-b border-border/60 bg-background text-foreground"
+      data-app-drag
+    >
+      <div className="flex min-w-0 items-center gap-aivo-2 px-aivo-3" data-app-no-drag>
         <ProjectWindowControls isMac={isMac} />
-        <div
-          className="pointer-events-auto flex h-full shrink-0 items-center gap-1 px-3"
-          data-app-no-drag
+        <Button
+          onClick={onNewPage}
+          size="default"
+          type="button"
+          variant="outline"
         >
-          <ProjectTopBarIconButton
-            aria-label="展开或收起侧边栏"
-            onClick={onToggleLeftSidebar}
-          >
-            <PanelLeft />
-          </ProjectTopBarIconButton>
-          <ProjectTopBarIconButton aria-label="返回" onClick={() => undefined}>
-            <ArrowLeft />
-          </ProjectTopBarIconButton>
-          <ProjectTopBarIconButton aria-label="前进" onClick={() => undefined}>
-            <ArrowRight />
-          </ProjectTopBarIconButton>
-          <ProjectTopBarIconButton aria-label="新建页面" onClick={onNewPage}>
-            <SquarePen />
-          </ProjectTopBarIconButton>
-        </div>
-        <div className="h-full min-w-0 flex-1" data-app-drag />
+          <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} />
+          <span className="hidden sm:inline">新对话</span>
+        </Button>
+        <ProjectHistoryPopover>{historyContent}</ProjectHistoryPopover>
+      </div>
+
+      <div
+        className="pointer-events-none absolute left-1/2 z-10 flex max-w-[min(38vw,520px)] -translate-x-1/2 items-center gap-aivo-1"
+        data-app-drag
+      >
+        <h1 className="aivo-type-body min-w-0 truncate font-medium">
+          {projectLabel} · {conversationLabel}
+        </h1>
+        {hasConversation ? (
+          <span className="pointer-events-auto flex items-center" data-app-no-drag>
+            <ProjectWorktreeDialog
+              repositoryPath={repositoryPath || ""}
+              sessionId={sessionId}
+            />
+            <ProjectConversationActionsMenu
+              isPinned={isConversationPinned}
+              onArchive={onArchiveConversation}
+              onTogglePinned={onTogglePinnedConversation}
+            />
+          </span>
+        ) : null}
+      </div>
+
+      <div
+        className="relative z-20 ml-auto flex items-center gap-aivo-1"
+        data-app-no-drag
+      >
+        <ProjectTopBarIconButton asChild aria-label="打开插件">
+          <Link to="/projects/plugins">
+            <HugeiconsIcon icon={Plug01Icon} strokeWidth={1.8} />
+          </Link>
+        </ProjectTopBarIconButton>
+        <ProjectTopBarIconButton
+          aria-label="切换系统环境"
+          aria-pressed={isLayoutPanelOpen}
+          onClick={onToggleLayoutPanel}
+        >
+          <HugeiconsIcon icon={LayoutGridIcon} strokeWidth={1.8} />
+        </ProjectTopBarIconButton>
+        <ProjectTopBarIconButton asChild aria-label="打开设置">
+          <Link to="/settings">
+            <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.8} />
+          </Link>
+        </ProjectTopBarIconButton>
       </div>
     </header>
+  );
+}
+
+function ProjectConversationActionsMenu({
+  isPinned,
+  onArchive,
+  onTogglePinned,
+}: {
+  isPinned: boolean;
+  onArchive: () => void;
+  onTogglePinned: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <ProjectTopBarIconButton aria-label="更多会话操作">
+          <Ellipsis />
+        </ProjectTopBarIconButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={onTogglePinned}>
+          <Pin className={isPinned ? "fill-current" : undefined} />
+          {isPinned ? "取消置顶" : "置顶对话"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onArchive}>
+          <Archive />
+          归档对话
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ProjectHistoryPopover({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <Button
+          size="default"
+          type="button"
+          variant="outline"
+        >
+          <HugeiconsIcon icon={HistoryIcon} strokeWidth={1.8} />
+          <span className="hidden sm:inline">历史记录</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[min(340px,calc(100vw-24px))] overflow-hidden p-0"
+        onClickCapture={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest("a") || target.closest("button")) setOpen(false);
+        }}
+        sideOffset={6}
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -161,7 +286,6 @@ function ProjectMainTopBarActions({
       <ProjectTopBarIconButton
         aria-label="切换系统环境"
         aria-pressed={isLayoutPanelOpen}
-        className={cn(isLayoutPanelOpen && "bg-muted text-foreground")}
         onClick={onToggleLayoutPanel}
       >
         <LayoutGrid />
@@ -174,7 +298,7 @@ function ProjectWindowControls({ isMac }: { isMac: boolean }) {
   return (
     <div
       aria-hidden="true"
-      className={cn("shrink-0", isMac ? "w-[54px]" : "w-0")}
+      className={cn("shrink-0", isMac ? "w-[72px]" : "w-0")}
       data-app-no-drag
     />
   );

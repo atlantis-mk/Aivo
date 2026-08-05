@@ -8,6 +8,83 @@ import (
 
 func (api *API) callPluginRPC(ctx context.Context, method string, args []json.RawMessage) (interface{}, bool, error) {
 	switch method {
+	case "DiscoverExtension":
+		input, err := arg[domain.DiscoverExtensionInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.DiscoverExtension(ctx, input)
+		return result, true, err
+	case "TrustExtension":
+		input, err := arg[domain.TrustExtensionInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.TrustExtension(ctx, input)
+		return result, true, err
+	case "EnableExtension":
+		input, err := arg[domain.ExtensionControlInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.EnableExtension(ctx, input)
+		return result, true, err
+	case "StopExtension":
+		input, err := arg[domain.ExtensionControlInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.StopExtension(ctx, input)
+		return result, true, err
+	case "GetExtensionStatus":
+		input, err := arg[domain.ExtensionControlInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.GetExtensionStatus(ctx, input)
+		return result, true, err
+	case "ListExtensionContexts":
+		input, err := arg[domain.ExtensionControlInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.ListExtensionContexts(ctx, input)
+		return result, true, err
+	case "ResolveExtensionView":
+		input, err := arg[domain.ResolveExtensionViewInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.ResolveExtensionView(ctx, input)
+		return result, true, err
+	case "OpenExtensionView":
+		input, err := arg[domain.ExtensionControlInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		err = api.service.OpenExtensionView(ctx, input)
+		return map[string]any{"opened": err == nil}, true, err
+	case "CloseExtensionView":
+		input, err := arg[domain.ExtensionControlInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		err = api.service.CloseExtensionView(ctx, input)
+		return map[string]any{"closed": err == nil}, true, err
+	case "InvokeExtensionViewAction":
+		input, err := arg[domain.ExtensionViewActionInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.InvokeExtensionViewAction(ctx, input)
+		return result, true, err
+	case "BindExtensionCredential":
+		input, err := arg[domain.BindExtensionCredentialInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.BindExtensionCredential(ctx, input)
+		return result, true, err
 	case "ListPlugins":
 		input, err := arg[domain.PluginListInput](args, 0)
 		if err != nil {

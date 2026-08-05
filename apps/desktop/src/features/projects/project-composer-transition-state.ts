@@ -2,7 +2,6 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import {
   CONVERSATION_OPEN_ANIMATION_MS,
-  EMPTY_COMPOSER_VERTICAL_OFFSET,
 } from "@/features/projects/project-workspace-state-model";
 
 export function useProjectComposerTransitionState({
@@ -13,7 +12,7 @@ export function useProjectComposerTransitionState({
   showConversationLayout: boolean;
 }) {
   const [composerHeight, setComposerHeight] = useState(116);
-  const [composerExtraHeight, setComposerExtraHeight] = useState(0);
+  const [, setComposerExtraHeight] = useState(0);
   const composerFrameRef = useRef<HTMLDivElement>(null);
   const pendingTransitionRectRef = useRef<DOMRect | null>(null);
   const transitionFrameRef = useRef(0);
@@ -80,9 +79,7 @@ export function useProjectComposerTransitionState({
     });
   }, [activeSessionId, showConversationLayout, stopComposerTransition]);
 
-  const emptyComposerBottom = `calc(50% - ${Math.round(
-    composerHeight / 2,
-  )}px - ${EMPTY_COMPOSER_VERTICAL_OFFSET}px - ${composerExtraHeight}px)`;
+  const emptyComposerBottom = "clamp(2rem, 11vh, 7.5rem)";
 
   return {
     captureComposerTransitionStart,

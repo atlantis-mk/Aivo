@@ -33,4 +33,5 @@ contextBridge.exposeInMainWorld('aivo', {
   focusWindow: () => ipcRenderer.invoke('aivo:focus-window'),
   toggleMaximize: () => ipcRenderer.invoke('aivo:toggle-maximize'),
   exportDiagnostics: () => ipcRenderer.invoke('aivo:export-diagnostics'),
+  openExtensionView: (input) => ipcRenderer.invoke('aivo:open-extension-view', input),
 })

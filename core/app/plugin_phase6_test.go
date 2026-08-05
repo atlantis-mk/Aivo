@@ -36,7 +36,7 @@ func TestLoadPluginManifestRejectsEscapingCWD(t *testing.T) {
 	}
 }
 
-func TestToolCallRejectsStaleRegistration(t *testing.T) {
+func TestToolCallUsesPinnedRegistrationFromSnapshot(t *testing.T) {
 	registry := NewRegistry()
 	if err := registry.RegisterScoped(phase6EchoTool{spec: domain.ToolSpec{Name: "plugin_echo", Description: "old", InputSchema: map[string]any{"type": "object"}, Category: "plugin", Capability: "plugin.read", Toolsets: []string{"plugin", "coding"}}, text: "old"}, domain.ToolSourcePlugin, "p1", "v1"); err != nil {
 		t.Fatal(err)
@@ -53,8 +53,8 @@ func TestToolCallRejectsStaleRegistration(t *testing.T) {
 		AllowedToolsets:       []string{"plugin", "coding"},
 		ExpectedRegistrations: map[string]domain.ToolRegistrationIdentity{"plugin_echo": oldIdentity},
 	})
-	if result.OK || result.ToolError == nil || result.ToolError.Code != "stale_tool_registration" {
-		t.Fatalf("result = %#v, want stale registration failure", result)
+	if !result.OK || result.Content != "old" {
+		t.Fatalf("result = %#v, want old snapshot generation", result)
 	}
 }
 
@@ -117,8 +117,8 @@ func TestDeferredToolSearchAndCallDoNotPersistDirectInjection(t *testing.T) {
 	if names["plugin_echo"] {
 		t.Fatalf("assembled specs = %#v, want plugin_echo deferred after search", assembly.Specs)
 	}
-	if !names[ToolResolveName] || names[ToolCallName] {
-		t.Fatalf("assembled specs = %#v, want only tool_resolve bridge", assembly.Specs)
+	if names[ToolResolveName] || names[ToolCallName] || names[ToolSearchName] {
+		t.Fatalf("assembled specs = %#v, want no legacy discovery bridge", assembly.Specs)
 	}
 
 	call := domain.ChatToolCall{ID: "call", Name: ToolCallName, Arguments: json.RawMessage(`{"name":"plugin_echo","arguments":{}}`)}

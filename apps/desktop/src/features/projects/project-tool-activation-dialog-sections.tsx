@@ -19,7 +19,7 @@ export function ToolActivationDialogTabs({
   groupedTools,
   loading,
   onToggleSkill,
-  onToggleTool,
+  onToggleToolGroup,
   skills,
   toggleableToolCount,
   usedToolSet,
@@ -30,34 +30,50 @@ export function ToolActivationDialogTabs({
   groupedTools: ToolCatalogGroup[];
   loading: boolean;
   onToggleSkill: (id: string, enabled: boolean) => void;
-  onToggleTool: (name: string, enabled: boolean) => void;
+  onToggleToolGroup: (names: string[], enabled: boolean) => void;
   skills: SkillEntry[];
   toggleableToolCount: number;
   usedToolSet: Set<string>;
 }) {
   return (
-    <Tabs defaultValue="tools" className="flex min-h-0 flex-1 flex-col gap-0">
-      <ToolActivationDialogStatusBar toggleableToolCount={toggleableToolCount} />
+    <Tabs
+      key={loading ? "loading" : "ready"}
+      defaultValue={defaultActivationSection(groupedTools, skills.length)}
+      className="flex min-h-0 flex-1 flex-col gap-0"
+    >
+      <ToolActivationDialogStatusBar
+        groupedTools={groupedTools}
+        skillCount={skills.length}
+        toggleableToolCount={toggleableToolCount}
+      />
 
       <Separator />
 
-      <TabsContent className="min-h-0 flex-1 p-0" value="tools">
-        <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
-          <div className="px-5 py-4">
-            {loading ? (
-              <ToolActivationDialogSkeleton />
-            ) : (
-              <ToolActivationToolList
-                activeToolSet={activeToolSet}
-                disabled={disabled}
-                groupedTools={groupedTools}
-                onToggleTool={onToggleTool}
-                usedToolSet={usedToolSet}
-              />
-            )}
-          </div>
-        </ScrollArea>
-      </TabsContent>
+      {(["plugins", "apps", "mcp", "tools"] as const).map((section) => (
+        <TabsContent
+          className="min-h-0 flex-1 p-0"
+          key={section}
+          value={section}
+        >
+          <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
+            <div className="px-5 py-4">
+              {loading ? (
+                <ToolActivationDialogSkeleton />
+              ) : (
+                <ToolActivationToolList
+                  activeToolSet={activeToolSet}
+                  disabled={disabled}
+                  groupedTools={groupedTools.filter(
+                    (group) => group.section === section,
+                  )}
+                  onToggleToolGroup={onToggleToolGroup}
+                  usedToolSet={usedToolSet}
+                />
+              )}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      ))}
 
       <TabsContent className="min-h-0 flex-1 p-0" value="skills">
         <ScrollArea className="h-full [&_[data-slot=scroll-area-viewport]]:overflow-x-hidden [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
@@ -119,19 +135,42 @@ export function ToolActivationDialogFooter({
 }
 
 function ToolActivationDialogStatusBar({
+  groupedTools,
+  skillCount,
   toggleableToolCount,
 }: {
+  groupedTools: ToolCatalogGroup[];
+  skillCount: number;
   toggleableToolCount: number;
 }) {
+  const count = (section: ToolCatalogGroup["section"]) =>
+    groupedTools.filter((group) => group.section === section).length;
   return (
     <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <TabsList>
-        <TabsTrigger value="tools">工具</TabsTrigger>
-        <TabsTrigger value="skills">技能</TabsTrigger>
+        <TabsTrigger value="plugins">插件 {count("plugins")}</TabsTrigger>
+        <TabsTrigger value="apps">应用 {count("apps")}</TabsTrigger>
+        <TabsTrigger value="mcp">MCP {count("mcp")}</TabsTrigger>
+        <TabsTrigger value="skills">技能 {skillCount}</TabsTrigger>
+        <TabsTrigger value="tools">工具 {count("tools")}</TabsTrigger>
       </TabsList>
       <div className="text-xs text-muted-foreground">
-        {toggleableToolCount} 个可配置工具
+        {toggleableToolCount} 个可配置项
       </div>
     </div>
   );
+}
+
+function defaultActivationSection(
+  groupedTools: ToolCatalogGroup[],
+  skillCount: number,
+) {
+  for (const section of ["plugins", "apps", "mcp", "skills", "tools"] as const) {
+    if (section === "skills") {
+      if (skillCount > 0) return section;
+      continue;
+    }
+    if (groupedTools.some((group) => group.section === section)) return section;
+  }
+  return "tools";
 }

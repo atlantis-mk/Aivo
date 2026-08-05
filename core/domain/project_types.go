@@ -12,3 +12,33 @@ type AssistantProject struct {
 	TimeOpened    string `json:"timeOpened"`
 	TimeUpdated   string `json:"timeUpdated"`
 }
+
+const (
+	ProjectRegistrationCreated  = "created"
+	ProjectRegistrationExisting = "existing"
+	ProjectRegistrationRestored = "restored"
+)
+
+type ProjectQueryInput struct {
+	ProjectID string `json:"projectId,omitempty"`
+	Query     string `json:"query,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+	Cursor    string `json:"cursor,omitempty"`
+}
+
+type ProjectQueryResult struct {
+	Projects       []AssistantProject `json:"projects"`
+	NextCursor     string             `json:"nextCursor,omitempty"`
+	CurrentProject *AssistantProject  `json:"currentProject,omitempty"`
+}
+
+type ProjectRegistrationResult struct {
+	Project AssistantProject `json:"project"`
+	Status  string           `json:"status"`
+}
+
+type SessionProjectBindingResult struct {
+	Session  Session `json:"session"`
+	Changed  bool    `json:"changed"`
+	Conflict bool    `json:"-"`
+}

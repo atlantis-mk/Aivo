@@ -62,12 +62,84 @@ func (s *Service) CancelTurn(ctx context.Context, input domain.CancelTurnRequest
 		if content == "" {
 			content = "Turn cancelled"
 		}
+		cleanupErr := s.cleanupCancelledTurn(ctx, turn, content)
 		_, _ = s.AppendEvent(ctx, domain.AppendEventRequest{SessionID: turn.SessionID, TurnID: turn.ID, Type: domain.EventTypeSystemNote, Role: domain.EventRoleSystem, Visibility: domain.EventVisibilityNormal, Content: content})
 		if s.onTurnUpdated != nil {
 			s.onTurnUpdated(turn.SessionID, turn)
 		}
+		if cleanupErr != nil {
+			return turn, cleanupErr
+		}
 	}
 	return turn, err
+}
+
+func (s *Service) cleanupCancelledTurn(ctx context.Context, turn domain.Turn, reason string) error {
+	if s == nil || s.store == nil || strings.TrimSpace(turn.ID) == "" || strings.TrimSpace(turn.SessionID) == "" {
+		return nil
+	}
+	if ctx == nil || ctx.Err() != nil {
+		ctx = context.Background()
+	}
+	reason = firstNonEmpty(strings.TrimSpace(reason), "Turn cancelled")
+	var cleanupErr error
+	permissions, err := s.store.ListPermissionRequests(ctx, turn.SessionID, domain.PermissionRequestStatusPending)
+	if err != nil {
+		cleanupErr = errors.Join(cleanupErr, err)
+	} else {
+		for _, request := range permissions {
+			if request.TurnID != turn.ID {
+				continue
+			}
+			_, err := s.DenyPermissionRequest(ctx, domain.DenyPermissionRequestInput{RequestID: request.ID, Reason: reason})
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	questions, err := s.store.ListQuestionRequests(ctx, turn.SessionID, domain.QuestionRequestStatusPending)
+	if err != nil {
+		cleanupErr = errors.Join(cleanupErr, err)
+	} else {
+		for _, request := range questions {
+			if request.TurnID != turn.ID {
+				continue
+			}
+			_, err := s.RejectQuestionRequest(ctx, domain.RejectQuestionRequestInput{RequestID: request.ID, Reason: reason})
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	calls, err := s.store.ListToolCalls(ctx, turn.SessionID)
+	if err != nil {
+		cleanupErr = errors.Join(cleanupErr, err)
+	} else {
+		for _, call := range calls {
+			if call.TurnID != turn.ID || (call.Status != domain.ToolCallStatusRunning && call.Status != domain.ToolCallStatusPending) {
+				continue
+			}
+			call.Status = domain.ToolCallStatusInterrupted
+			call.Error = reason
+			call.ResultSummary = reason
+			if call.Result == nil {
+				call.Result = map[string]any{}
+			}
+			call.Result["ok"] = false
+			call.Result["cancelled"] = true
+			call.Result["error"] = reason
+			if err := s.store.SaveToolCall(ctx, call); err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+				continue
+			}
+			if s.onToolCallUpdated != nil {
+				s.onToolCallUpdated(call.SessionID, call.TurnID, call, false)
+			}
+		}
+	}
+	if state, err := s.store.GetSessionExecutionState(ctx, turn.SessionID); err == nil && state.TurnID == turn.ID {
+		_, err = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{
+			SessionID: turn.SessionID, TurnID: turn.ID, Status: domain.ExecutionStatusInterrupted, Reason: reason,
+		})
+		cleanupErr = errors.Join(cleanupErr, err)
+	}
+	return cleanupErr
 }
 
 func (s *Service) RetrySessionTurnStreaming(ctx context.Context, input domain.RetrySessionTurnRequest) (domain.PreparedSessionTurn, error) {
@@ -96,8 +168,9 @@ func (s *Service) RetrySessionTurnStreaming(ctx context.Context, input domain.Re
 	_, _ = s.store.SetSessionEventVisibility(ctx, userEvent.ID, domain.EventVisibilityHidden)
 	_ = s.store.HideSessionTurnEvents(ctx, turn.ID)
 	if turn.Status == domain.TurnStatusRunning {
-		_, _ = s.store.UpdateTurnStatus(ctx, turn.ID, domain.TurnStatusCancelled, "Retried")
+		turn, _ = s.store.UpdateTurnStatus(ctx, turn.ID, domain.TurnStatusCancelled, "Retried")
 	}
+	_ = s.cleanupCancelledTurn(ctx, turn, "Retried")
 	if s.onSessionUpdated != nil {
 		s.onSessionUpdated(turn.SessionID, nil)
 	}

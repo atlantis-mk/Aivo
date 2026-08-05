@@ -68,6 +68,9 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 		route = applyChatRequestGenerationSettings(route, chatRequest)
 		routeChatRequest := chatRequest
 		routeChatRequest.Tools = s.toolsForModelRoute(ctx, cfg, route, chatRequest.Tools)
+		if err := validateProviderToolIdentities(routeChatRequest.Tools, chatMessages); err != nil {
+			return domain.ChatResponse{}, nil, err
+		}
 		requirements := requestRequirements(routeChatRequest, reasoningEffort, onDelta)
 		if err := s.validateModelCapabilities(ctx, route, requirements); err != nil {
 			lastErr = err
@@ -79,31 +82,35 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 		shouldBuffer := providerPolicyBool(policy.BufferStreamingFallback) && requirements.Streaming && len(routes) > 1 && fallbackIndex < len(routes)-1
 		routeOnDelta, flushDeltas, emittedOutput := bufferedDeltaForRoute(onDelta, shouldBuffer)
 		response, err := s.callProviderWithRuntime(ctx, route, requirements, policy, fallbackIndex, func() (domain.ChatResponse, error) {
+			var response domain.ChatResponse
+			var err error
 			switch route.Transport {
 			case TransportOpenAIResponses:
 				if isOAuthCredential(route.Credential) {
-					return s.callChatGPTCodex(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
+					response, err = s.callChatGPTCodex(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
+					break
 				}
-				return callOpenAICompatible(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
+				response, err = callOpenAICompatible(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
 			case TransportAzureOpenAI:
-				return callAzureOpenAI(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
+				response, err = callAzureOpenAI(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
 			case TransportAnthropicMessages:
-				return callAnthropic(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
+				response, err = callAnthropic(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
 			case TransportGoogleGemini:
-				return callGoogle(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
+				response, err = callGoogle(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
 			case TransportGoogleVertex:
-				return callGoogleVertex(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
+				response, err = callGoogleVertex(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
 			case TransportBedrockConverse:
-				return callBedrockConverse(ctx, route.Provider, route.Model, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
+				response, err = callBedrockConverse(ctx, route.Provider, route.Model, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
 			case TransportGitHubCopilot:
-				return callGitHubCopilot(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
+				response, err = callGitHubCopilot(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, routeOnDelta, onToolDelta)
 			case TransportExternalProcess:
-				return callExternalProcessProvider(ctx, route.Definition, route.Model, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta)
+				response, err = callExternalProcessProvider(ctx, route.Definition, route.Model, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta)
 			case TransportOpenAIChat, TransportOpenAICompatible:
-				return callOpenAICompatible(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
+				response, err = callOpenAICompatible(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
 			default:
 				return domain.ChatResponse{}, errors.New("unsupported provider transport: " + string(route.Transport))
 			}
+			return response, err
 		})
 		if err == nil {
 			flushDeltas()

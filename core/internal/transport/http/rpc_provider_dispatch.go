@@ -124,11 +124,14 @@ func (api *API) callProviderRPC(ctx context.Context, method string, args []json.
 		result, err := api.service.CancelProviderAuth(ctx, id)
 		return result, true, err
 	case "CompleteInitialization":
-		input, err := arg[*domain.ProviderConfig](args, 0)
+		input, err := arg[domain.CompleteInitializationInput](args, 0)
 		if err != nil {
 			return nil, true, err
 		}
 		result, err := api.service.CompleteInitialization(ctx, input)
+		if err == nil {
+			api.events.emit("config.changed", result)
+		}
 		return result, true, err
 	default:
 		return nil, false, nil

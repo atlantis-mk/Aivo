@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SubmittedPromptContent } from "@/features/projects/conversation-timeline";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
+import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
 import type { AgentRun } from "@/services/aivo";
 
 type ProjectConversationViewportHandlers = {
@@ -19,6 +20,7 @@ export function ProjectConversationViewport({
   dockPinnedSummary,
   handlers,
   hasTurns,
+  onOpenToolActivity,
   reservePermissionDock,
   revealFromHistory,
   rootRef,
@@ -30,6 +32,7 @@ export function ProjectConversationViewport({
   dockPinnedSummary: boolean;
   handlers: ProjectConversationViewportHandlers;
   hasTurns: boolean;
+  onOpenToolActivity?: (activity: ToolCallActivity) => void;
   reservePermissionDock: boolean;
   revealFromHistory: boolean;
   rootRef: RefObject<HTMLDivElement | null>;
@@ -47,6 +50,7 @@ export function ProjectConversationViewport({
             contentRef={contentRef}
             dockPinnedSummary={dockPinnedSummary}
             onOpenSession={handlers.onOpenSession}
+            onOpenToolActivity={onOpenToolActivity}
             onDeleteAssistantMessage={handlers.onDeleteAssistantMessage}
             onDeleteTurn={handlers.onDeleteTurn}
             onEditUserMessage={handlers.onEditUserMessage}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -48,6 +49,8 @@ type Service struct {
 	pluginManager         *PluginManager
 	mcpManager            *MCPManager
 	skillManager          *SkillManager
+	extensionSupervisor   *ExtensionSupervisor
+	extensionCredentials  *HostCredentialBroker
 }
 
 func NewService(store Store) *Service {
@@ -72,6 +75,16 @@ func NewService(store Store) *Service {
 	service.pluginManager = NewPluginManager(store)
 	service.mcpManager = NewMCPManager(store, service.secrets)
 	service.skillManager = NewSkillManager(store)
+	service.extensionSupervisor = NewExtensionSupervisor()
+	service.extensionCredentials = NewHostCredentialBroker(service.secrets)
+	service.extensionSupervisor.SetCredentialBroker(service.extensionCredentials)
+	if loaded, err := LoadBuiltinExtensionManifest(projectExtensionManifest); err != nil {
+		log.Printf("builtin_extension init_failed id=%s error_class=manifest_validation", projectExtensionID)
+	} else if _, err := service.extensionSupervisor.InstallBuiltin(context.Background(), loaded, func() extensionRuntimeClient {
+		return &projectBuiltinExtensionClient{service: service}
+	}); err != nil {
+		log.Printf("builtin_extension init_failed id=%s error_class=runtime_initialization", projectExtensionID)
+	}
 	service.refreshProviderExtensions("")
 	service.authFlows = NewProviderAuthManager(service)
 	service.startSchedulerLoop()
@@ -81,6 +94,7 @@ func NewService(store Store) *Service {
 		}
 	})
 	service.titleGenerator = service.generateSessionTitle
+	reclaimStaleRetainedOutput(service.now())
 	_, _ = store.MarkRunningToolCallsInterrupted(context.Background(), "", "Interrupted during startup recovery; not replayed automatically")
 	return service
 }
@@ -116,6 +130,9 @@ func (s *Service) SetSecretStore(store SecretStore) {
 	if s.mcpManager != nil {
 		s.mcpManager.SetSecretStore(store)
 	}
+	if s.extensionCredentials != nil {
+		s.extensionCredentials.SetStore(store)
+	}
 }
 
 func (s *Service) Shutdown() {
@@ -129,4 +146,15 @@ func (s *Service) Shutdown() {
 	defaultShellProcessRegistry.Shutdown()
 	defaultAgentShellRegistry.Shutdown()
 	defaultAgentPTYRegistry.Shutdown()
+	if s.extensionSupervisor != nil {
+		s.extensionSupervisor.mu.Lock()
+		ids := make([]string, 0, len(s.extensionSupervisor.items))
+		for id := range s.extensionSupervisor.items {
+			ids = append(ids, id)
+		}
+		s.extensionSupervisor.mu.Unlock()
+		for _, id := range ids {
+			_, _ = s.extensionSupervisor.Stop(context.Background(), id)
+		}
+	}
 }

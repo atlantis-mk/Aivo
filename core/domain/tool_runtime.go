@@ -21,6 +21,8 @@ type ToolSpec struct {
 	RequiresWorkspace    bool            `json:"requiresWorkspace,omitempty"`
 	RequiresNetwork      bool            `json:"requiresNetwork,omitempty"`
 	TouchesSecrets       bool            `json:"touchesSecrets,omitempty"`
+	ActivationPolicy     string          `json:"activationPolicy,omitempty"`
+	ImplementationHash   string          `json:"-"`
 }
 
 type HostedToolSpec struct {
@@ -91,21 +93,22 @@ type ToolError struct {
 }
 
 type ToolResult struct {
-	CallID              string           `json:"call_id"`
-	Name                string           `json:"name"`
-	OK                  bool             `json:"ok"`
-	Content             string           `json:"content,omitempty"`
-	ModelContent        string           `json:"modelContent,omitempty"`
-	Structured          map[string]any   `json:"structured,omitempty"`
-	RetainedOutputRefs  []string         `json:"retainedOutputRefs,omitempty"`
-	Files               []ToolResultFile `json:"files,omitempty"`
-	Error               string           `json:"error,omitempty"`
-	ToolError           *ToolError       `json:"toolError,omitempty"`
-	Truncated           bool             `json:"truncated,omitempty"`
-	OriginalSize        int              `json:"originalSize,omitempty"`
-	PendingApprovalID   string           `json:"pendingApprovalId,omitempty"`
-	PermissionDecision  string           `json:"permissionDecision,omitempty"`
-	PermissionRequested bool             `json:"permissionRequested,omitempty"`
+	CallID              string              `json:"call_id"`
+	Name                string              `json:"name"`
+	OK                  bool                `json:"ok"`
+	Content             string              `json:"content,omitempty"`
+	ModelContent        string              `json:"modelContent,omitempty"`
+	ModelAttachments    []MessageAttachment `json:"-"`
+	Structured          map[string]any      `json:"structured,omitempty"`
+	RetainedOutputRefs  []string            `json:"retainedOutputRefs,omitempty"`
+	Files               []ToolResultFile    `json:"files,omitempty"`
+	Error               string              `json:"error,omitempty"`
+	ToolError           *ToolError          `json:"toolError,omitempty"`
+	Truncated           bool                `json:"truncated,omitempty"`
+	OriginalSize        int                 `json:"originalSize,omitempty"`
+	PendingApprovalID   string              `json:"pendingApprovalId,omitempty"`
+	PermissionDecision  string              `json:"permissionDecision,omitempty"`
+	PermissionRequested bool                `json:"permissionRequested,omitempty"`
 }
 
 type ToolResultFile struct {
@@ -153,6 +156,7 @@ type ToolExecutionContext struct {
 	PermissionScope       string                              `json:"permissionScope,omitempty"`
 	OutputPolicy          OutputPolicy                        `json:"outputPolicy,omitempty"`
 	ExpectedRegistrations map[string]ToolRegistrationIdentity `json:"expectedRegistrations,omitempty"`
+	ToolSnapshot          *ToolSnapshot                       `json:"toolSnapshot,omitempty"`
 	BridgeCallDepth       int                                 `json:"bridgeCallDepth,omitempty"`
 }
 

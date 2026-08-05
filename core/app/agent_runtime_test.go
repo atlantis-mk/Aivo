@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -69,6 +70,19 @@ type agentSpecTool struct {
 	spec domain.ToolSpec
 }
 
+type agentDelegateBuiltinClient struct{ service *Service }
+
+func (c *agentDelegateBuiltinClient) Initialize(context.Context, domain.ExtensionManifest) error {
+	return nil
+}
+func (c *agentDelegateBuiltinClient) Execute(ctx context.Context, name string, args json.RawMessage, execCtx domain.ToolExecutionContext) (domain.ToolResult, error) {
+	return c.service.delegateTaskToolNamed(ctx, args, execCtx, name), nil
+}
+func (c *agentDelegateBuiltinClient) UIEvent(context.Context, string, string, any) (any, error) {
+	return nil, errors.New("agent delegate extension has no Web view")
+}
+func (c *agentDelegateBuiltinClient) Shutdown(context.Context) error { return nil }
+
 func (t agentSpecTool) Spec() domain.ToolSpec {
 	return t.spec
 }
@@ -100,9 +114,12 @@ func TestAgentCatalogDefaults(t *testing.T) {
 		"Be concise, direct, and to the point",
 		"under 24 Chinese characters or 12 English words",
 		"Do not narrate routine reads, searches",
-		"normally fewer than 4 lines",
-		"Prefer run_tests, read_diagnostics, and format_code",
-		"use bash only as an escape hatch",
+		"normally be fewer than 4 lines",
+		"Use read for exact files",
+		"bash for repository search, Git, tests, builds, formatting, diagnostics",
+		"edit for exact atomic replacements",
+		"write for complete file creation or overwrite",
+		"Host activates an extension before a model call",
 	} {
 		if !strings.Contains(code.Prompt, required) {
 			t.Fatalf("code prompt missing concise opencode-style rule %q: %q", required, code.Prompt)
@@ -112,17 +129,17 @@ func TestAgentCatalogDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(build.Prompt, "Prefer run_tests, read_diagnostics, and format_code") ||
-		!strings.Contains(build.Prompt, "use bash only as an escape hatch") {
-		t.Fatalf("build prompt should make bash an escape hatch: %q", build.Prompt)
+	if !strings.Contains(build.Prompt, "Inspect with read and bash") ||
+		!strings.Contains(build.Prompt, "exact changes with edit") ||
+		!strings.Contains(build.Prompt, "complete writes with write") {
+		t.Fatalf("build prompt should describe the four primitives: %q", build.Prompt)
 	}
 	debug, err := catalog.Get(domain.AgentModeDebug)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(debug.Prompt, "Prefer read_diagnostics and run_tests") ||
-		!strings.Contains(debug.Prompt, "before falling back to bash") {
-		t.Fatalf("debug prompt should prefer diagnostics tools before bash: %q", debug.Prompt)
+	if !strings.Contains(debug.Prompt, "read and approved foreground bash commands") {
+		t.Fatalf("debug prompt should use the minimal read/bash surface: %q", debug.Prompt)
 	}
 	if _, err := catalog.Get(domain.AgentModePlan); err != nil {
 		t.Fatal(err)
@@ -309,13 +326,40 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
+	extensionRoot := t.TempDir()
+	writeTestExtensionManifest(t, extensionRoot, map[string]any{
+		"schemaVersion": 1, "id": "aivo.agent", "name": "Agent", "version": "1.0.0", "apiVersion": "1",
+		"runtime": map[string]any{"type": "builtin"},
+		"contributes": map[string]any{"tools": []any{map[string]any{
+			"name": "agent_delegate", "description": "Delegate a bounded task", "activation": "manual",
+			"schema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"mode": map[string]any{"type": "string"}, "prompt": map[string]any{"type": "string"}, "title": map[string]any{"type": "string"}}, "required": []string{"mode", "prompt"}},
+		}}},
+	})
+	service.extensionSupervisor.RegisterBuiltin("aivo.agent", func() extensionRuntimeClient { return &agentDelegateBuiltinClient{service: service} })
+	status, err := service.extensionSupervisor.Discover(extensionRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.extensionSupervisor.Enable(ctx, status.ID); err != nil {
+		t.Fatal(err)
+	}
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		var body struct {
+			Tools []any `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
 		w.Header().Set("Content-Type", "application/json")
+		if len(body.Tools) == 0 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"reason\":\"pinned delegate is already active\"}"}}]}`))
+			return
+		}
+		requestCount++
 		switch requestCount {
 		case 1:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_delegate","type":"function","function":{"name":"agent_delegate_task","arguments":"{\"mode\":\"planner\",\"prompt\":\"delegate demo\",\"title\":\"delegate demo\"}"}}]}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_delegate","type":"function","function":{"name":"agent_delegate","arguments":"{\"mode\":\"planner\",\"prompt\":\"delegate demo\",\"title\":\"delegate demo\"}"}}]}}]}`))
 		case 2:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"child done"}}]}`))
 		default:
@@ -328,6 +372,9 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 	}
 	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: t.TempDir()})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{SessionID: session.ID, ToolNames: []string{"agent_delegate"}}); err != nil {
 		t.Fatal(err)
 	}
 	run, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "start delegate"})

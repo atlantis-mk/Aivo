@@ -139,8 +139,11 @@ func (s *Service) completeSessionTurn(
 			reply = deterministicAssistantFallback(text)
 			model = input.Model
 		} else if isContextCancelled(ctx, err) {
-			if cancelled, cancelErr := s.store.UpdateTurnStatus(context.Background(), turn.ID, domain.TurnStatusCancelled, "Turn cancelled"); cancelErr == nil && s.onTurnUpdated != nil {
-				s.onTurnUpdated(cancelled.SessionID, cancelled)
+			if cancelled, cancelErr := s.store.UpdateTurnStatus(context.Background(), turn.ID, domain.TurnStatusCancelled, "Turn cancelled"); cancelErr == nil {
+				_ = s.cleanupCancelledTurn(context.Background(), cancelled, "Turn cancelled")
+				if s.onTurnUpdated != nil {
+					s.onTurnUpdated(cancelled.SessionID, cancelled)
+				}
 			}
 			_, _ = s.store.UpsertSessionExecutionState(context.Background(), domain.SessionExecutionState{SessionID: input.SessionID, TurnID: turn.ID, Status: domain.ExecutionStatusInterrupted, Reason: "turn cancelled"})
 			return domain.PreparedSessionTurn{}, err

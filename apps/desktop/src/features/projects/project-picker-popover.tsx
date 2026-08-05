@@ -9,7 +9,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from "@/components/ui/command";
 import {
   Popover,
@@ -68,7 +67,23 @@ export function ProjectPicker({
       </div>
       <PopoverContent align="start">
         <Command>
-          <CommandInput placeholder="搜索项目" />
+          <div className="flex items-center gap-1 [&>[data-slot=command-input-wrapper]]:min-w-0 [&>[data-slot=command-input-wrapper]]:flex-1">
+            <CommandInput placeholder="搜索项目" />
+            <Button
+              aria-label="新项目"
+              className="mr-1"
+              onClick={() => {
+                onAddProject();
+                setOpen(false);
+              }}
+              size="icon-lg"
+              title="新项目"
+              type="button"
+              variant="ghost"
+            >
+              <Plus />
+            </Button>
+          </div>
           <CommandList>
             <CommandEmpty>没有找到项目</CommandEmpty>
             {projects.length > 0 ? (
@@ -91,19 +106,6 @@ export function ProjectPicker({
                 ))}
               </CommandGroup>
             ) : null}
-            <CommandSeparator />
-            <CommandGroup>
-              <CommandItem
-                onSelect={() => {
-                  onAddProject();
-                  setOpen(false);
-                }}
-                value="New project 添加项目"
-              >
-                <Plus />
-                <span>New project</span>
-              </CommandItem>
-            </CommandGroup>
           </CommandList>
         </Command>
       </PopoverContent>

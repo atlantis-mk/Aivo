@@ -106,7 +106,11 @@ func (s *Service) assembleConversationContext(ctx context.Context, sessionID str
 	if err != nil {
 		return conversationContextAssembly{}, err
 	}
-	chat := chatMessagesFromEvents(events)
+	turns, err := s.store.ListTurns(ctx, sessionID, 500)
+	if err != nil {
+		return conversationContextAssembly{}, err
+	}
+	chat := chatMessagesFromEvents(events, turns)
 	tail := selectRecentChatTail(chat, opts.TailMessageLimit, opts.TailMessageBudget)
 	older := chat[:len(chat)-len(tail)]
 

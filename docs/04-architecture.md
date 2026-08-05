@@ -38,6 +38,17 @@ SQLite, providers, OS processes, MCP, LSP, and other adapters
 - `core/infra/persistence`, provider clients, MCP/LSP, process integration, and HTTP transport are adapters behind focused interfaces.
 - Goroutines inherit a parent context and have bounded output/backpressure and deterministic shutdown.
 
+### Agent tools and extensions
+
+- The default coding Agent contract consists only of `read`, `bash`, `edit`, and `write`, bound to one coherent Execution Environment.
+- Every executable tool has one canonical ASCII name matching `^[A-Za-z0-9_-]+$` with a 64-byte maximum. Registry and Manifest validation reject invalid names before catalog or snapshot assembly; Provider adapters use the canonical name unchanged and own no wire alias codec.
+- Before a provider request, the Host prepares eligible Skill, plugin, Manifest v1 extension, and MCP catalogs, injects canonical summaries for selected Skills, materializes full instructions only for an exact validated selected Skill subset, injects selected bounded context resources, and freezes the exact registration and schema identity of every activated tool; execution rejects calls that do not match that Tool Snapshot.
+- Long-tail tools, policies, environments, context resources, and Web views enter through versioned language-neutral extension manifests and protocols. Discovery and trust do not execute extension code.
+- Required Host-owned Agent capabilities may ship as trusted built-in Manifest v1 extensions. The `aivo.projects` built-in contributes only `_`-namespaced, mode-default project query, registration, and immutable current-session association tools; it does not expand the four unqualified primitive registry.
+- The Host auxiliary resolver may select only bounded eligible tool, Skill, and context registrations plus the selected Skill subset requiring instructions before the primary model call. It cannot author injected summaries, install/import, grant trust, enable a source, bind credentials, grant authority, or execute. Automatic summary/instruction/context selections are request-scoped.
+- Extension processes, services, streams, calls, views, and artifacts have explicit owners, bounded queues, cancellation, draining, and deterministic teardown.
+- Isolated extension Web content reaches privileged behavior only through a versioned Host bridge and validated manifest-declared actions.
+
 ## Contracts and errors
 
 - New public resources use versioned `/api/v2` contracts. Existing RPC methods may remain as tested compatibility adapters during migration.

@@ -29,6 +29,36 @@ export type PermissionFileInfo = {
   stale?: boolean;
 };
 
+export type PermissionProjectInfo = {
+  operation: "add" | "associate";
+  name?: string;
+  rootPath: string;
+  immutableAssociation: boolean;
+};
+
+export function permissionProject(
+  permission: PermissionRequest,
+): PermissionProjectInfo | null {
+  const args = permission.arguments;
+  if (!args) return null;
+  const operation = args.projectOperation;
+  const rootPath = args.projectRoot;
+  if (
+    (operation !== "add" && operation !== "associate") ||
+    typeof rootPath !== "string" ||
+    !rootPath
+  ) {
+    return null;
+  }
+  const project: PermissionProjectInfo = {
+    operation,
+    rootPath,
+    immutableAssociation: args.immutableAssociation === true,
+  };
+  if (typeof args.projectName === "string") project.name = args.projectName;
+  return project;
+}
+
 export function permissionCommand(
   permission: PermissionRequest,
 ): PermissionCommandInfo | null {
@@ -68,6 +98,12 @@ export function permissionApprovalTitle(
   if (writePermissionToolNames.has(permission.toolName)) {
     return "批准文件修改";
   }
+  if (permission.toolName === "aivo_projects_add") {
+    return "批准添加项目";
+  }
+  if (permission.toolName === "aivo_projects_associate") {
+    return "批准关联项目";
+  }
   return `批准 ${permission.toolName}`;
 }
 
@@ -78,7 +114,18 @@ export function permissionApprovalTarget(
   if (command) {
     return command.command;
   }
+  const project = permissionProject(permission);
+  if (project) return project.rootPath;
   return permission.paths?.length ? permission.paths.join(", ") : permission.action;
+}
+
+export function permissionRememberLabel(
+  permission: PermissionRequest,
+  command: PermissionCommandInfo | null,
+) {
+  if (command) return "记住此命令和 cwd";
+  if (permissionProject(permission)) return "记住此项目操作";
+  return "记住这类权限";
 }
 
 export function permissionToolsets(permission: PermissionRequest) {

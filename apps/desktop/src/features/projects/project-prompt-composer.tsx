@@ -5,7 +5,6 @@ import { useAutoTextareaHeight } from "@/features/projects/project-prompt-compos
 import { PromptComposerTextarea } from "@/features/projects/project-prompt-composer-textarea";
 import { PromptComposerToolbar } from "@/features/projects/project-prompt-composer-toolbar";
 import type { PromptComposerProps } from "@/features/projects/project-prompt-composer-types";
-import { ProjectPicker } from "@/features/projects/project-picker-popover";
 
 export function PromptComposer({
   agentMode,
@@ -75,7 +74,7 @@ export function PromptComposer({
   return (
     <div className="flex min-w-0 flex-col" ref={rootRef}>
       <div
-        className="relative z-10 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card px-5 py-3 shadow-lg shadow-foreground/5"
+        className="relative z-10 flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card px-4 py-3 shadow-sm shadow-foreground/5"
         ref={composerCardRef}
       >
         <ComposerAttachmentList
@@ -104,30 +103,24 @@ export function PromptComposer({
           onAgentModeSelect={onAgentModeSelect}
           onModelSelect={onModelSelect}
           onPermissionModeSelect={onPermissionModeSelect}
+          onProjectAdd={onProjectAdd}
+          onProjectClear={onProjectClear}
+          onProjectSelect={onProjectSelect}
           onReasoningEffortSelect={onReasoningEffortSelect}
           onServiceTierSelect={onServiceTierSelect}
           onSubmit={onSubmit}
           pending={pending}
           permissionMode={permissionMode}
           prompt={prompt}
+          project={project}
           projectPath={projectPath}
+          projects={projects}
           reasoningEffort={reasoningEffort}
           serviceTier={serviceTier}
+          showProjectPicker={showProjectPicker}
           showServiceTier={showServiceTier}
         />
       </div>
-      {showProjectPicker ? (
-        <div className="-mt-5 rounded-2xl bg-card p-2 pt-7 shadow-lg shadow-foreground/5">
-          <ProjectPicker
-            onAddProject={onProjectAdd}
-            onProjectClear={onProjectClear}
-            onProjectSelect={onProjectSelect}
-            project={project}
-            projectPath={projectPath}
-            projects={projects}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

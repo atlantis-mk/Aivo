@@ -6,9 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"aivo/core/domain"
 )
+
+const retainedOutputLifetime = 24 * time.Hour
 
 const (
 	defaultRetainedOutputReadLimit = 16000
@@ -106,4 +109,32 @@ func retainedOutputRoots() []string {
 	}
 	roots = append(roots, filepath.Join(os.TempDir(), "aivo", "command-artifacts"))
 	return roots
+}
+
+func cleanupRetainedOutputSession(sessionID string) {
+	sessionID = safeArtifactPart(sessionID)
+	if sessionID == "" || sessionID == "artifact" {
+		return
+	}
+	for _, root := range retainedOutputRoots() {
+		_ = os.RemoveAll(filepath.Join(root, sessionID))
+	}
+}
+
+func reclaimStaleRetainedOutput(now time.Time) {
+	for _, root := range retainedOutputRoots() {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
+			if err == nil && now.Sub(info.ModTime()) >= retainedOutputLifetime {
+				_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+			}
+		}
+	}
 }

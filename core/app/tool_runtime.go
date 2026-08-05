@@ -24,7 +24,11 @@ type ToolRuntime struct {
 	MaxOutputChars int
 	Timeout        time.Duration
 	Permissions    *PermissionEngine
-	PluginHooks    *PluginManager
+	PluginHooks    ToolHookRunner
+}
+
+type ToolHookRunner interface {
+	InvokeHook(context.Context, string, map[string]any) []map[string]any
 }
 
 func NewToolRuntime(registry *Registry, workspaceRoot string) *ToolRuntime {
@@ -43,19 +47,22 @@ func (r *ToolRuntime) Execute(ctx context.Context, call domain.ChatToolCall) dom
 func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatToolCall, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	start := time.Now()
 	name := strings.TrimSpace(call.Name)
-	argsPreview := bounded(string(call.Arguments), 500)
-	log.Printf("tool_call start name=%s call_id=%s args=%s", name, call.ID, argsPreview)
+	log.Printf("tool_call start name=%s call_id=%s argument_bytes=%d", name, call.ID, len(call.Arguments))
 	if r == nil || r.Registry == nil {
 		return r.finish(call, start, toolFailure(call.ID, name, "runtime_unconfigured", "tool runtime is not configured"), false)
 	}
 	if name == "" {
 		return r.finish(call, start, toolFailure(call.ID, name, "invalid_tool_call", "tool name is required"), false)
 	}
-	tool, identity, ok := r.Registry.GetRegistered(name)
+	expected := execCtx.ExpectedRegistrations[name]
+	tool, identity, ok := r.Registry.GetRegisteredForSnapshot(name, expected.RegistrationID)
 	if !ok {
+		if expected.RegistrationID != "" {
+			return r.finish(call, start, toolFailure(call.ID, name, "stale_tool_registration", fmt.Sprintf("tool %s registration is no longer available", name)), false)
+		}
 		return r.finish(call, start, toolFailure(call.ID, name, "tool_not_found", fmt.Sprintf("unknown tool: %s", name)), false)
 	}
-	if expected, hasExpected := execCtx.ExpectedRegistrations[name]; hasExpected && expected.RegistrationID != "" && identity.RegistrationID != "" && expected.RegistrationID != identity.RegistrationID {
+	if expected.RegistrationID != "" && identity.RegistrationID != "" && expected.RegistrationID != identity.RegistrationID {
 		return r.finish(call, start, toolFailure(call.ID, name, "stale_tool_registration", fmt.Sprintf("tool %s changed since it was advertised", name)), false)
 	}
 	timeout := r.Timeout
@@ -91,6 +98,11 @@ func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatTo
 			return r.finish(call, start, toolFailure(call.ID, name, "invalid_arguments", "invalid JSON arguments: "+err.Error()), false)
 		}
 	}
+	if name == "bash" {
+		if _, err := parsePrimitiveBashArgs(call.Arguments); err != nil {
+			return r.finish(call, start, toolFailure(call.ID, name, "invalid_arguments", err.Error()), false)
+		}
+	}
 	if hookResult := r.runPreToolHooks(ctx, call, spec, execCtx); hookResult != nil {
 		return r.finish(call, start, *hookResult, false)
 	}
@@ -108,7 +120,7 @@ func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatTo
 			result.PermissionRequested = true
 			return r.finish(call, start, result, false)
 		case domain.PermissionDecisionDeny:
-			result := toolFailure(call.ID, name, "permission_denied", firstNonEmpty(evaluation.Reason, "permission denied"))
+			result := toolFailure(call.ID, name, firstNonEmpty(evaluation.Code, "permission_denied"), firstNonEmpty(evaluation.Reason, "permission denied"))
 			result.PermissionDecision = evaluation.Decision
 			return r.finish(call, start, result, false)
 		default:
@@ -238,10 +250,11 @@ func (r *ToolRuntime) retainToolOutput(call domain.ChatToolCall, execCtx domain.
 }
 
 func truncationMarker(label string, content string, maxOutput int, ref string) string {
+	tail := content[len(content)-maxOutput:]
 	if ref != "" {
-		return content[:maxOutput] + fmt.Sprintf("\n\n[truncated: %s exceeded %d characters; full output retained at %s]", label, maxOutput, ref)
+		return fmt.Sprintf("[truncated: %s exceeded %d characters; full output retained at %s; showing tail]\n\n", label, maxOutput, ref) + tail
 	}
-	return content[:maxOutput] + fmt.Sprintf("\n\n[truncated: %s exceeded %d characters]", label, maxOutput)
+	return fmt.Sprintf("[truncated: %s exceeded %d characters; showing tail]\n\n", label, maxOutput) + tail
 }
 
 func appendRetainedOutputRef(refs []string, ref string) []string {
@@ -275,9 +288,9 @@ func (r *ToolRuntime) runPreToolHooks(ctx context.Context, call domain.ChatToolC
 		}
 		message, _ := result["message"].(string)
 		if message == "" {
-			message = "plugin blocked tool call"
+			message = "policy blocked tool call"
 		}
-		blocked := toolFailure(call.ID, spec.Name, "plugin_blocked", message)
+		blocked := toolFailure(call.ID, spec.Name, "policy_denied", message)
 		return &blocked
 	}
 	return nil
@@ -321,7 +334,11 @@ func isLongRunningInteractionSpec(spec domain.ToolSpec) bool {
 }
 
 func (r *ToolRuntime) finish(call domain.ChatToolCall, start time.Time, result domain.ToolResult, truncated bool) domain.ToolResult {
-	log.Printf("tool_call finish name=%s call_id=%s ok=%t duration_ms=%d truncated=%t error=%s", result.Name, call.ID, result.OK, time.Since(start).Milliseconds(), truncated, bounded(result.Error, 300))
+	errorCode := ""
+	if result.ToolError != nil {
+		errorCode = result.ToolError.Code
+	}
+	log.Printf("tool_call finish name=%s call_id=%s ok=%t duration_ms=%d truncated=%t error_code=%s", result.Name, call.ID, result.OK, time.Since(start).Milliseconds(), truncated, errorCode)
 	return result
 }
 

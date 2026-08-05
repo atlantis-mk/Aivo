@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 
 	"aivo/core/domain"
 )
 
-const shellNamespaceDescription = "Guarded command execution tools. Prefer run_tests for declared test, lint, and build commands. Use bash for short non-interactive commands; use exec_command plus write_stdin when a command needs a PTY or multiple input/output steps."
+const shellNamespaceDescription = "Foreground non-interactive Bash execution in the active execution environment."
 
 type BashTool struct {
 	workspaceRoot string
@@ -19,6 +22,7 @@ type BashTool struct {
 	loadSavedCWD  func(sessionID string, workspaceRoot string) string
 	saveCWD       func(sessionID string, workspaceRoot string, cwd string)
 	outputSink    ShellOutputSink
+	environment   ExecutionEnvironment
 }
 
 func NewBashTool(workspaceRoot string, runner SandboxRunner, outputSink ...ShellOutputSink) *BashTool {
@@ -40,7 +44,7 @@ func (t *BashTool) SetPersistentCWDHooks(load func(sessionID string, workspaceRo
 func (t *BashTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "bash",
-		Description:          "Escape-hatch shell execution after command policy and permission approval. Prefer run_tests for test/lint/build, read_diagnostics for diagnostics, and format_code for formatter-backed rewrites. Use bash only for short non-interactive workspace commands that no safer dedicated tool can represent; use exec_command plus write_stdin for PTY or multi-step input/output. Arguments must be JSON. Foreground mode is bounded; background mode returns a managed processRef. PTY requests here are rejected. Stdin, env overrides, external cwd, sudo, and network are separate approval dimensions.",
+		Description:          "Run one foreground, non-interactive Bash command in the active execution environment. Each call has independent shell state and bounded stdout/stderr.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: shellNamespaceDescription,
 		Capability:           "shell.exec",
@@ -48,17 +52,13 @@ func (t *BashTool) Spec() domain.ToolSpec {
 		Category:             "shell",
 		Toolsets:             []string{"shell", "coding"},
 		RequiresWorkspace:    true,
+		ImplementationHash:   executionEnvironmentHash(t.environment),
 		InputSchema: map[string]any{
-			"type": "object",
+			"type":                 "object",
+			"additionalProperties": false,
 			"properties": map[string]any{
-				"command":        map[string]any{"type": "string", "description": "Shell command to execute non-interactively inside the workspace. Do not use bash for test, lint, build, diagnostics, or formatting when run_tests, read_diagnostics, or format_code can express the operation."},
-				"cwd":            map[string]any{"type": "string", "description": "Optional workspace-relative working directory. Defaults to workspace root."},
-				"timeoutSeconds": map[string]any{"type": "integer", "minimum": 1, "maximum": int(maxCommandTimeout.Seconds())},
-				"network":        map[string]any{"type": "string", "enum": []string{"deny", "inherit"}, "description": "Requested network policy. Local sandbox can only enforce this by policy checks."},
-				"mode":           map[string]any{"type": "string", "enum": []string{"foreground", "background", "pty"}, "description": "Execution mode. Defaults to foreground."},
-				"stdin":          map[string]any{"type": "string", "description": "Optional stdin for the command. Requires explicit shell.stdin approval."},
-				"env":            map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "Optional safe env overrides. Secret-like keys are denied."},
-				"justification":  map[string]any{"type": "string", "description": "Short user-visible reason for the permission prompt."},
+				"command": map[string]any{"type": "string", "minLength": 1, "description": "One foreground, non-interactive Bash command. Shell state does not persist between calls."},
+				"timeout": map[string]any{"type": "integer", "minimum": 1, "maximum": int(maxCommandTimeout.Seconds()), "description": "Timeout in seconds. Defaults to 30 and caps at 300."},
 			},
 			"required": []string{"command"},
 		},
@@ -66,39 +66,53 @@ func (t *BashTool) Spec() domain.ToolSpec {
 }
 
 func (t *BashTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
-	input, err := parseBashArgs(args)
+	if t.environment != nil {
+		return t.environment.ExecutePrimitive(ctx, "bash", args, execCtx)
+	}
+	input, err := parsePrimitiveBashArgs(args)
 	if err != nil {
-		return toolError("bash", err)
+		return primitiveError("bash", "invalid_arguments", err)
 	}
 	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
-	cwd := input.CWD
-	if shouldUsePersistentAgentShell(input, execCtx) && cwd == "" && t.agentShells != nil {
-		cwd = t.agentShells.CurrentCWD(execCtx.SessionID, workspaceRoot)
-		if cwd == "" && t.loadSavedCWD != nil {
-			cwd = t.loadSavedCWD(execCtx.SessionID, workspaceRoot)
-		}
-	}
-	prepared, err := prepareShellCommand(workspaceRoot, execCtx, "bash", input.Command, cwd, input.TimeoutSeconds, input.Network, input.Mode, input.Stdin, input.Env)
+	prepared, err := prepareShellCommand(workspaceRoot, execCtx, "bash", input.Command, "", input.TimeoutSeconds, "", "foreground", "", nil)
 	if err != nil {
 		return commandToolError("bash", prepared, err)
 	}
+	bashPath, err := resolveBashExecutable(workspaceRoot)
+	if err != nil {
+		return primitiveError("bash", "bash_unavailable", err)
+	}
+	prepared.request.Shell = bashPath
+	prepared.request.OutputPolicy.MaxChars = defaultStreamMaxChars
 	prepared.request.OutputSink = t.outputSink
-	if prepared.request.Mode == "background" {
-		result, runErr := t.processes.Start(ctx, prepared.request)
-		return commandToolResult("bash", prepared, result, runErr)
-	}
-	if prepared.request.Mode == "pty" {
-		return commandToolError("bash", prepared, errors.New("use exec_command and write_stdin for model-facing PTY commands"))
-	}
-	if shouldUsePersistentAgentShell(input, execCtx) && t.agentShells != nil {
-		result, runErr := t.agentShells.Run(ctx, prepared.request)
-		if result.CWD != "" && t.saveCWD != nil {
-			t.saveCWD(execCtx.SessionID, workspaceRoot, result.CWD)
-		}
-		return commandToolResult("bash", prepared, result, runErr)
-	}
 	result, runErr := t.runner.Run(ctx, prepared.request)
 	return commandToolResult("bash", prepared, result, runErr)
+}
+
+func resolveBashExecutable(workspaceRoot string) (string, error) {
+	if configured := strings.TrimSpace(loadEffectiveRuntimeConfig(workspaceRoot).Config.ExecutionEnvironment.BashPath); configured != "" {
+		info, err := os.Stat(configured)
+		if err != nil || info.IsDir() {
+			return "", errors.New("configured Bash executable is unavailable")
+		}
+		return configured, nil
+	}
+	if configured := strings.TrimSpace(os.Getenv("AIVO_BASH_PATH")); configured != "" {
+		info, err := os.Stat(configured)
+		if err != nil || info.IsDir() {
+			return "", errors.New("configured Bash executable is unavailable")
+		}
+		return configured, nil
+	}
+	name := "bash"
+	if runtime.GOOS == "windows" {
+		name = "bash.exe"
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", errors.New("Bash is unavailable; configure a Bash-compatible executable")
+	}
+	return path, nil
 }
 
 type RunTestsTool struct {

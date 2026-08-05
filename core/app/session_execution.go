@@ -26,7 +26,8 @@ func (s *Service) InterruptSessionExecution(ctx context.Context, input domain.In
 		if turn.Status == domain.TurnStatusRunning {
 			runningTurnID = turn.ID
 			s.cancelActiveTurn(turn.ID)
-			_, _ = s.store.UpdateTurnStatus(ctx, turn.ID, domain.TurnStatusCancelled, firstNonEmpty(input.Reason, "Interrupted by user"))
+			cancelled, _ := s.store.UpdateTurnStatus(ctx, turn.ID, domain.TurnStatusCancelled, firstNonEmpty(input.Reason, "Interrupted by user"))
+			_ = s.cleanupCancelledTurn(ctx, cancelled, firstNonEmpty(input.Reason, "Interrupted by user"))
 			break
 		}
 	}

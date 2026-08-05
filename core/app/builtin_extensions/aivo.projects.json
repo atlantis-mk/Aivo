@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "aivo.projects",
+  "name": "Aivo Projects",
+  "version": "1.0.0",
+  "description": "Query registered local projects, register an existing directory, and immutably bind the current unscoped coding session.",
+  "apiVersion": "1",
+  "runtime": {
+    "type": "builtin"
+  },
+  "contributes": {
+    "tools": [
+      {
+        "name": "aivo_projects_query",
+        "description": "Query or list Aivo projects and inspect the current session's project association. Use projectId for an exact visible project, or query/limit/cursor for bounded local search and pagination.",
+        "activation": "default",
+        "capability": "projects.read",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "projectId": { "type": "string", "description": "Exact project ID. Cannot be combined with query or cursor." },
+            "query": { "type": "string", "description": "Optional local substring search over project name, description, and root path." },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 },
+            "cursor": { "type": "string", "description": "Opaque nextCursor from a previous query result." }
+          }
+        }
+      },
+      {
+        "name": "aivo_projects_add",
+        "description": "Register an existing absolute local directory as an Aivo project. This never creates a directory or clones a repository and does not associate the session automatically.",
+        "activation": "default",
+        "capability": "projects.write",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rootPath"],
+          "properties": {
+            "rootPath": { "type": "string", "description": "Existing absolute local directory to register." }
+          }
+        }
+      },
+      {
+        "name": "aivo_projects_associate",
+        "description": "Bind the current unscoped coding session to one exact project. The binding is permanent: it cannot be switched or detached. Use the projectId and rootPath returned by query or add.",
+        "activation": "default",
+        "capability": "projects.write",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["projectId", "rootPath"],
+          "properties": {
+            "projectId": { "type": "string", "description": "Exact returned project ID." },
+            "rootPath": { "type": "string", "description": "Exact returned project root path, repeated for stale-reference validation and user approval." }
+          }
+        }
+      }
+    ]
+  }
+}

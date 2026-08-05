@@ -1,20 +1,27 @@
 package domain
 
 type AppConfig struct {
-	Initialized     bool                     `json:"initialized"`
-	Provider        *ProviderConfig          `json:"provider,omitempty"`
-	Providers       ProviderSettings         `json:"providers,omitempty"`
-	DefaultModel    *ModelRef                `json:"defaultModel,omitempty"`
-	AuxiliaryModel  *ModelRef                `json:"auxiliaryModel,omitempty"`
-	FallbackModels  []ModelRef               `json:"fallbackModels,omitempty"`
-	ProviderPolicy  ProviderRuntimePolicy    `json:"providerPolicy,omitempty"`
-	ReasoningEffort string                   `json:"reasoningEffort,omitempty"`
-	ServiceTier     string                   `json:"serviceTier,omitempty"`
-	Persistence     PersistenceRolloutConfig `json:"persistence,omitempty"`
-	WebSearch       WebSearchConfig          `json:"webSearch,omitempty"`
-	NativeTools     NativeToolsConfig        `json:"nativeTools,omitempty"`
-	Runtime         RuntimeConfig            `json:"runtime,omitempty"`
-	ConfigPath      string                   `json:"configPath,omitempty"`
+	Initialized                 bool                     `json:"initialized"`
+	InitialWorkspacePath        string                   `json:"initialWorkspacePath,omitempty"`
+	DefaultInitialWorkspacePath string                   `json:"defaultInitialWorkspacePath,omitempty"`
+	Provider                    *ProviderConfig          `json:"provider,omitempty"`
+	Providers                   ProviderSettings         `json:"providers,omitempty"`
+	DefaultModel                *ModelRef                `json:"defaultModel,omitempty"`
+	AuxiliaryModel              *ModelRef                `json:"auxiliaryModel,omitempty"`
+	FallbackModels              []ModelRef               `json:"fallbackModels,omitempty"`
+	ProviderPolicy              ProviderRuntimePolicy    `json:"providerPolicy,omitempty"`
+	ReasoningEffort             string                   `json:"reasoningEffort,omitempty"`
+	ServiceTier                 string                   `json:"serviceTier,omitempty"`
+	Persistence                 PersistenceRolloutConfig `json:"persistence,omitempty"`
+	WebSearch                   WebSearchConfig          `json:"webSearch,omitempty"`
+	NativeTools                 NativeToolsConfig        `json:"nativeTools,omitempty"`
+	Runtime                     RuntimeConfig            `json:"runtime,omitempty"`
+	ConfigPath                  string                   `json:"configPath,omitempty"`
+}
+
+type CompleteInitializationInput struct {
+	InitialWorkspacePath string          `json:"initialWorkspacePath"`
+	Provider             *ProviderConfig `json:"provider,omitempty"`
 }
 
 type ProviderRuntimePolicy struct {

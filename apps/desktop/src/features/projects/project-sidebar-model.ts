@@ -108,6 +108,11 @@ export function projectIsUserSelectable(project: domain.AssistantProject) {
   return !isManagedWorkspacePath(project.rootPath);
 }
 
+export function sessionProjectName(session: domain.Session) {
+  const projectPath = sessionSidebarProjectPath(session);
+  return projectPath ? projectNameFromPath(projectPath) : "";
+}
+
 function sessionSidebarProjectPath(session: domain.Session) {
   const projectPath = session.projectPath?.trim() ?? "";
   if (!projectPath || isManagedWorkspacePath(projectPath)) return "";

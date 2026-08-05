@@ -206,9 +206,9 @@ func TestMCPRegisterEnabledToolsIncludesResourceUtilities(t *testing.T) {
 	registry := NewRegistry()
 	service.mcpManager.RegisterEnabledTools(ctx, registry)
 	for _, name := range []string{
-		"mcp_resource_mcp_list_resources",
-		"mcp_resource_mcp_list_resource_templates",
-		"mcp_resource_mcp_read_resource",
+		"mcp_host_resource_mcp_list_resources",
+		"mcp_host_resource_mcp_list_resource_templates",
+		"mcp_host_resource_mcp_read_resource",
 	} {
 		if _, ok := registry.Get(name); !ok {
 			t.Fatalf("missing registered MCP resource utility %s; catalog = %#v", name, registry.CatalogEntries())
@@ -216,7 +216,7 @@ func TestMCPRegisterEnabledToolsIncludesResourceUtilities(t *testing.T) {
 	}
 	runtime := NewToolRuntime(registry, t.TempDir())
 	result := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{
-		ID: "read", Name: "mcp_resource_mcp_read_resource", Arguments: json.RawMessage(`{"uri":"file:///README.md"}`),
+		ID: "read", Name: "mcp_host_resource_mcp_read_resource", Arguments: json.RawMessage(`{"uri":"file:///README.md"}`),
 	}, domain.ToolExecutionContext{AllowedToolsets: []string{"mcp", "coding"}})
 	if !result.OK || !strings.Contains(result.Content, "# Aivo") {
 		t.Fatalf("read resource result = %#v, want README content", result)

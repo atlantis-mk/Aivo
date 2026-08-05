@@ -2,6 +2,11 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,7 +17,34 @@ import (
 	"aivo/core/domain"
 )
 
+const latestSchemaVersion = 2
+
 func (s *Store) migrate(ctx context.Context) error {
+	version, hasVersionTable, err := s.currentSchemaVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if version > latestSchemaVersion {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", version, latestSchemaVersion)
+	}
+	if version == latestSchemaVersion {
+		if !s.db.WithContext(ctx).Migrator().HasColumn(&appConfigRow{}, "initial_workspace_path") {
+			return errors.New("database schema version 2 is missing app_config.initial_workspace_path")
+		}
+		return nil
+	}
+
+	hasLegacyData := hasVersionTable || s.hasApplicationSchema()
+	if hasLegacyData {
+		backupVersion := version
+		if backupVersion == 0 {
+			backupVersion = 1
+		}
+		if err := s.ensureMigrationBackup(ctx, backupVersion); err != nil {
+			return err
+		}
+	}
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(&schemaVersionRow{}, &appConfigRow{}, &providerRow{}, &providerModelCacheRow{}, &providerValidationRow{}, &providerHealthRow{}, &providerCallEventRow{}, &projectRow{}, &sessionRow{}); err != nil {
 			return err
@@ -27,8 +59,100 @@ func (s *Store) migrate(ctx context.Context) error {
 			return err
 		}
 		now := domain.NowString(time.Now())
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaVersionRow{Version: 1, AppliedAt: now}).Error
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaVersionRow{Version: latestSchemaVersion, AppliedAt: now}).Error
 	})
+}
+
+func (s *Store) currentSchemaVersion(ctx context.Context) (int, bool, error) {
+	migrator := s.db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&schemaVersionRow{}) {
+		return 0, false, nil
+	}
+	var version int
+	if err := s.db.WithContext(ctx).Model(&schemaVersionRow{}).Select("COALESCE(MAX(version), 0)").Scan(&version).Error; err != nil {
+		return 0, true, err
+	}
+	return version, true, nil
+}
+
+func (s *Store) hasApplicationSchema() bool {
+	migrator := s.db.Migrator()
+	for _, table := range []string{"app_config", "providers", "projects", "sessions", "messages"} {
+		if migrator.HasTable(table) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) ensureMigrationBackup(ctx context.Context, version int) error {
+	if strings.TrimSpace(s.path) == "" || s.path == ":memory:" {
+		return errors.New("cannot migrate an existing database without a backup path")
+	}
+	backupPath := migrationBackupPath(s.path, version)
+	if _, err := os.Stat(backupPath); err == nil {
+		if err := verifySQLiteBackup(backupPath); err != nil {
+			return fmt.Errorf("verify schema v%d migration backup: %w", version, err)
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect schema v%d migration backup: %w", version, err)
+	}
+
+	temporary, err := os.CreateTemp(filepath.Dir(backupPath), filepath.Base(backupPath)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("prepare schema v%d migration backup: %w", version, err)
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("prepare schema v%d migration backup: %w", version, err)
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		return fmt.Errorf("prepare schema v%d migration backup: %w", version, err)
+	}
+	defer os.Remove(temporaryPath)
+
+	quotedPath := strings.ReplaceAll(temporaryPath, "'", "''")
+	if err := s.db.WithContext(ctx).Exec("VACUUM INTO '" + quotedPath + "'").Error; err != nil {
+		return fmt.Errorf("create schema v%d migration backup: %w", version, err)
+	}
+	if err := verifySQLiteBackup(temporaryPath); err != nil {
+		return fmt.Errorf("verify schema v%d migration backup: %w", version, err)
+	}
+	if err := os.Chmod(temporaryPath, 0o600); err != nil {
+		return fmt.Errorf("secure schema v%d migration backup: %w", version, err)
+	}
+	if err := os.Rename(temporaryPath, backupPath); err != nil {
+		return fmt.Errorf("publish schema v%d migration backup: %w", version, err)
+	}
+	return nil
+}
+
+func migrationBackupPath(databasePath string, version int) string {
+	return fmt.Sprintf("%s.v%d.bak", databasePath, version)
+}
+
+func verifySQLiteBackup(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return errors.New("backup is not a non-empty regular file")
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var result string
+	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil {
+		return err
+	}
+	if result != "ok" {
+		return fmt.Errorf("integrity check returned %q", result)
+	}
+	return nil
 }
 
 type legacyMessageRow struct {

@@ -38,7 +38,7 @@ export function ToolActivationDialog(props: ToolActivationDialogProps) {
           groupedTools={state.groupedTools}
           loading={state.loading}
           onToggleSkill={state.toggleSkill}
-          onToggleTool={state.toggleTool}
+          onToggleToolGroup={state.toggleToolGroup}
           skills={state.skills}
           toggleableToolCount={state.toggleableToolCount}
           usedToolSet={state.usedToolSet}

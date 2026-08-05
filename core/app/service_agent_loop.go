@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -27,29 +26,45 @@ func (s *Service) runAssistantAgentLoop(
 	if session, err := s.store.GetRuntimeSession(ctx, input.SessionID); err == nil && session.Type == domain.SessionTypeCoding {
 		if strings.TrimSpace(cc.ProjectPath) == "" && strings.TrimSpace(session.ProjectPath) != "" {
 			cc, _ = s.CreateOrUpdateCodingContext(ctx, input.SessionID, session.ProjectPath)
-		} else if projectPath, changed, err := ensureManagedWorkspace(cc.ProjectPath); err == nil && changed {
-			cc, _ = s.CreateOrUpdateCodingContext(ctx, input.SessionID, projectPath)
+		} else if strings.TrimSpace(session.ProjectPath) == "" && strings.TrimSpace(cc.ProjectPath) != "" {
+			projectPath, workspaceErr := s.ensureUnscopedWorkspace(ctx, cc.ProjectPath)
+			if workspaceErr != nil {
+				return "", nil, workspaceErr
+			}
+			if projectPath != cc.ProjectPath {
+				cc, _ = s.CreateOrUpdateCodingContext(ctx, input.SessionID, projectPath)
+			}
 		}
 	}
-	registry, runtime := s.toolsForWorkspace(strings.TrimSpace(cc.ProjectPath))
+	var registry *Registry
+	var runtime *ToolRuntime
 	ctx = withProviderRegistry(ctx, s.providerRegistryForProject(strings.TrimSpace(cc.ProjectPath)))
 	allowedToolsets := allowedToolsetsForRun(modeDef, input)
 	requestedModel := s.modelForAgentMode(ctx, modeDef, input.Model)
 	messages := prependAgentSystemPrompt(history, modeDef)
 	var model *domain.ModelRef
 	for {
+		failedSources := s.prepareEnabledToolCatalogs(ctx)
+		registry, runtime = s.toolsForWorkspace(strings.TrimSpace(cc.ProjectPath))
 		var specs []domain.ToolSpec
 		expectedRegistrations := map[string]domain.ToolRegistrationIdentity{}
+		var toolSnapshot domain.ToolSnapshot
 		if registry != nil {
 			specs = visibleToolSpecsForMode(modeDef.ID, registry.SpecsForToolsets(allowedToolsets))
-			assembly := AssembleToolSpecsWithActivated(registry, specs, s.rememberedDeferredTools(ctx, input.SessionID))
+			specs = filterEligibleToolSpecs(registry, specs, failedSources)
+		}
+		resolved := s.resolveHostPreCallResources(ctx, input.SessionID, turn.ID, input.Text, modeDef.ID, strings.TrimSpace(cc.ProjectPath), registry, specs)
+		if registry != nil {
+			assembly := AssembleToolSpecsWithSources(registry, specs, resolved.ToolActivations)
 			specs = assembly.Specs
 			expectedRegistrations = assembly.ExpectedRegistrations
+			toolSnapshot = assembly.Snapshot
 		}
+		requestMessages := appendHostPreCallContext(messages, resolved.Context)
 		if s.pluginManager != nil {
-			_ = s.pluginManager.InvokeHook(ctx, "pre_llm_call", map[string]any{"sessionId": input.SessionID, "turnId": turn.ID, "toolCount": len(specs), "messageCount": len(messages), "agentMode": modeDef.ID})
+			_ = s.pluginManager.InvokeHook(ctx, "pre_llm_call", map[string]any{"sessionId": input.SessionID, "turnId": turn.ID, "toolCount": len(specs), "messageCount": len(requestMessages), "agentMode": modeDef.ID})
 		}
-		resp, activeModel, err := s.GenerateChatResponseStreamWithToolDelta(ctx, domain.ChatRequest{Messages: messages, Tools: specs, Temperature: modeDef.Temperature, TopP: modeDef.TopP, Options: modeDef.Options}, requestedModel, reasoningEffort, serviceTier, onDelta, func(call domain.ChatToolCall) {
+		resp, activeModel, err := s.GenerateChatResponseStreamWithToolDelta(ctx, domain.ChatRequest{Messages: requestMessages, Tools: specs, Temperature: modeDef.Temperature, TopP: modeDef.TopP, Options: modeDef.Options}, requestedModel, reasoningEffort, serviceTier, onDelta, func(call domain.ChatToolCall) {
 			s.emitApplyPatchDraft(input.SessionID, turn.ID, strings.TrimSpace(cc.ProjectPath), call)
 		})
 		if s.pluginManager != nil {
@@ -95,12 +110,13 @@ func (s *Service) runAssistantAgentLoop(
 					AgentMode: modeDef.ID, AllowedToolsets: allowedToolsets,
 					PermissionScope:       firstNonEmpty(input.PermissionScope, permissionScopeForAgent(modeDef)),
 					ExpectedRegistrations: expectedRegistrations,
+					ToolSnapshot:          &toolSnapshot,
 				})
 			})
 			for index, call := range resp.ToolCalls {
 				result := results[index]
 				_ = s.recordToolResult(ctx, input.SessionID, turn.ID, call, result)
-				messages = append(messages, domain.ChatMessage{Role: "tool", Text: encodeToolResultForModel(result), ToolCallID: call.ID, Name: call.Name})
+				messages = appendToolResultMessages(messages, call, result)
 			}
 			continue
 		}
@@ -118,6 +134,7 @@ func (s *Service) runAssistantAgentLoop(
 					AllowedToolsets:       allowedToolsets,
 					PermissionScope:       firstNonEmpty(input.PermissionScope, permissionScopeForAgent(modeDef)),
 					ExpectedRegistrations: expectedRegistrations,
+					ToolSnapshot:          &toolSnapshot,
 				})
 			}
 			_ = s.recordToolResult(ctx, input.SessionID, turn.ID, call, result)
@@ -127,21 +144,21 @@ func (s *Service) runAssistantAgentLoop(
 			if call.Name == ToolResolveName && result.ToolError != nil && result.ToolError.Code == "no_available_tool" {
 				return "", model, errors.New(result.ToolError.Message)
 			}
-			messages = append(messages, domain.ChatMessage{Role: "tool", Text: encodeToolResultForModel(result), ToolCallID: call.ID, Name: call.Name})
-			if call.Name == "search_projects" && result.OK && projectSearchActivates(call.Arguments) {
+			messages = appendToolResultMessages(messages, call, result)
+			if call.Name == projectAssociateToolName && result.OK {
 				cc, _ = s.store.GetCodingContext(ctx, input.SessionID)
-				registry, runtime = s.toolsForWorkspace(strings.TrimSpace(cc.ProjectPath))
 				ctx = withProviderRegistry(ctx, s.providerRegistryForProject(strings.TrimSpace(cc.ProjectPath)))
 			}
 		}
 	}
 }
 
-func projectSearchActivates(arguments []byte) bool {
-	var input struct {
-		ActivateProjectPath string `json:"activateProjectPath"`
+func appendToolResultMessages(messages []domain.ChatMessage, call domain.ChatToolCall, result domain.ToolResult) []domain.ChatMessage {
+	messages = append(messages, domain.ChatMessage{Role: "tool", Text: encodeToolResultForModel(result), ToolCallID: call.ID, Name: call.Name})
+	if len(result.ModelAttachments) > 0 {
+		messages = append(messages, domain.ChatMessage{Role: "user", Text: "Image content returned by tool " + call.Name + ".", Attachments: result.ModelAttachments})
 	}
-	return json.Unmarshal(arguments, &input) == nil && strings.TrimSpace(input.ActivateProjectPath) != ""
+	return messages
 }
 
 func isParallelDelegateBatch(calls []domain.ChatToolCall) bool {

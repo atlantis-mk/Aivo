@@ -93,7 +93,7 @@ func TestToolsForModelRouteUsesURLContextForGeminiWhenSafeToCombine(t *testing.T
 	}
 }
 
-func TestToolsForModelRouteInjectsConfiguredXAINativeTools(t *testing.T) {
+func TestToolsForModelRouteDoesNotImplicitlyInjectConfiguredXAINativeTools(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	route := ResolvedModelRoute{
 		Provider: domain.ProviderConfig{ID: "xai"},
@@ -113,12 +113,12 @@ func TestToolsForModelRouteInjectsConfiguredXAINativeTools(t *testing.T) {
 	}}
 
 	tools := service.toolsForModelRoute(context.Background(), cfg, route, nil)
-	if !toolSpecNamed(tools, "x_search") || !toolSpecNamed(tools, "code_interpreter") || !toolSpecNamed(tools, "file_search") || !toolSpecNamed(tools, "remote_mcp_docs") {
-		t.Fatalf("tools = %#v, want configured xAI native tools", tools)
+	if len(tools) != 0 {
+		t.Fatalf("tools = %#v, want hosted capabilities deferred to extensions", tools)
 	}
 }
 
-func TestToolsForModelRouteInjectsConfiguredGeminiNativeTools(t *testing.T) {
+func TestToolsForModelRouteDoesNotImplicitlyInjectConfiguredGeminiNativeTools(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	route := ResolvedModelRoute{
 		Provider: domain.ProviderConfig{ID: "gemini"},
@@ -136,8 +136,8 @@ func TestToolsForModelRouteInjectsConfiguredGeminiNativeTools(t *testing.T) {
 	}}
 
 	tools := service.toolsForModelRoute(context.Background(), cfg, route, nil)
-	if !toolSpecNamed(tools, "code_execution") || !toolSpecNamed(tools, "file_search") {
-		t.Fatalf("tools = %#v, want configured Gemini native tools", tools)
+	if len(tools) != 0 {
+		t.Fatalf("tools = %#v, want hosted capabilities deferred to extensions", tools)
 	}
 }
 

@@ -5,14 +5,17 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"sync"
 
 	sqlite "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
 type Store struct {
-	db    *gorm.DB
-	sqlDB *sql.DB
+	db               *gorm.DB
+	sqlDB            *sql.DB
+	path             string
+	projectBindingMu sync.Map
 }
 
 func OpenDefault() (*Store, error) {
@@ -39,7 +42,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{db: db, sqlDB: sqlDB}
+	store := &Store{db: db, sqlDB: sqlDB, path: path}
 	if err := store.migrate(context.Background()); err != nil {
 		_ = store.Close()
 		return nil, err

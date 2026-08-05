@@ -1,13 +1,12 @@
 import { create } from "zustand";
 
 import { DEFAULT_TERMINAL_HEIGHT } from "@/features/projects/terminal/terminal-state";
+import { discardLegacyDefaultActiveToolNames } from "@/features/projects/project-tool-activation-scope";
 
 const PINNED_CONVERSATION_IDS_STORAGE_KEY = "aivo:pinned-conversation-ids";
 const ARCHIVED_CONVERSATION_IDS_STORAGE_KEY = "aivo:archived-conversation-ids";
 const PROJECT_PANEL_LAYOUT_STORAGE_KEY = "aivo:project-panel-layout:v1";
 const HIDDEN_TODO_PLAN_KEYS_STORAGE_KEY = "aivo:hidden-todo-plan-keys:v1";
-const DEFAULT_ACTIVE_TOOL_NAMES_STORAGE_KEY = "aivo:default-active-tool-names:v1";
-
 const PROJECT_LEFT_SIDEBAR_WIDTH = 260;
 const PROJECT_LEFT_SIDEBAR_MIN_WIDTH = 210;
 const PROJECT_RIGHT_SIDEBAR_WIDTH = 360;
@@ -26,12 +25,12 @@ export type ProjectPanelLayout = {
 
 type ProjectPreferencesState = {
   archivedConversationIds: string[];
-  defaultActiveToolNames: string[];
+  pendingActiveToolNames: string[];
   hiddenTodoPlanKeys: Record<string, string>;
   panelLayout: ProjectPanelLayout;
   pinnedConversationIds: string[];
   setArchivedConversationIds: (updater: StoreUpdater<string[]>) => void;
-  setDefaultActiveToolNames: (updater: StoreUpdater<string[]>) => void;
+  setPendingActiveToolNames: (updater: StoreUpdater<string[]>) => void;
   setHiddenTodoPlanKey: (sessionId: string, planKey: string) => void;
   setPanelLayout: (layout: ProjectPanelLayout) => void;
   setPinnedConversationIds: (updater: StoreUpdater<string[]>) => void;
@@ -48,8 +47,8 @@ export const useProjectPreferencesStore = create<ProjectPreferencesState>(
     archivedConversationIds: readStoredStringArray(
       ARCHIVED_CONVERSATION_IDS_STORAGE_KEY,
     ),
-    defaultActiveToolNames: readStoredStringArray(
-      DEFAULT_ACTIVE_TOOL_NAMES_STORAGE_KEY,
+    pendingActiveToolNames: discardLegacyDefaultActiveToolNames(
+      typeof window === "undefined" ? undefined : window.localStorage,
     ),
     hiddenTodoPlanKeys: readHiddenTodoPlanKeys(),
     panelLayout: readProjectPanelLayout(),
@@ -67,16 +66,12 @@ export const useProjectPreferencesStore = create<ProjectPreferencesState>(
         );
         return { archivedConversationIds };
       }),
-    setDefaultActiveToolNames: (updater) =>
+    setPendingActiveToolNames: (updater) =>
       set((state) => {
-        const defaultActiveToolNames = uniqueStrings(
-          resolveUpdater(updater, state.defaultActiveToolNames),
+        const pendingActiveToolNames = uniqueStrings(
+          resolveUpdater(updater, state.pendingActiveToolNames),
         );
-        writeStoredStringArray(
-          DEFAULT_ACTIVE_TOOL_NAMES_STORAGE_KEY,
-          defaultActiveToolNames,
-        );
-        return { defaultActiveToolNames };
+        return { pendingActiveToolNames };
       }),
     setHiddenTodoPlanKey: (sessionId, planKey) =>
       set((state) => {

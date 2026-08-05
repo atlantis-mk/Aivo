@@ -13,11 +13,11 @@ export function useProjectWorkspacePreferencesState() {
   const setArchivedConversationIds = useProjectPreferencesStore(
     (state) => state.setArchivedConversationIds,
   );
-  const defaultActiveToolNames = useProjectPreferencesStore(
-    (state) => state.defaultActiveToolNames,
+  const pendingActiveToolNames = useProjectPreferencesStore(
+    (state) => state.pendingActiveToolNames,
   );
-  const setDefaultActiveToolNames = useProjectPreferencesStore(
-    (state) => state.setDefaultActiveToolNames,
+  const setPendingActiveToolNames = useProjectPreferencesStore(
+    (state) => state.setPendingActiveToolNames,
   );
   const hiddenTodoPlanKeys = useProjectPreferencesStore(
     (state) => state.hiddenTodoPlanKeys,
@@ -28,11 +28,11 @@ export function useProjectWorkspacePreferencesState() {
 
   return {
     archivedConversationIds,
-    defaultActiveToolNames,
+    pendingActiveToolNames,
     hiddenTodoPlanKeys,
     pinnedConversationIds,
     setArchivedConversationIds,
-    setDefaultActiveToolNames,
+    setPendingActiveToolNames,
     setHiddenTodoPlanKeyForSession,
     setPinnedConversationIds,
   };

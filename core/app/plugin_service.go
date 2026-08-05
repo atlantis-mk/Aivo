@@ -220,30 +220,15 @@ func (s *Service) ListToolCatalog(ctx context.Context, input domain.ToolCatalogI
 
 func (s *Service) globalToolCatalogRegistry(ctx context.Context) *Registry {
 	registry := NewRegistry()
-	for _, tool := range []domain.Tool{
-		NewWebFetchTool(),
-		NewWebSearchTool(),
-	} {
-		_ = registry.Register(tool)
+	if s.extensionSupervisor != nil {
+		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}
-	for _, tool := range newAgentRuntimeTools(s) {
-		if !tool.Spec().RequiresWorkspace {
-			_ = registry.Register(tool)
-		}
+	if s.pluginManager != nil {
+		s.pluginManager.RegisterCachedEnabledTools(ctx, registry)
 	}
-	_ = registry.Register(NewSkillLoadTool(s, s.resolveSkillsWithAuxiliaryModel))
-	if s.pluginManager == nil {
-		s.pluginManager = NewPluginManager(s.store)
+	if s.mcpManager != nil {
+		s.mcpManager.RegisterCachedEnabledTools(ctx, registry)
 	}
-	if s.mcpManager == nil {
-		s.mcpManager = NewMCPManager(s.store, s.secrets)
-	}
-	s.pluginManager.RegisterCachedEnabledTools(ctx, registry)
-	s.mcpManager.RegisterCachedEnabledTools(ctx, registry)
-	_ = registry.RegisterScoped(NewToolResolveTool(registry, s.resolveToolsWithAuxiliaryModel, s.rememberDeferredToolUsed), domain.ToolSourceBridge, "tool_discovery", "")
-	runtime := NewToolRuntime(registry, "")
-	runtime.PluginHooks = s.pluginManager
-	runtime.Permissions = NewPermissionEngine(s.store)
 	return registry
 }
 
@@ -252,26 +237,17 @@ func (s *Service) workspaceToolCatalogRegistry(ctx context.Context, workspaceRoo
 	if err != nil {
 		return nil
 	}
-	if bash, ok := registry.Get("bash"); ok {
-		if bashTool, ok := bash.(*BashTool); ok {
-			bashTool.SetPersistentCWDHooks(s.loadAgentShellCWD, s.saveAgentShellCWD)
-		}
+	if s.extensionSupervisor != nil {
+		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}
-	for _, tool := range newAgentRuntimeTools(s) {
-		_ = registry.Register(tool)
+	if s.pluginManager != nil {
+		s.pluginManager.RegisterCachedEnabledTools(ctx, registry)
 	}
-	_ = registry.Register(NewSkillLoadTool(s, s.resolveSkillsWithAuxiliaryModel))
-	if s.pluginManager == nil {
-		s.pluginManager = NewPluginManager(s.store)
+	if s.mcpManager != nil {
+		s.mcpManager.RegisterCachedEnabledTools(ctx, registry)
 	}
-	if s.mcpManager == nil {
-		s.mcpManager = NewMCPManager(s.store, s.secrets)
-	}
-	s.pluginManager.RegisterCachedEnabledTools(ctx, registry)
-	s.mcpManager.RegisterCachedEnabledTools(ctx, registry)
-	_ = registry.RegisterScoped(NewToolResolveTool(registry, s.resolveToolsWithAuxiliaryModel, s.rememberDeferredToolUsed), domain.ToolSourceBridge, "tool_discovery", "")
 	runtime := NewToolRuntime(registry, strings.TrimSpace(workspaceRoot))
-	runtime.PluginHooks = s.pluginManager
+	runtime.PluginHooks = s.extensionSupervisor
 	runtime.Permissions = NewPermissionEngine(s.store)
 	return registry
 }

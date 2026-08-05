@@ -20,7 +20,7 @@ export function useProjectWorkspaceModelComposerController({
   agentMode,
   catalog,
   config,
-  defaultActiveToolNames,
+  pendingActiveToolNames,
   hasPendingTurn,
   loadConversationTurns,
   pendingStopRequestedRef,
@@ -33,6 +33,7 @@ export function useProjectWorkspaceModelComposerController({
   setCodingWorkspaceRoot,
   setConversationRunning,
   setPrompt,
+  setPendingActiveToolNames,
   setSessions,
   setTurns,
 }: {
@@ -42,7 +43,7 @@ export function useProjectWorkspaceModelComposerController({
   agentMode: AgentModeId;
   catalog: CatalogState | null;
   config: domain.AppConfig | null;
-  defaultActiveToolNames: string[];
+  pendingActiveToolNames: string[];
   hasPendingTurn: boolean;
   loadConversationTurns: (
     sessionId: string,
@@ -60,6 +61,7 @@ export function useProjectWorkspaceModelComposerController({
   setCodingWorkspaceRoot: Dispatch<SetStateAction<string>>;
   setConversationRunning: (sessionId: string, running: boolean) => void;
   setPrompt: Dispatch<SetStateAction<string>>;
+  setPendingActiveToolNames: Dispatch<SetStateAction<string[]>>;
   setSessions: Dispatch<SetStateAction<domain.Session[]>>;
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
 }) {
@@ -131,7 +133,7 @@ export function useProjectWorkspaceModelComposerController({
     activeSessionIdRef,
     agentMode,
     composerAttachments,
-    defaultActiveToolNames,
+    pendingActiveToolNames,
     hasPendingTurn,
     loadConversationTurns,
     modelOptions,
@@ -147,6 +149,7 @@ export function useProjectWorkspaceModelComposerController({
     setComposerAttachments,
     setConversationRunning,
     setPrompt,
+    setPendingActiveToolNames,
     setSessions,
     setTurns,
   });

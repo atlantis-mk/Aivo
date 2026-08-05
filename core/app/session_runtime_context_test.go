@@ -145,12 +145,14 @@ func TestSessionContextIncludesLiveTerminalInventory(t *testing.T) {
 	}
 }
 
-func TestCreateRuntimeSessionWithoutProjectPathCreatesManagedCodingContext(t *testing.T) {
-	t.Setenv(managedWorkspaceRootEnv, t.TempDir())
+func TestCreateRuntimeSessionWithoutProjectPathUsesConfiguredInitialWorkspace(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
-	service.now = func() time.Time { return time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC) }
 	ctx := context.Background()
+	workspace := t.TempDir()
+	if _, err := service.CompleteInitialization(ctx, domain.CompleteInitializationInput{InitialWorkspacePath: workspace}); err != nil {
+		t.Fatal(err)
+	}
 	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, Title: "https://github.com/example/repo"})
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +161,23 @@ func TestCreateRuntimeSessionWithoutProjectPathCreatesManagedCodingContext(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertManagedWorkspace(t, cc.ProjectPath, filepath.Join("2026-06-27", workspaceSlug(session.ID)))
+	if cc.ProjectPath != workspace || session.ProjectPath != "" {
+		t.Fatalf("workspace paths = session %q, context %q, want %q", session.ProjectPath, cc.ProjectPath, workspace)
+	}
+	persisted, err := service.GetRuntimeSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ProjectPath != "" {
+		t.Fatalf("unscoped session persisted project path = %q", persisted.ProjectPath)
+	}
+	entries, err := os.ReadDir(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("initial workspace contains per-session entries: %#v", entries)
+	}
 }
 
 func TestCreateCodingSessionDefaultsToCodeAgent(t *testing.T) {
@@ -175,12 +193,14 @@ func TestCreateCodingSessionDefaultsToCodeAgent(t *testing.T) {
 	}
 }
 
-func TestSubmitSessionMessageRecreatesDeletedManagedWorkspace(t *testing.T) {
-	t.Setenv(managedWorkspaceRootEnv, t.TempDir())
+func TestSubmitSessionMessageRecreatesDeletedInitialWorkspace(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
-	service.now = func() time.Time { return time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC) }
 	ctx := context.Background()
+	workspace := filepath.Join(t.TempDir(), "unscoped-workspace")
+	if _, err := service.CompleteInitialization(ctx, domain.CompleteInitializationInput{InitialWorkspacePath: workspace}); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
@@ -197,8 +217,9 @@ func TestSubmitSessionMessageRecreatesDeletedManagedWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSuffix := filepath.Join("2026-06-27", workspaceSlug(session.ID))
-	assertManagedWorkspace(t, before.ProjectPath, wantSuffix)
+	if before.ProjectPath != workspace {
+		t.Fatalf("workspace path = %q, want %q", before.ProjectPath, workspace)
+	}
 	if err := os.RemoveAll(before.ProjectPath); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +230,9 @@ func TestSubmitSessionMessageRecreatesDeletedManagedWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertManagedWorkspace(t, after.ProjectPath, wantSuffix)
+	if info, statErr := os.Stat(after.ProjectPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("initial workspace was not recreated: %v", statErr)
+	}
 	if after.ProjectPath != before.ProjectPath {
 		t.Fatalf("managed workspace path changed: before=%q after=%q", before.ProjectPath, after.ProjectPath)
 	}
@@ -431,8 +454,11 @@ func TestAgentPromptBuilderSeparatesDefaultAndGlobalInjections(t *testing.T) {
 	if !contains(prompt, `<default name="agent_mode">`) || !contains(prompt, "Default mode behavior.") {
 		t.Fatalf("prompt missing default mode injection: %q", prompt)
 	}
-	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "tool_resolve") {
+	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "Host may inject canonical summaries for relevant Skills") {
 		t.Fatalf("prompt missing global tool protocol injection: %q", prompt)
+	}
+	if contains(prompt, "call the skill tool") || contains(prompt, "call tool_resolve") {
+		t.Fatalf("agent prompt references removed discovery tools: %q", prompt)
 	}
 	if contains(prompt, "<aivo_context>") || contains(prompt, "You are Aivo") {
 		t.Fatalf("agent prompt included runtime or removed fixed prompt: %q", prompt)
@@ -451,9 +477,10 @@ func TestEnsureGeneratedSessionTitleUpdatesDefaultTitle(t *testing.T) {
 		return "\"Redis 缓存方案\"\nextra text", nil
 	}
 	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{
-		Type:  domain.SessionTypeCoding,
-		Title: "帮我写一个 Redis 缓存方案",
-		Model: &domain.ModelRef{ProviderID: "openai", ModelID: "gpt-5.5"},
+		Type:        domain.SessionTypeCoding,
+		Title:       "帮我写一个 Redis 缓存方案",
+		ProjectPath: t.TempDir(),
+		Model:       &domain.ModelRef{ProviderID: "openai", ModelID: "gpt-5.5"},
 	})
 	if err != nil {
 		t.Fatal(err)

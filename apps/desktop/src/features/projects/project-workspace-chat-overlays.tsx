@@ -1,3 +1,10 @@
+import {
+  CodeIcon,
+  File01Icon,
+  PlayIcon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown, File, X } from "lucide-react";
 
 import { EnvironmentSummaryPanel } from "@/components/app-top-bar";
@@ -7,21 +14,63 @@ import { cn } from "@/lib/utils";
 import type { TodoItem } from "@/services/aivo";
 
 export function ProjectWorkspaceEmptyPrompt({
+  onPromptChange,
   showConversationLayout,
 }: {
+  onPromptChange: (prompt: string) => void;
   showConversationLayout: boolean;
 }) {
+  const quickPrompts = [
+    {
+      icon: File01Icon,
+      label: "整理文件",
+      prompt: "请帮我整理当前项目文件",
+    },
+    {
+      icon: CodeIcon,
+      label: "分析代码",
+      prompt: "请分析当前项目代码",
+    },
+    {
+      icon: PlayIcon,
+      label: "运行任务",
+      prompt: "请运行当前项目任务",
+    },
+    {
+      icon: Search01Icon,
+      label: "搜索资料",
+      prompt: "请搜索并整理相关资料",
+    },
+  ];
+
   return (
-    <h1
+    <div
       className={cn(
-        "absolute left-1/2 top-[calc(50%-100px)] w-[calc(100%-2rem)] -translate-x-1/2 text-center text-3xl leading-none tracking-normal text-foreground transition-all duration-500 ease-out",
+        "absolute left-1/2 top-[34%] z-10 flex w-[calc(100%-2rem)] max-w-[760px] -translate-x-1/2 flex-col items-center text-center transition-all duration-500 ease-out",
         showConversationLayout
-          ? "-translate-y-8 opacity-0"
+          ? "pointer-events-none -translate-y-8 opacity-0"
           : "translate-y-0 opacity-100",
       )}
     >
-      我们该做什么？
-    </h1>
+      <h1 className="aivo-type-large-title text-foreground">我们该做什么？</h1>
+      <p className="aivo-type-title-3 mt-3 text-muted-foreground">
+        描述目标，Aivo 会帮你推进
+      </p>
+      <div className="mt-8 flex flex-wrap justify-center gap-3">
+        {quickPrompts.map((item) => (
+          <Button
+            className="h-8 rounded-full border-border/80 bg-card px-3.5 text-[13px] font-medium shadow-sm shadow-foreground/[0.025]"
+            key={item.label}
+            onClick={() => onPromptChange(item.prompt)}
+            type="button"
+            variant="outline"
+          >
+            <HugeiconsIcon icon={item.icon} strokeWidth={1.8} />
+            {item.label}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 

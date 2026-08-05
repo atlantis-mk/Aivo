@@ -18,6 +18,7 @@ export {
   toolCallKind,
 } from "./conversation-timeline-tool-groups";
 export type {
+  ToolCallActivity,
   ToolCallGroup,
   ToolFileChange,
 } from "./conversation-timeline-tool-types";

@@ -62,7 +62,11 @@ func responsesTools(specs []domain.ToolSpec) []map[string]any {
 }
 
 func responsesToolNamespace(spec domain.ToolSpec) string {
-	return strings.TrimSpace(spec.Namespace)
+	namespace := strings.TrimSpace(spec.Namespace)
+	if !providerSafeToolName(namespace) {
+		return ""
+	}
+	return namespace
 }
 
 func responsesHostedTool(spec *domain.HostedToolSpec) map[string]any {

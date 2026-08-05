@@ -6,7 +6,9 @@
 | --- | --- | --- |
 | Documentation | Routing, IDs, traceability, commands, and immutable Work archives | `pnpm docs:check` |
 | Governance scripts | Work archive behavior and tamper detection | `pnpm scripts:test` |
-| Go unit/integration | Domain, services, transport, persistence, concurrency, providers, tools | `pnpm test:core` |
+| Go unit/integration | Domain, services, transport, persistence, concurrency, providers, tools, cancelled-turn isolation | `pnpm test:core` |
+| Tool/extension contracts | Four-tool registry, primitive schema guidance/path semantics, Host pre-call Skill/plugin/Manifest/MCP catalog preparation, canonical Skill summary plus validated instruction materialization, request-scoped context injection, session-scoped/one-shot activation, one globally Provider-safe canonical tool name with no wire codec, snapshots, manifests/protocol, trust, lifecycle, Web isolation | `AT-TOOL-001`, `AT-PROVIDER-001`, `AT-SESSION-001`, `AT-EXTENSION-001`, `CT-SECURITY-001`, `CT-RELIABILITY-001` evidence in the owning Work |
+| Agent project contract | Bounded project query, existing-directory registration, exact permission targets, immutable current-session association, concurrent winner, rollback, workspace refresh | `AT-PROJECT-003`, `AT-EXTENSION-001`, `CT-SECURITY-001`, `CT-RELIABILITY-001` evidence in the owning Work |
 | Desktop static/build | Type safety, lint, renderer/main/preload build | `pnpm lint`, `pnpm build` |
 | Provider diagnostics | Configured provider auth and backend behavior | provider smoke command in `docs/provider-backend.md` |
 | UI acceptance | Wide/narrow layout, keyboard, loading/error/cancel/permission behavior | Screenshots and `docs/opencode-replacement-manual-acceptance.md` as applicable |
@@ -16,7 +18,7 @@
 
 - Run focused tests while implementing, then all applicable repository gates.
 - New or changed Requirements need stable Test IDs and an updated row in `08-traceability.md`.
-- A Bug Work records a reproduction test that fails before the fix and passes after it.
+- A Bug Work records a reproduction test that fails before the fix and passes after it; cancellation regressions must submit later input and prove no prior command or interaction is replayed.
 - Failure, cancellation, repeated execution, timeout, dependency loss, teardown, compatibility, migration, rollback, and security paths are tested or explicitly marked N/A in the Work.
 - UI Work includes wide and narrow screenshots when behavior or layout changes.
 - `Verified` requires command/platform evidence in `change.md`, followed immediately by Work archive sealing.

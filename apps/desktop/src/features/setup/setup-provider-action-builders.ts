@@ -17,10 +17,6 @@ import {
   defaultModelForProvider,
   type AppConfigWithAuxiliary,
 } from "@/features/setup/setup-provider-models";
-import {
-  modelPreferencesWithAuxiliary,
-  modelRefForProvider,
-} from "@/features/setup/setup-provider-bridge-inputs";
 import type { CatalogState, ProviderConnectInput } from "@/lib/provider-catalog";
 
 export function providerConnectionDraft({
@@ -29,7 +25,6 @@ export function providerConnectionDraft({
   catalog,
   customProvider,
   provider,
-  selectedAuxiliaryModelId,
   selectedModelId,
 }: {
   apiKey?: string;
@@ -37,7 +32,6 @@ export function providerConnectionDraft({
   catalog: CatalogState | null;
   customProvider?: CustomProviderForm;
   provider: ProviderChoice;
-  selectedAuxiliaryModelId?: string;
   selectedModelId?: string;
 }) {
   const isCustomProvider = isCustomProviderChoice(provider) && customProvider;
@@ -64,14 +58,7 @@ export function providerConnectionDraft({
     method: authMode,
     headers: isCustomProvider ? headersFromRows(customProvider.headers) : undefined,
   };
-  const auxiliaryModelId = selectedAuxiliaryModelId?.trim() || input.modelId;
-  const auxiliaryModel =
-    auxiliaryModelId && input.providerId
-      ? modelRefForProvider(input.providerId, auxiliaryModelId)
-      : undefined;
-
   return {
-    auxiliaryModel,
     input,
     isCustomProvider,
   };
@@ -79,10 +66,10 @@ export function providerConnectionDraft({
 
 export function connectedProviderConfig(
   input: ProviderConnectInput,
-  auxiliaryModel: domain.ModelRef | undefined,
+  auxiliaryModel?: domain.ModelRef,
 ) {
   return {
-    initialized: true,
+    initialized: false,
     provider: {
       id: input.providerId,
       type: input.type,
@@ -96,38 +83,12 @@ export function connectedProviderConfig(
   } as AppConfigWithAuxiliary;
 }
 
-export function modelPreferencesForProvider(
-  providerId: string,
-  modelId: string,
-  auxiliaryModelId: string,
+export function previewConfigForAuxiliaryModel(
+  config: domain.AppConfig | null,
+  auxiliaryModel: domain.ModelRef,
 ) {
-  return modelPreferencesWithAuxiliary(
-    modelRefForProvider(providerId, modelId),
-    modelRefForProvider(providerId, auxiliaryModelId),
-  );
-}
-
-export function previewConfigForConnectedAccountModels({
-  auxiliaryModel,
-  config,
-  model,
-}: {
-  auxiliaryModel: domain.ModelRef;
-  config: domain.AppConfig | null;
-  model: domain.ModelRef;
-}) {
   return {
     ...(config ?? {}),
-    initialized: true,
-    defaultModel: model,
     auxiliaryModel,
-    provider: {
-      ...((config?.provider ?? {}) as domain.ProviderConfig),
-      id: model.providerId,
-      type: config?.provider?.type || providerTypeFor(model.providerId),
-      baseUrl:
-        config?.provider?.baseUrl || defaultBaseURLForProvider(model.providerId),
-      model: model.modelId,
-    },
   } as AppConfigWithAuxiliary;
 }

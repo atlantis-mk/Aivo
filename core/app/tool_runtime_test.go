@@ -93,7 +93,7 @@ func TestToolRuntimeRetriesTimeouts(t *testing.T) {
 	}
 }
 
-func TestReadOnlyToolRegistryOmitsGitToolsOutsideRepository(t *testing.T) {
+func TestReadOnlyToolRegistryContainsOnlyReadOutsideRepository(t *testing.T) {
 	registry, err := NewReadOnlyToolRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -104,18 +104,12 @@ func TestReadOnlyToolRegistryOmitsGitToolsOutsideRepository(t *testing.T) {
 	if _, ok := registry.Get("git_diff"); ok {
 		t.Fatal("git_diff should not be registered outside a git work tree")
 	}
-	if _, ok := registry.Get("web_fetch"); !ok {
-		t.Fatal("web_fetch should be registered in read-only registry")
-	}
-	if _, ok := registry.Get("web_search"); !ok {
-		t.Fatal("web_search should be registered in read-only registry")
-	}
-	if _, ok := registry.Get("read_diagnostics"); ok {
-		t.Fatal("read_diagnostics should not be registered in read-only registry")
+	if specs := registry.Specs(); len(specs) != 1 || specs[0].Name != "read" {
+		t.Fatalf("read-only specs = %#v, want exactly read", specs)
 	}
 }
 
-func TestReadOnlyToolRegistryIncludesGitToolsInsideRepository(t *testing.T) {
+func TestReadOnlyToolRegistryContainsOnlyReadInsideRepository(t *testing.T) {
 	root := t.TempDir()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git unavailable: %v", err)
@@ -130,11 +124,8 @@ func TestReadOnlyToolRegistryIncludesGitToolsInsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := registry.Get("git_status"); !ok {
-		t.Fatal("git_status should be registered inside a git work tree")
-	}
-	if _, ok := registry.Get("git_diff"); !ok {
-		t.Fatal("git_diff should be registered inside a git work tree")
+	if specs := registry.Specs(); len(specs) != 1 || specs[0].Name != "read" {
+		t.Fatalf("read-only specs = %#v, want exactly read", specs)
 	}
 }
 
@@ -276,30 +267,28 @@ func TestWebSearchParsesResults(t *testing.T) {
 	}
 }
 
-func TestCodingToolRegistryIncludesQualityTools(t *testing.T) {
+func TestCodingToolRegistryOmitsLegacyQualityTools(t *testing.T) {
 	registry, err := NewCodingToolRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"read_diagnostics", "format_code"} {
-		if _, ok := registry.Get(name); !ok {
-			t.Fatalf("%s should be registered in coding registry", name)
+		if _, ok := registry.Get(name); ok {
+			t.Fatalf("legacy tool %s must not be registered in coding registry", name)
 		}
 	}
 }
 
-func TestCommandToolSpecsPreferDedicatedToolsBeforeBash(t *testing.T) {
+func TestBashSpecOwnsForegroundCLIWork(t *testing.T) {
 	root := t.TempDir()
 	bash := NewBashTool(root, nil).Spec()
 	if bash.RiskLevel != "critical" {
 		t.Fatalf("bash risk level = %q, want critical", bash.RiskLevel)
 	}
 	for _, required := range []string{
-		"Escape-hatch shell execution",
-		"Prefer run_tests",
-		"read_diagnostics",
-		"format_code",
-		"no safer dedicated tool",
+		"foreground, non-interactive Bash command",
+		"independent shell state",
+		"bounded stdout/stderr",
 	} {
 		if !strings.Contains(bash.Description, required) {
 			t.Fatalf("bash description missing %q: %q", required, bash.Description)
@@ -314,24 +303,14 @@ func TestCommandToolSpecsPreferDedicatedToolsBeforeBash(t *testing.T) {
 		t.Fatalf("bash command schema = %#v", properties["command"])
 	}
 	commandDescription, _ := command["description"].(string)
-	if !strings.Contains(commandDescription, "Do not use bash for test, lint, build, diagnostics, or formatting") {
-		t.Fatalf("bash command description should steer to dedicated tools: %q", commandDescription)
+	if strings.TrimSpace(commandDescription) == "" {
+		t.Fatalf("bash command description should explain foreground execution: %q", commandDescription)
 	}
-
-	runTests := NewRunTestsTool(root, nil).Spec()
-	if !strings.Contains(runTests.Description, "Preferred tool for declared test, lint, or build commands") ||
-		!strings.Contains(runTests.Description, "Use this instead of bash") {
-		t.Fatalf("run_tests description should be preferred over bash: %q", runTests.Description)
+	if _, ok := properties["timeout"].(map[string]any); !ok {
+		t.Fatalf("bash timeout schema = %#v", properties["timeout"])
 	}
-	readDiagnostics := NewReadDiagnosticsTool(root, nil).Spec()
-	if !strings.Contains(readDiagnostics.Description, "Preferred tool for declared diagnostics") ||
-		!strings.Contains(readDiagnostics.Description, "falling back to bash") {
-		t.Fatalf("read_diagnostics description should be preferred over bash: %q", readDiagnostics.Description)
-	}
-	formatCode := NewFormatCodeTool(root, nil).Spec()
-	if !strings.Contains(formatCode.Description, "Preferred tool for formatter-backed source rewrites") ||
-		!strings.Contains(formatCode.Description, "instead of falling back to bash") {
-		t.Fatalf("format_code description should be preferred over bash: %q", formatCode.Description)
+	if len(properties) != 2 {
+		t.Fatalf("bash properties = %#v, want command and timeout only", properties)
 	}
 }
 

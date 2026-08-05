@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"testing"
 
 	"aivo/core/domain"
@@ -12,8 +10,10 @@ import (
 func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 	registry := NewRegistry()
 	for _, tool := range []domain.Tool{
-		phase6EchoTool{spec: domain.ToolSpec{Name: "read_file", Description: "Read file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.read", Toolsets: []string{"safe", "coding"}}},
-		phase6EchoTool{spec: domain.ToolSpec{Name: "apply_patch", Description: "Patch files", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.patch", Toolsets: []string{"coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: "read", Description: "Read file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.read", Toolsets: []string{"safe", "coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: "bash", Description: "Run Bash", InputSchema: map[string]any{"type": "object"}, Category: "process", Capability: "process.exec", Toolsets: []string{"coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: "edit", Description: "Edit file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.write", Toolsets: []string{"coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: "write", Description: "Write file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.write", Toolsets: []string{"coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "update_plan", Description: "Update plan", InputSchema: map[string]any{"type": "object"}, Category: "plan", Capability: "plan.write", Toolsets: []string{"safe", "personal"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "automation_list", Description: "List automations", InputSchema: map[string]any{"type": "object"}, Category: "automation", Capability: "scheduler.read", Toolsets: []string{"safe", "personal"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "plugin_echo", Description: "Echo plugin text", InputSchema: map[string]any{"type": "object"}, Category: "plugin", Capability: "plugin.read", Toolsets: []string{"plugin", "coding"}}},
@@ -22,26 +22,15 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var runtime *ToolRuntime
-	if err := registry.RegisterScoped(NewToolSearchTool(registry), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterScoped(NewToolDetailTool(registry), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterScoped(NewToolCallTool(registry, func() *ToolRuntime { return runtime }), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-
 	assembly := AssembleToolSpecs(registry, registry.Specs())
-	if !assembly.Activated {
-		t.Fatalf("assembly.Activated = false, want long-tail deferral")
+	if assembly.Activated {
+		t.Fatalf("assembly.Activated = true, want only the core surface")
 	}
 	names := map[string]int{}
 	for _, spec := range assembly.Specs {
 		names[spec.Name]++
 	}
-	for _, name := range []string{"read_file", "apply_patch", "update_plan", ToolResolveName} {
+	for _, name := range []string{"read", "bash", "edit", "write"} {
 		if names[name] != 1 {
 			t.Fatalf("visible %s count = %d; specs = %#v", name, names[name], assembly.Specs)
 		}
@@ -51,23 +40,21 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 			t.Fatalf("legacy bridge tool %s was directly visible: %#v", name, assembly.Specs)
 		}
 	}
-	for _, name := range []string{"automation_list", "plugin_echo"} {
+	for _, name := range []string{"update_plan", "automation_list", "plugin_echo"} {
 		if names[name] != 0 {
 			t.Fatalf("long-tail tool %s was directly visible: %#v", name, assembly.Specs)
 		}
 	}
 
-	runtime = NewToolRuntime(registry, t.TempDir())
-	search := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{ID: "search", Name: ToolSearchName, Arguments: json.RawMessage(`{"query":"automation"}`)}, domain.ToolExecutionContext{AllowedToolsets: []string{"safe", "coding", "personal"}})
-	if !search.OK || !strings.Contains(search.Content, "automation_list") {
-		t.Fatalf("search = %#v, want deferred automation_list", search)
+	if assembly.DeferredCount != 2 {
+		t.Fatalf("deferred count = %d, want automation and plugin candidates", assembly.DeferredCount)
 	}
 }
 
 func TestToolAssemblyCanExplicitlyActivateMatchedTools(t *testing.T) {
 	registry := NewRegistry()
 	for _, tool := range []domain.Tool{
-		phase6EchoTool{spec: domain.ToolSpec{Name: "read_file", Description: "Read file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.read", Toolsets: []string{"safe", "coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: "read", Description: "Read file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.read", Toolsets: []string{"safe", "coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "automation_list", Description: "List automations", InputSchema: map[string]any{"type": "object"}, Category: "automation", Capability: "scheduler.read", Toolsets: []string{"safe", "personal"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "plugin_echo", Description: "Echo plugin text", InputSchema: map[string]any{"type": "object"}, Category: "plugin", Capability: "plugin.read", Toolsets: []string{"plugin", "coding"}}},
 	} {
@@ -75,17 +62,6 @@ func TestToolAssemblyCanExplicitlyActivateMatchedTools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var runtime *ToolRuntime
-	if err := registry.RegisterScoped(NewToolSearchTool(registry), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterScoped(NewToolDetailTool(registry), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.RegisterScoped(NewToolCallTool(registry, func() *ToolRuntime { return runtime }), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
-		t.Fatal(err)
-	}
-
 	activated := map[string]bool{"plugin_echo": true}
 
 	assembly := AssembleToolSpecsWithActivated(registry, registry.Specs(), activated)
@@ -99,12 +75,49 @@ func TestToolAssemblyCanExplicitlyActivateMatchedTools(t *testing.T) {
 	if names["automation_list"] != 0 {
 		t.Fatalf("unmatched automation_list was directly visible: %#v", assembly.Specs)
 	}
-	if names[ToolResolveName] != 1 || names[ToolSearchName] != 0 || names[ToolListName] != 0 || names[ToolDetailName] != 0 || names[ToolCallName] != 0 {
-		t.Fatalf("bridge tools missing after partial activation: %#v", assembly.Specs)
+	if names["read"] != 1 || names[ToolResolveName] != 0 || names[ToolSearchName] != 0 || names[ToolListName] != 0 || names[ToolDetailName] != 0 || names[ToolCallName] != 0 {
+		t.Fatalf("core/extension surface is not minimal after activation: %#v", assembly.Specs)
 	}
 }
 
-func TestListToolCatalogWithoutWorkspaceIncludesGlobalTools(t *testing.T) {
+func TestPreCallActivationSeparatesPinnedModeAndAutoPolicies(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := NewRegistry()
+	for _, spec := range []domain.ToolSpec{
+		{Name: "example_manual", Description: "manual", InputSchema: map[string]any{"type": "object"}, Category: "extension", Toolsets: []string{"coding"}, ActivationPolicy: "manual"},
+		{Name: "example_default", Description: "default", InputSchema: map[string]any{"type": "object"}, Category: "extension", Toolsets: []string{"coding"}, ActivationPolicy: "default"},
+		{Name: "example_auto", Description: "auto", InputSchema: map[string]any{"type": "object"}, Category: "extension", Toolsets: []string{"coding"}, ActivationPolicy: "auto"},
+	} {
+		if err := registry.RegisterScoped(phase6EchoTool{spec: spec}, domain.ToolSourceExtension, "example", "v1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{SessionID: session.ID, ToolNames: []string{"example_manual"}}); err != nil {
+		t.Fatal(err)
+	}
+	activated, candidates := service.preCallToolCandidates(ctx, session.ID, "turn-1", registry, registry.Specs())
+	if activated["example_manual"] != "pinned" || activated["example_default"] != "mode" {
+		t.Fatalf("activated = %#v, want pinned manual and mode default", activated)
+	}
+	if activated["example_auto"] != "" {
+		t.Fatalf("activated = %#v, auto tool must not activate without a resolver match", activated)
+	}
+	if len(candidates) != 1 || candidates[0].Name != "example_auto" {
+		t.Fatalf("candidates = %#v, want only the auto tool", candidates)
+	}
+	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activated)
+	if len(assembly.Specs) != 2 || len(assembly.Snapshot.Tools) != 2 {
+		t.Fatalf("assembly = %#v, want exactly the pinned and mode tools", assembly)
+	}
+}
+
+func TestListToolCatalogWithoutWorkspaceHasNoLegacyExecutors(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	entries, err := service.ListToolCatalog(context.Background(), domain.ToolCatalogInput{})
 	if err != nil {
@@ -114,19 +127,17 @@ func TestListToolCatalogWithoutWorkspaceIncludesGlobalTools(t *testing.T) {
 	for _, entry := range entries {
 		names[entry.Name] = true
 	}
-	for _, name := range []string{"web_fetch", "web_search", "agent_mode_list", ToolResolveName} {
+	for _, name := range []string{projectQueryToolName, projectAddToolName, projectAssociateToolName} {
 		if !names[name] {
-			t.Fatalf("global tool catalog missing %s; entries = %#v", name, entries)
+			t.Fatalf("global catalog missing builtin project extension tool %q; entries = %#v", name, entries)
 		}
 	}
-	for _, name := range []string{"browser_state", "browser_navigate", "browser_snapshot"} {
-		if names[name] {
-			t.Fatalf("global tool catalog still exposes removed tool %s; entries = %#v", name, entries)
-		}
+	if len(names) != 3 {
+		t.Fatalf("global catalog exposes tools other than the builtin project extension; entries = %#v", entries)
 	}
 }
 
-func TestListToolCatalogWithoutWorkspaceUsesCachedExternalTools(t *testing.T) {
+func TestListToolCatalogWithoutWorkspaceAdaptsCachedEnabledPluginAndMCPTools(t *testing.T) {
 	store := &memoryProviderStore{
 		plugins: []domain.PluginInstall{{
 			ID: "fixture-plugin", Enabled: true, Status: domain.PluginStatusEnabled,
@@ -157,18 +168,22 @@ func TestListToolCatalogWithoutWorkspaceUsesCachedExternalTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := map[string]bool{}
+	var adapted domain.ToolCatalogEntry
 	for _, entry := range entries {
 		names[entry.Name] = true
+		if entry.Name == "mcp_cached_mcp_list" {
+			adapted = entry
+		}
 	}
-	if !names["plugin_manifest_tool"] {
-		t.Fatalf("missing cached plugin manifest tool; entries = %#v", entries)
+	if !names["plugin_manifest_tool"] || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
+		t.Fatalf("catalog did not expose the cached plugin and namespaced MCP adapters; entries = %#v", entries)
 	}
-	if !names["mcp_Cached_MCP_list"] {
-		t.Fatalf("missing cached MCP tool; entries = %#v", entries)
+	if adapted.Source != domain.ToolSourceExtension || adapted.ActivationPolicy != "auto" || adapted.ImplementationHash == "" {
+		t.Fatalf("MCP adapter identity = %#v, want a frozen auto Extension v1 registration", adapted)
 	}
 }
 
-func TestListToolCatalogWithWorkspaceUsesCachedExternalTools(t *testing.T) {
+func TestListToolCatalogWithWorkspaceContainsCoreAndCachedEnabledExtensions(t *testing.T) {
 	store := &memoryProviderStore{
 		plugins: []domain.PluginInstall{{
 			ID: "fixture-plugin", Enabled: true, Status: domain.PluginStatusEnabled,
@@ -202,9 +217,17 @@ func TestListToolCatalogWithWorkspaceUsesCachedExternalTools(t *testing.T) {
 	for _, entry := range entries {
 		names[entry.Name] = true
 	}
-	for _, name := range []string{"read_file", "bash", "plugin_manifest_tool", "mcp_Cached_MCP_list"} {
+	for _, name := range []string{"read", "bash", "edit", "write"} {
 		if !names[name] {
 			t.Fatalf("missing %s; entries = %#v", name, entries)
 		}
+	}
+	for _, name := range []string{projectQueryToolName, projectAddToolName, projectAssociateToolName} {
+		if !names[name] {
+			t.Fatalf("workspace catalog missing builtin project extension tool %q; entries = %#v", name, entries)
+		}
+	}
+	if len(names) != 12 || !names["plugin_manifest_tool"] || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
+		t.Fatalf("workspace catalog does not contain four core tools plus builtin project, cached plugin, and MCP adapter contributions; entries = %#v", entries)
 	}
 }

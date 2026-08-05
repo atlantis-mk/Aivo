@@ -18,7 +18,7 @@ func (s *Service) UpdateModelPreferences(ctx context.Context, input domain.Model
 		if providerID != "" && modelID != "" {
 			modelID = normalizeModelIDForProvider(providerID, modelID)
 			cfg.DefaultModel = &domain.ModelRef{ProviderID: providerID, ModelID: modelID}
-			provider := s.providerConfigForModelRequest(cfg, providerID, modelID)
+			provider := s.providerConfigForModelRequest(ctx, cfg, providerID, modelID)
 			cfg.Provider = &provider
 		}
 	}

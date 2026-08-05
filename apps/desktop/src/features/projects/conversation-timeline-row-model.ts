@@ -42,7 +42,11 @@ export function constructConversationTimelineRows(
     );
     const hasVisibleToolCalls = toolGroups.length > 0;
     const hasPreambleText = preambleParts.some((part) => part.text.trim());
-    pushAssistantActivityRows(rows, turn, preambleParts, toolGroups);
+    if (hasVisibleToolCalls) {
+      pushToolActivityRows(rows, turn, toolGroups);
+    } else {
+      pushAssistantPreambles(rows, turn, preambleParts);
+    }
 
     if (turn.stopped) {
       rows.push({
@@ -104,63 +108,19 @@ function assistantPreambleParts(
   ];
 }
 
-function pushAssistantActivityRows(
+function pushAssistantPreambles(
   rows: ConversationTimelineRow[],
   turn: ConversationTurn,
   preambleParts: ConversationAssistantTextPart[],
-  toolGroups: ToolCallGroup[],
 ) {
-  if (preambleParts.length === 0) {
-    pushToolGroups(rows, turn, toolGroups);
-    return;
-  }
-
-  const activityItems = [
-    ...preambleParts.map((part, index) => ({
-      index,
-      key: `assistant-preamble:${turn.id}:${part.id}`,
-      kind: "text" as const,
-      part,
-      sortTime: timelineSortTime(part.timeCreated, index),
-    })),
-    ...toolGroups.map((group, index) => ({
-      index,
-      group,
-      key: `tool-group:${turn.id}:${group.id}`,
-      kind: "tool" as const,
-      sortTime: timelineSortTime(group.timeCreated, preambleParts.length + index),
-    })),
-  ].toSorted((a, b) => {
-    const timeDelta = a.sortTime - b.sortTime;
-    if (timeDelta !== 0) return timeDelta;
-    if (a.kind !== b.kind) return a.kind === "text" ? -1 : 1;
-    return a.index - b.index;
-  });
-
-  for (const item of activityItems) {
-    if (item.kind === "text") {
-      rows.push({
-        key: item.key,
-        text: item.part.text,
-        turnId: turn.id,
-        type: "assistant-preamble",
-      });
-      continue;
-    }
+  for (const part of preambleParts) {
     rows.push({
-      group: item.group,
-      key: item.key,
+      key: `assistant-preamble:${turn.id}:${part.id}`,
+      text: part.text,
       turnId: turn.id,
-      type: "tool-group",
+      type: "assistant-preamble",
     });
   }
-}
-
-function timelineSortTime(value: string | undefined, fallbackOffset: number) {
-  if (!value) return Number.MIN_SAFE_INTEGER + fallbackOffset;
-  const time = Date.parse(value);
-  if (Number.isNaN(time)) return Number.MIN_SAFE_INTEGER + fallbackOffset;
-  return time;
 }
 
 function pushSystemNotes(rows: ConversationTimelineRow[], turn: ConversationTurn) {
@@ -175,12 +135,30 @@ function pushSystemNotes(rows: ConversationTimelineRow[], turn: ConversationTurn
   }
 }
 
-function pushToolGroups(
+function pushToolActivityRows(
   rows: ConversationTimelineRow[],
   turn: ConversationTurn,
   toolGroups: ToolCallGroup[],
 ) {
+  let clusteredGroups: ToolCallGroup[] = [];
+  const pushCluster = () => {
+    const firstGroup = clusteredGroups[0];
+    if (!firstGroup) return;
+    rows.push({
+      groups: clusteredGroups,
+      key: `tool-cluster:${turn.id}:${firstGroup.id}`,
+      turnId: turn.id,
+      type: "tool-cluster",
+    });
+    clusteredGroups = [];
+  };
+
   for (const group of toolGroups) {
+    if (group.kind !== "delegate") {
+      clusteredGroups.push(group);
+      continue;
+    }
+    pushCluster();
     rows.push({
       group,
       key: `tool-group:${turn.id}:${group.id}`,
@@ -188,4 +166,5 @@ function pushToolGroups(
       type: "tool-group",
     });
   }
+  pushCluster();
 }

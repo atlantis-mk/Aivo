@@ -17,13 +17,14 @@ import type {
 import { otherProviderChoices } from "@/features/setup/setup-provider-options";
 import type {
   CatalogState,
-  ModelInfo,
   ProviderConnectInput,
   ProviderInfo,
 } from "@/lib/provider-catalog";
 
 export type AppConfigWithAuxiliary = domain.AppConfig & {
   auxiliaryModel?: domain.ModelRef;
+  initialWorkspacePath?: string;
+  defaultInitialWorkspacePath?: string;
 };
 
 export function defaultModelForProvider(
@@ -57,45 +58,6 @@ export function catalogDefaultModelForProvider(
   );
 }
 
-export function currentDefaultModelForProvider(
-  config: AppConfigWithAuxiliary | null,
-  provider: ProviderInfo,
-  modelOptions: ModelInfo[],
-) {
-  if (
-    config?.defaultModel?.providerId === provider.id &&
-    config.defaultModel.modelId
-  ) {
-    return modelInOptionsOrFirst(modelOptions, config.defaultModel.modelId);
-  }
-  if (config?.provider?.id === provider.id && config.provider.model) {
-    return modelInOptionsOrFirst(modelOptions, config.provider.model);
-  }
-  return modelInOptionsOrFirst(
-    modelOptions,
-    provider.defaultModelId || modelOptions[0]?.id || "",
-  );
-}
-
-export function currentAuxiliaryModelForProvider(
-  config: AppConfigWithAuxiliary | null,
-  provider: ProviderInfo,
-  modelOptions: ModelInfo[],
-  fallbackModelId: string,
-) {
-  if (
-    config?.auxiliaryModel?.providerId === provider.id &&
-    config.auxiliaryModel.modelId
-  ) {
-    return modelInOptionsOrFirst(modelOptions, config.auxiliaryModel.modelId);
-  }
-  return defaultAuxiliaryModelForProvider(
-    { providers: [provider], models: modelOptions, connected: [] },
-    provider.id,
-    fallbackModelId,
-  );
-}
-
 export function modelOptionsForConnectedProvider(
   provider: ProviderInfo,
   catalog: CatalogState | null,
@@ -105,37 +67,6 @@ export function modelOptionsForConnectedProvider(
   const fallback =
     provider.defaultModelId || defaultModelForProvider(provider.id, catalog);
   return fallback ? [{ id: fallback, providerId: provider.id, name: fallback }] : [];
-}
-
-export function updateCatalogDefaultModel(
-  catalog: CatalogState | null,
-  providerId: string,
-  modelId: string,
-) {
-  if (!catalog) return { providers: [], models: [], connected: [] };
-  return {
-    ...catalog,
-    defaultModel: { providerId, modelId },
-    providers: catalog.providers.map((provider) =>
-      provider.id === providerId
-        ? { ...provider, defaultModelId: modelId }
-        : provider,
-    ),
-  };
-}
-
-export function defaultAuxiliaryModelForProvider(
-  catalog: CatalogState | null | undefined,
-  providerId: string,
-  fallbackModelId: string,
-) {
-  const models = modelsForProvider(catalog, providerId);
-  const priority = auxiliaryModelPriorityForProvider(providerId);
-  for (const item of priority) {
-    const match = models.find((model) => model.id.includes(item));
-    if (match) return match.id;
-  }
-  return fallbackModelId || catalogDefaultModelForProvider(catalog, providerId);
 }
 
 export function canRefreshProviderModels(
@@ -196,30 +127,6 @@ export function providerRefreshInput(
     method: authMode,
     headers: isCustomProvider ? headersFromRows(customProvider.headers) : undefined,
   };
-}
-
-function modelInOptionsOrFirst(modelOptions: ModelInfo[], modelId: string) {
-  if (!modelId) return modelOptions[0]?.id || "";
-  if (modelOptions.some((model) => model.id === modelId)) return modelId;
-  return modelOptions[0]?.id || modelId;
-}
-
-function auxiliaryModelPriorityForProvider(providerId: string) {
-  if (providerId.startsWith("opencode")) return ["gpt-5.4-mini", "gpt-5-mini"];
-  const priority = [
-    "claude-haiku-4-5",
-    "claude-haiku-4.5",
-    "3-5-haiku",
-    "3.5-haiku",
-    "gemini-3-flash",
-    "gemini-2.5-flash",
-    "gpt-5.4-mini",
-    "gpt-5-mini",
-  ];
-  if (providerId.startsWith("github-copilot")) {
-    return ["gpt-5-mini", "claude-haiku-4.5", ...priority];
-  }
-  return priority;
 }
 
 export function modelsForProvider(

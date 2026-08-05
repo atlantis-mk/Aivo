@@ -33,6 +33,15 @@ export function connectProvider(input: domain.ProviderConnectInput) {
   return invoke<domain.CatalogState>("ConnectProvider", input);
 }
 
+export type CompleteInitializationInput = {
+  initialWorkspacePath: string;
+  provider?: domain.ProviderConfig;
+};
+
+export function completeInitialization(input: CompleteInitializationInput) {
+  return invoke<domain.AppConfig>("CompleteInitialization", input);
+}
+
 export function updateModelPreferences(input: domain.ModelPreferencesInput) {
   return invoke<domain.AppConfig>("UpdateModelPreferences", input);
 }

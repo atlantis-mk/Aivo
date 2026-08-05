@@ -8,16 +8,16 @@ import { usedToolNamesFromTurns } from "@/features/projects/project-tool-activat
 
 export function ProjectWorkspaceDialogs({
   activeSessionId,
-  defaultActiveToolNames,
-  onDefaultActiveToolNamesChange,
+  pendingActiveToolNames,
+  onPendingActiveToolNamesChange,
   onToolActivationOpenChange,
   toolActivationDialogOpen,
   turns,
   workspaceRoot,
 }: {
   activeSessionId: string;
-  defaultActiveToolNames: string[];
-  onDefaultActiveToolNamesChange: Dispatch<SetStateAction<string[]>>;
+  pendingActiveToolNames: string[];
+  onPendingActiveToolNamesChange: Dispatch<SetStateAction<string[]>>;
   onToolActivationOpenChange: (open: boolean) => void;
   toolActivationDialogOpen: boolean;
   turns: ConversationTurn[];
@@ -26,8 +26,8 @@ export function ProjectWorkspaceDialogs({
   return (
     <ToolActivationDialog
       activeSessionId={activeSessionId}
-      defaultActiveToolNames={defaultActiveToolNames}
-      onDefaultActiveToolNamesChange={onDefaultActiveToolNamesChange}
+      pendingActiveToolNames={pendingActiveToolNames}
+      onPendingActiveToolNamesChange={onPendingActiveToolNamesChange}
       onOpenChange={onToolActivationOpenChange}
       open={toolActivationDialogOpen}
       usedToolNames={usedToolNamesFromTurns(turns)}

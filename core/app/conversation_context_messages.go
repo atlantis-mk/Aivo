@@ -6,10 +6,29 @@ import (
 	"aivo/core/domain"
 )
 
-func chatMessagesFromEvents(events []domain.SessionEvent) []domain.ChatMessage {
+func chatMessagesFromEvents(events []domain.SessionEvent, turns []domain.Turn) []domain.ChatMessage {
+	cancelledTurnIDs := make(map[string]struct{})
+	cancelledEventIDs := make(map[string]struct{})
+	for _, turn := range turns {
+		if turn.Status != domain.TurnStatusCancelled {
+			continue
+		}
+		if turn.ID != "" {
+			cancelledTurnIDs[turn.ID] = struct{}{}
+		}
+		if turn.UserEventID != "" {
+			cancelledEventIDs[turn.UserEventID] = struct{}{}
+		}
+	}
 	messages := make([]domain.ChatMessage, 0, len(events))
 	for _, event := range events {
 		if event.Type != domain.EventTypeUserMessage && event.Type != domain.EventTypeAssistantMessage {
+			continue
+		}
+		if _, cancelled := cancelledEventIDs[event.ID]; cancelled {
+			continue
+		}
+		if _, cancelled := cancelledTurnIDs[event.TurnID]; cancelled {
 			continue
 		}
 		role := strings.TrimSpace(event.Role)

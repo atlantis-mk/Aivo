@@ -15,9 +15,12 @@ Provider credentials, OAuth tokens, authorization headers, signing material, and
 ## Execution safety
 
 - Renderer input is validated at the privileged boundary, including paths, origins, command policy inputs, and identifiers.
-- File and command tools enforce workspace and permission policy before execution.
+- File and command tools enforce environment and permission policy before execution, but these checks and prompts are not described as process containment.
+- The four core primitives and executable extensions run with the authority of their containing local or remote process. Containers, VMs, OS sandboxes, micro-VMs, SSH hosts, or remote sandboxes own any claimed containment state.
 - Child processes and external clients inherit explicit cancellation and cannot outlive their owner silently.
-- Plugin, skill, and MCP capabilities are manifest/configuration driven and do not gain ambient credentials or unrestricted local access.
+- Extension, skill, plugin, and MCP capabilities are manifest/configuration driven. Untrusted executable extensions cannot start, connect, receive credentials, or activate; models cannot install or trust them.
+- Host-owned project tools may expose bounded registered-project metadata to the active model. Registering a root or binding the current conversation requires the active write-permission mode, uses an exact target, cannot create content, and cannot switch or detach an existing project association.
+- Extension credentials are explicitly bound to Host-owned secure-store entries, leased only to the operation that needs them, and cannot be enumerated. Extension Web views receive neither ambient credentials nor privileged Electron APIs.
 - Permission denial, cancellation, timeout, dependency failure, and malformed external responses are first-class outcomes.
 
 ## Logging and diagnostics

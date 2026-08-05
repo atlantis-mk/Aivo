@@ -14,6 +14,7 @@ import {
   type ComposerAttachment,
 } from "@/features/projects/project-composer-attachments";
 import { providerSupportsServiceTier } from "@/features/projects/project-model-options";
+import { consumePendingToolActivation } from "@/features/projects/project-tool-activation-scope";
 import { hasAppBridge } from "@/lib/app-config";
 import type { ModelInfo } from "@/lib/provider-catalog";
 import {
@@ -39,7 +40,7 @@ export function useProjectSubmitPromptAction({
   activeSessionIdRef,
   agentMode,
   composerAttachments,
-  defaultActiveToolNames,
+  pendingActiveToolNames,
   hasPendingTurn,
   loadConversationTurns,
   modelOptions,
@@ -55,6 +56,7 @@ export function useProjectSubmitPromptAction({
   setComposerAttachments,
   setConversationRunning,
   setPrompt,
+  setPendingActiveToolNames,
   setSessions,
   setTurns,
 }: {
@@ -64,7 +66,7 @@ export function useProjectSubmitPromptAction({
   activeSessionIdRef: { current: string };
   agentMode: AgentModeId;
   composerAttachments: ComposerAttachment[];
-  defaultActiveToolNames: string[];
+  pendingActiveToolNames: string[];
   hasPendingTurn: boolean;
   loadConversationTurns: (
     sessionId: string,
@@ -83,6 +85,7 @@ export function useProjectSubmitPromptAction({
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setConversationRunning: (sessionId: string, running: boolean) => void;
   setPrompt: Dispatch<SetStateAction<string>>;
+  setPendingActiveToolNames: Dispatch<SetStateAction<string[]>>;
   setSessions: Dispatch<SetStateAction<domain.Session[]>>;
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
 }) {
@@ -168,9 +171,16 @@ export function useProjectSubmitPromptAction({
         sessionId = session.id;
         activeSessionIdRef.current = session.id;
         setActiveSessionId(session.id);
-        setCodingWorkspaceRoot(session.projectPath || selectedProjectPath);
-        if (defaultActiveToolNames.length > 0) {
-          await setSessionActiveTools(session.id, defaultActiveToolNames);
+        setCodingWorkspaceRoot(selectedProjectPath);
+        const pendingActivation = consumePendingToolActivation(
+          pendingActiveToolNames,
+        );
+        setPendingActiveToolNames(pendingActivation.remainingToolNames);
+        if (pendingActivation.appliedToolNames.length > 0) {
+          await setSessionActiveTools(
+            session.id,
+            pendingActivation.appliedToolNames,
+          );
         }
       }
       submittedSessionId = sessionId;

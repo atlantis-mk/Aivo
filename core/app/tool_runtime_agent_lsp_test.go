@@ -25,7 +25,6 @@ func TestAgentLoopExecutesToolAndAppendsToolResult(t *testing.T) {
 	}
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
 		var body struct {
 			Messages []map[string]any `json:"messages"`
 			Tools    []any            `json:"tools"`
@@ -35,6 +34,12 @@ func TestAgentLoopExecutesToolAndAppendsToolResult(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(body.Tools) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"reason\":\"core read is sufficient\"}"}}]}`))
+			return
+		}
+		requestCount++
+		if len(body.Tools) == 0 {
 			t.Fatal("tools were not exposed")
 		}
 		if !body.Stream {
@@ -42,7 +47,7 @@ func TestAgentLoopExecutesToolAndAppendsToolResult(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if requestCount == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_read","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}}]}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_read","type":"function","function":{"name":"read","arguments":"{\"path\":\"README.md\"}"}}]}}]}`))
 			return
 		}
 		foundToolResult := false
@@ -91,7 +96,6 @@ func TestAgentLoopStreamsTextAfterStreamedToolCall(t *testing.T) {
 	})
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
 		var body struct {
 			Messages []map[string]any `json:"messages"`
 			Tools    []any            `json:"tools"`
@@ -100,12 +104,18 @@ func TestAgentLoopStreamsTextAfterStreamedToolCall(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
+		if len(body.Tools) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"reason\":\"core read is sufficient\"}"}}]}`))
+			return
+		}
+		requestCount++
 		if !body.Stream {
 			t.Fatal("tool-enabled request should stream")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		if requestCount == 1 {
-			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_read\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\"\"}}]}}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_read\",\"type\":\"function\",\"function\":{\"name\":\"read\",\"arguments\":\"{\\\"path\\\"\"}}]}}]}\n\n"))
 			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\":\\\"README.md\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n"))
 			_, _ = w.Write([]byte("data: [DONE]\n\n"))
 			return
@@ -176,10 +186,7 @@ func TestLSPFallbackToolsReturnStructuredResults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	registry, err := NewReadOnlyToolRegistry(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := newLSPTestRegistry(t, root)
 	for _, name := range []string{"lsp_diagnostics", "lsp_definition", "lsp_references", "lsp_symbol_search"} {
 		if _, ok := registry.Get(name); !ok {
 			t.Fatalf("tool %s is not registered", name)
@@ -233,10 +240,7 @@ func TestBoundedLSPManagerStartsFakeGoServer(t *testing.T) {
 	if status.Status != domain.CodeIntelligenceStatusReady || status.Language != "go" || status.Source != "gopls" {
 		t.Fatalf("status = %#v", status)
 	}
-	registry, err := NewReadOnlyToolRegistry(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := newLSPTestRegistry(t, root)
 	runtime := NewToolRuntime(registry, root)
 	diagnostics := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "diag", Name: "lsp_diagnostics", Arguments: json.RawMessage(`{"path":"main.go"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root})
 	if !diagnostics.OK || !strings.Contains(diagnostics.Content, "fake compile error") {
@@ -258,6 +262,22 @@ func TestBoundedLSPManagerStartsFakeGoServer(t *testing.T) {
 	if !references.OK || !strings.Contains(references.Content, "func main") {
 		t.Fatalf("references = %#v", references)
 	}
+}
+
+func newLSPTestRegistry(t *testing.T, root string) *Registry {
+	t.Helper()
+	registry := NewRegistry()
+	for _, tool := range []domain.Tool{
+		NewLSPDiagnosticsTool(root),
+		NewLSPDefinitionTool(root),
+		NewLSPReferencesTool(root),
+		NewLSPSymbolSearchTool(root),
+	} {
+		if err := registry.RegisterScoped(tool, domain.ToolSourceExtension, "test.code-intelligence", "v1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return registry
 }
 
 func TestBoundedLSPManagerStartsFakeTypeScriptServer(t *testing.T) {

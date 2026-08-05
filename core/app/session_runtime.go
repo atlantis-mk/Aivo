@@ -19,18 +19,27 @@ func (s *Service) CreateRuntimeSession(ctx context.Context, input domain.CreateS
 			input.AgentMode = definition.ID
 		}
 	}
-	needsManagedWorkspace := input.Type == domain.SessionTypeCoding && strings.TrimSpace(input.ProjectPath) == ""
+	needsInitialWorkspace := input.Type == domain.SessionTypeCoding && strings.TrimSpace(input.ProjectPath) == ""
+	initialWorkspacePath := ""
+	if needsInitialWorkspace {
+		cfg, err := s.AppConfig(ctx)
+		if err != nil {
+			return domain.Session{}, err
+		}
+		initialWorkspacePath, err = ensureInitialWorkspaceDirectory(cfg.InitialWorkspacePath)
+		if err != nil {
+			return domain.Session{}, err
+		}
+	}
 	session, err := s.store.CreateRuntimeSession(ctx, input)
 	if err != nil {
 		return domain.Session{}, err
 	}
-	if needsManagedWorkspace {
-		projectPath, err := s.createManagedWorkspace(session.ID)
-		if err != nil {
+	if needsInitialWorkspace {
+		if _, err := s.CreateOrUpdateCodingContext(ctx, session.ID, initialWorkspacePath); err != nil {
 			return domain.Session{}, err
 		}
-		input.ProjectPath = projectPath
-		session.ProjectPath = projectPath
+		return session, nil
 	}
 	if session.Type == domain.SessionTypeCoding && strings.TrimSpace(input.ProjectPath) != "" {
 		if _, err := s.CreateOrUpdateCodingContext(ctx, session.ID, input.ProjectPath); err != nil {
@@ -82,6 +91,7 @@ func (s *Service) DeleteRuntimeSession(ctx context.Context, id string) (domain.S
 	deleted, err := s.store.SetRuntimeSessionStatus(ctx, id, domain.SessionStatusDeleted)
 	if err == nil {
 		defaultAgentPTYRegistry.CleanupSession(strings.TrimSpace(id))
+		cleanupRetainedOutputSession(strings.TrimSpace(id))
 	}
 	return deleted, err
 }

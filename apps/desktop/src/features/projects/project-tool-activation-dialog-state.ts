@@ -3,22 +3,27 @@ import { toast } from "sonner";
 
 import {
   groupToolCatalogEntries,
+  isToolCatalogGroupActive,
+  isToolCatalogGroupUsed,
   isToggleableCatalogTool,
   normalizeToolNames,
-  pluginLabelsById,
+  toolActivationSourceMetadata,
   toolNameListsEqual,
 } from "@/features/projects/project-tool-activation-model";
+import { scopeToolActivationSave } from "@/features/projects/project-tool-activation-scope";
 import {
   getSessionActiveSkills,
   getSessionActiveTools,
   ignoreSkillCandidatesByName,
   importSkill,
+  listMCPServers,
   listPlugins,
   listSkills,
   listToolCatalog,
   loadSkillIntoSession,
   setSessionActiveSkills,
   setSessionActiveTools,
+  type MCPServerListItem,
   type PluginListItem,
   type SkillEntry,
   type SkillImportCandidate,
@@ -27,8 +32,8 @@ import {
 
 export type ToolActivationDialogProps = {
   activeSessionId: string;
-  defaultActiveToolNames: string[];
-  onDefaultActiveToolNamesChange: (
+  pendingActiveToolNames: string[];
+  onPendingActiveToolNamesChange: (
     updater: string[] | ((current: string[]) => string[]),
   ) => void;
   onOpenChange: (open: boolean) => void;
@@ -39,8 +44,8 @@ export type ToolActivationDialogProps = {
 
 export function useToolActivationDialogState({
   activeSessionId,
-  defaultActiveToolNames,
-  onDefaultActiveToolNamesChange,
+  pendingActiveToolNames,
+  onPendingActiveToolNamesChange,
   onOpenChange,
   open,
   usedToolNames,
@@ -55,10 +60,12 @@ export function useToolActivationDialogState({
   const [skillCandidates, setSkillCandidates] = useState<
     SkillImportCandidate[]
   >([]);
-  const [pluginLabels, setPluginLabels] = useState<Record<string, string>>({});
+  const [sourceMetadata, setSourceMetadata] = useState(
+    () => toolActivationSourceMetadata([], []),
+  );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const defaultActiveToolNamesRef = useRef(defaultActiveToolNames);
+  const pendingActiveToolNamesRef = useRef(pendingActiveToolNames);
   const activeToolSet = useMemo(
     () => new Set(activeToolNames),
     [activeToolNames],
@@ -69,12 +76,18 @@ export function useToolActivationDialogState({
     [tools],
   );
   const groupedTools = useMemo(
-    () => groupToolCatalogEntries(toggleableTools, pluginLabels),
-    [pluginLabels, toggleableTools],
+    () => groupToolCatalogEntries(toggleableTools, sourceMetadata),
+    [sourceMetadata, toggleableTools],
   );
-  const inactiveCount = Math.max(
+  const activeGroupCount = groupedTools.filter((group) =>
+    isToolCatalogGroupActive(group, activeToolSet),
+  ).length;
+  const usedGroupCount = groupedTools.filter((group) =>
+    isToolCatalogGroupUsed(group, usedToolSet),
+  ).length;
+  const inactiveGroupCount = Math.max(
     0,
-    toggleableTools.length - activeToolNames.length,
+    groupedTools.length - activeGroupCount,
   );
   const activeSkillSet = useMemo(
     () => new Set(activeSkillIds),
@@ -85,8 +98,8 @@ export function useToolActivationDialogState({
     !toolNameListsEqual(activeSkillIds, savedSkillIds);
 
   useEffect(() => {
-    defaultActiveToolNamesRef.current = defaultActiveToolNames;
-  }, [defaultActiveToolNames]);
+    pendingActiveToolNamesRef.current = pendingActiveToolNames;
+  }, [pendingActiveToolNames]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,11 +115,11 @@ export function useToolActivationDialogState({
       activeSessionId
         ? getSessionActiveTools(activeSessionId).catch(() => ({
             sessionId: activeSessionId,
-            toolNames: defaultActiveToolNamesRef.current,
+            toolNames: [],
           }))
         : Promise.resolve({
             sessionId: "",
-            toolNames: defaultActiveToolNamesRef.current,
+            toolNames: pendingActiveToolNamesRef.current,
           }),
       activeSessionId
         ? getSessionActiveSkills(activeSessionId).catch(() => ({
@@ -116,20 +129,34 @@ export function useToolActivationDialogState({
           }))
         : Promise.resolve({ sessionId: "", skillIds: [], skills: [] }),
       listPlugins(true).catch(() => [] as PluginListItem[]),
+      listMCPServers(true, false).catch(() => [] as MCPServerListItem[]),
     ])
-      .then(([catalogTools, skillList, activeTools, activeSkills, plugins]) => {
-        if (cancelled) return;
-        const normalizedActiveTools = normalizeToolNames(activeTools.toolNames);
-        const normalizedActiveSkills = normalizeToolNames(activeSkills.skillIds);
-        setTools(catalogTools);
-        setSkills(skillList.entries ?? []);
-        setSkillCandidates(skillList.candidates ?? []);
-        setActiveToolNames(normalizedActiveTools);
-        setSavedToolNames(normalizedActiveTools);
-        setActiveSkillIds(normalizedActiveSkills);
-        setSavedSkillIds(normalizedActiveSkills);
-        setPluginLabels(pluginLabelsById(plugins));
-      })
+      .then(
+        ([
+          catalogTools,
+          skillList,
+          activeTools,
+          activeSkills,
+          plugins,
+          servers,
+        ]) => {
+          if (cancelled) return;
+          const normalizedActiveTools = normalizeToolNames(
+            activeTools.toolNames,
+          );
+          const normalizedActiveSkills = normalizeToolNames(
+            activeSkills.skillIds,
+          );
+          setTools(catalogTools);
+          setSkills(skillList.entries ?? []);
+          setSkillCandidates(skillList.candidates ?? []);
+          setActiveToolNames(normalizedActiveTools);
+          setSavedToolNames(normalizedActiveTools);
+          setActiveSkillIds(normalizedActiveSkills);
+          setSavedSkillIds(normalizedActiveSkills);
+          setSourceMetadata(toolActivationSourceMetadata(plugins, servers));
+        },
+      )
       .catch((err) => {
         if (!cancelled) {
           toast.error(err instanceof Error ? err.message : "加载工具失败");
@@ -144,19 +171,22 @@ export function useToolActivationDialogState({
   }, [activeSessionId, open, workspaceRoot]);
 
   async function submitActiveToolNames() {
-    const normalized = normalizeToolNames(activeToolNames);
+    const scope = scopeToolActivationSave(activeSessionId, activeToolNames);
     setSaving(true);
     try {
-      if (!activeSessionId) {
-        setSavedToolNames(normalized);
+      if (scope.kind === "pending") {
+        setSavedToolNames(scope.toolNames);
         setSavedSkillIds(normalizeToolNames(activeSkillIds));
-        onDefaultActiveToolNamesChange(normalized);
+        onPendingActiveToolNamesChange(scope.toolNames);
         onOpenChange(false);
         return;
       }
-      const saved = await setSessionActiveTools(activeSessionId, normalized);
+      const saved = await setSessionActiveTools(
+        scope.sessionId,
+        scope.toolNames,
+      );
       const savedSkills = await setSessionActiveSkills(
-        activeSessionId,
+        scope.sessionId,
         normalizeToolNames(activeSkillIds),
       );
       const savedNames = normalizeToolNames(saved.toolNames);
@@ -165,7 +195,6 @@ export function useToolActivationDialogState({
       setSavedToolNames(savedNames);
       setActiveSkillIds(savedSkillNames);
       setSavedSkillIds(savedSkillNames);
-      onDefaultActiveToolNamesChange(savedNames);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "更新工具失败");
@@ -174,12 +203,14 @@ export function useToolActivationDialogState({
     }
   }
 
-  function toggleTool(name: string, enabled: boolean) {
+  function toggleToolGroup(names: string[], enabled: boolean) {
     const next = new Set(activeToolNames);
-    if (enabled) {
-      next.add(name);
-    } else {
-      next.delete(name);
+    for (const name of names) {
+      if (enabled) {
+        next.add(name);
+      } else {
+        next.delete(name);
+      }
     }
     setActiveToolNames(normalizeToolNames([...next]));
   }
@@ -254,21 +285,21 @@ export function useToolActivationDialogState({
 
   return {
     activeSkillSet,
-    activeToolCount: activeToolNames.length,
+    activeToolCount: activeGroupCount,
     activeToolSet,
     candidates: skillCandidates,
     groupedTools,
     hasDraftChanges,
-    inactiveToolCount: inactiveCount,
+    inactiveToolCount: inactiveGroupCount,
     loading,
     saving,
     skillCount: skills.length,
     skills,
     submitActiveToolNames,
-    toggleableToolCount: toggleableTools.length,
+    toggleableToolCount: groupedTools.length,
     toggleSkill,
-    toggleTool,
-    usedToolCount: usedToolNames.length,
+    toggleToolGroup,
+    usedToolCount: usedGroupCount,
     usedToolSet,
     loadSkill,
     importCandidate,

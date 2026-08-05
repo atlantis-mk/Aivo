@@ -18,7 +18,6 @@ func (s *Service) ConnectProvider(ctx context.Context, input domain.ProviderConn
 	if err != nil {
 		return domain.CatalogState{}, err
 	}
-	appCfg.Initialized = true
 	appCfg.Provider = &cfg
 	appCfg.DefaultModel = &domain.ModelRef{ProviderID: cfg.ID, ModelID: cfg.Model}
 	if err := s.store.SaveProvider(ctx, cfg); err != nil {
@@ -273,17 +272,33 @@ func (s *Service) DeleteProviderAccount(ctx context.Context, accountID string) (
 	return s.Catalog(ctx)
 }
 
-func (s *Service) CompleteInitialization(ctx context.Context, provider *domain.ProviderConfig) (domain.AppConfig, error) {
+func (s *Service) CompleteInitialization(ctx context.Context, input domain.CompleteInitializationInput) (domain.AppConfig, error) {
+	requestedWorkspacePath := strings.TrimSpace(input.InitialWorkspacePath)
+	if requestedWorkspacePath == "" {
+		var err error
+		requestedWorkspacePath, err = managedWorkspaceRoot()
+		if err != nil {
+			return domain.AppConfig{}, err
+		}
+	}
+	workspacePath, err := ensureInitialWorkspaceDirectory(requestedWorkspacePath)
+	if err != nil {
+		return domain.AppConfig{}, err
+	}
 	cfg, err := s.AppConfig(ctx)
 	if err != nil {
 		return domain.AppConfig{}, err
 	}
 	cfg.Initialized = true
-	if provider != nil {
-		cfg.Provider = provider
-		if provider.Model != "" {
-			cfg.DefaultModel = &domain.ModelRef{ProviderID: provider.ID, ModelID: provider.Model}
+	cfg.InitialWorkspacePath = workspacePath
+	if input.Provider != nil {
+		cfg.Provider = input.Provider
+		if input.Provider.Model != "" {
+			cfg.DefaultModel = &domain.ModelRef{ProviderID: input.Provider.ID, ModelID: input.Provider.Model}
 		}
 	}
-	return cfg, s.store.SaveConfig(ctx, cfg)
+	if err := s.store.SaveConfig(ctx, cfg); err != nil {
+		return domain.AppConfig{}, err
+	}
+	return s.AppConfig(ctx)
 }

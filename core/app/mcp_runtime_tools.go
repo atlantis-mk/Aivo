@@ -2,47 +2,61 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"aivo/core/domain"
 )
 
-func (m *MCPManager) registerMCPResourceUtilityTools(_ context.Context, registry *Registry, server domain.MCPServerConfig) {
+func (m *MCPManager) registerMCPResourceUtilityTools(ctx context.Context, registry *Registry, server domain.MCPServerConfig) {
 	if registry == nil {
 		return
 	}
-	base := mcpServerToolPrefix(server)
+	base := generatedToolName("mcp", "host", firstNonEmptyApp(server.ID, server.Name))
 	utilities := []MCPResourceUtilityTool{
 		{manager: m, server: server, kind: "list_resources", spec: domain.ToolSpec{
-			Name: base + "_list_resources", Description: "List resources exposed by MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
+			Name: generatedToolName(base, "list_resources"), Description: "List resources exposed by MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"cursor": map[string]any{"type": "string", "description": "Optional pagination cursor returned by a previous resources/list call."},
 			}, "additionalProperties": false},
-			Namespace: server.Name, NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
-			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio,
+			Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
+			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", ImplementationHash: mcpResourceAdapterImplementationHash(server, "list_resources"),
 		}},
 		{manager: m, server: server, kind: "list_resource_templates", spec: domain.ToolSpec{
-			Name: base + "_list_resource_templates", Description: "List resource templates exposed by MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
+			Name: generatedToolName(base, "list_resource_templates"), Description: "List resource templates exposed by MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"cursor": map[string]any{"type": "string", "description": "Optional pagination cursor returned by a previous resources/templates/list call."},
 			}, "additionalProperties": false},
-			Namespace: server.Name, NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
-			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio,
+			Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
+			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", ImplementationHash: mcpResourceAdapterImplementationHash(server, "list_resource_templates"),
 		}},
 		{manager: m, server: server, kind: "read_resource", spec: domain.ToolSpec{
-			Name: base + "_read_resource", Description: "Read a resource URI from MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
+			Name: generatedToolName(base, "read_resource"), Description: "Read a resource URI from MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 				"uri": map[string]any{"type": "string", "description": "Exact MCP resource URI to read."},
 			}, "required": []string{"uri"}, "additionalProperties": false},
-			Namespace: server.Name, NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
-			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio,
+			Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
+			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", ImplementationHash: mcpResourceAdapterImplementationHash(server, "read_resource"),
 		}},
 	}
 	for i := range utilities {
 		tool := utilities[i]
-		_ = registry.RegisterScoped(&tool, domain.ToolSourceMCP, server.ID, server.TimeUpdated)
+		if err := registry.RegisterScoped(&tool, domain.ToolSourceExtension, mcpServerToolPrefix(server), firstNonEmptyApp(server.TimeUpdated, "v1")); err != nil {
+			m.diagnostic(ctx, server.ID, "error", "MCP resource utility registration failed", map[string]any{"tool": tool.spec.Name, "error": err.Error()})
+		}
 	}
+}
+
+func mcpAdapterImplementationHash(server domain.MCPServerConfig, tool domain.MCPToolRecord) string {
+	raw, _ := json.Marshal(map[string]any{"adapter": "mcp-v1", "serverId": server.ID, "transport": server.Transport, "tool": tool.Name, "schema": tool.InputSchema})
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
+}
+
+func mcpResourceAdapterImplementationHash(server domain.MCPServerConfig, kind string) string {
+	raw, _ := json.Marshal(map[string]any{"adapter": "mcp-v1", "serverId": server.ID, "transport": server.Transport, "resource": kind})
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
 }
 
 type MCPRuntimeTool struct {

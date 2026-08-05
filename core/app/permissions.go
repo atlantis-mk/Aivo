@@ -37,13 +37,15 @@ type PermissionEvaluation struct {
 	Decision  string
 	RequestID string
 	Reason    string
+	Code      string
 }
 
 type PermissionEngine struct {
-	store     PermissionStore
-	now       func() time.Time
-	onRequest func(domain.PermissionRequest)
-	notifier  *permissionNotifier
+	store            PermissionStore
+	now              func() time.Time
+	onRequest        func(domain.PermissionRequest)
+	notifier         *permissionNotifier
+	ProjectPreflight func(context.Context, string, json.RawMessage, domain.ToolExecutionContext) ([]string, map[string]any, bool, error)
 }
 
 func NewPermissionEngine(store PermissionStore) *PermissionEngine {
@@ -68,9 +70,20 @@ func (e *PermissionEngine) Evaluate(ctx context.Context, tool domain.Tool, args 
 	if action == permissionActionRead || action == permissionActionSkill {
 		return PermissionEvaluation{Decision: domain.PermissionDecisionAllow}
 	}
-	paths, metadata, err := permissionPathsForTool(spec.Name, args, execCtx)
+	var paths []string
+	var metadata map[string]any
+	var idempotent bool
+	var err error
+	if e.ProjectPreflight != nil && (spec.Name == projectAddToolName || spec.Name == projectAssociateToolName) {
+		paths, metadata, idempotent, err = e.ProjectPreflight(ctx, spec.Name, args, execCtx)
+	} else {
+		paths, metadata, err = permissionPathsForTool(spec.Name, args, execCtx)
+	}
 	if err != nil {
-		return PermissionEvaluation{Decision: domain.PermissionDecisionDeny, Reason: err.Error()}
+		return PermissionEvaluation{Decision: domain.PermissionDecisionDeny, Reason: err.Error(), Code: projectErrorCode(err, "permission_denied")}
+	}
+	if idempotent {
+		return PermissionEvaluation{Decision: domain.PermissionDecisionAllow}
 	}
 	if reason := deniedPathReason(paths); reason != "" {
 		return PermissionEvaluation{Decision: domain.PermissionDecisionDeny, Reason: reason}
@@ -140,7 +153,11 @@ func (e *PermissionEngine) waitForDecision(ctx context.Context, requestID string
 	for {
 		select {
 		case <-ctx.Done():
-			return PermissionEvaluation{Decision: domain.PermissionDecisionAsk, RequestID: requestID, Reason: "permission approval is required"}
+			reason := "permission request cancelled with its turn"
+			if e != nil && e.store != nil {
+				_, _ = e.store.UpdatePermissionRequest(context.Background(), requestID, domain.PermissionRequestStatusDenied, false, reason)
+			}
+			return PermissionEvaluation{Decision: domain.PermissionDecisionDeny, RequestID: requestID, Reason: reason}
 		case <-decisionCh:
 			request, err := e.store.GetPermissionRequest(ctx, requestID)
 			if err != nil {
@@ -172,6 +189,10 @@ func (e *PermissionEngine) savedDecision(ctx context.Context, execCtx domain.Too
 	switch latestPermissionMode(rules) {
 	case domain.PermissionModeRequestApproval:
 		return ""
+	case domain.PermissionModeAutoApprove:
+		if toolName == projectAddToolName || toolName == projectAssociateToolName {
+			return domain.PermissionDecisionAllow
+		}
 	case domain.PermissionModeFullAccess:
 		// Commands that violate non-bypassable safety checks are rejected while
 		// preparing their execution context. Reaching this point means the tool is
@@ -212,9 +233,19 @@ func (s *Service) ApprovePermissionRequest(ctx context.Context, input domain.App
 	if strings.TrimSpace(input.RequestID) == "" {
 		return domain.PermissionRequest{}, errors.New("requestId is required")
 	}
+	current, err := s.store.GetPermissionRequest(ctx, input.RequestID)
+	if err != nil {
+		return domain.PermissionRequest{}, err
+	}
+	if current.Status != domain.PermissionRequestStatusPending {
+		return current, nil
+	}
 	request, err := s.store.UpdatePermissionRequest(ctx, input.RequestID, domain.PermissionRequestStatusApproved, input.Remember, "")
 	if err != nil {
 		return domain.PermissionRequest{}, err
+	}
+	if request.Status != domain.PermissionRequestStatusApproved {
+		return request, nil
 	}
 	if input.Remember {
 		_, _ = s.store.SavePermissionRule(ctx, s.permissionRuleFromRequest(ctx, request, domain.PermissionDecisionAllow))
@@ -235,9 +266,19 @@ func (s *Service) DenyPermissionRequest(ctx context.Context, input domain.DenyPe
 	if strings.TrimSpace(input.RequestID) == "" {
 		return domain.PermissionRequest{}, errors.New("requestId is required")
 	}
+	current, err := s.store.GetPermissionRequest(ctx, input.RequestID)
+	if err != nil {
+		return domain.PermissionRequest{}, err
+	}
+	if current.Status != domain.PermissionRequestStatusPending {
+		return current, nil
+	}
 	request, err := s.store.UpdatePermissionRequest(ctx, input.RequestID, domain.PermissionRequestStatusDenied, input.Remember, input.Reason)
 	if err != nil {
 		return domain.PermissionRequest{}, err
+	}
+	if request.Status != domain.PermissionRequestStatusDenied {
+		return request, nil
 	}
 	if input.Remember {
 		_, _ = s.store.SavePermissionRule(ctx, s.permissionRuleFromRequest(ctx, request, domain.PermissionDecisionDeny))

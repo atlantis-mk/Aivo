@@ -30,19 +30,21 @@ func bufferedDeltaForRoute(onDelta func(string), shouldBuffer bool) (func(string
 		}
 }
 
-func (s *Service) providerConfigForModelRequest(cfg domain.AppConfig, providerID string, modelID string) domain.ProviderConfig {
-	if cfg.Provider != nil && s.normalizeProviderID(cfg.Provider.ID) == s.normalizeProviderID(providerID) {
-		provider := *cfg.Provider
-		provider.ID = s.normalizeProviderID(provider.ID)
-		if provider.Type == "" {
-			if def, ok := s.providerDefinition(provider.ID); ok {
-				provider.Type = string(def.Transport)
-			} else {
-				provider.Type = string(inferTransport(provider.ID, "", provider.BaseURL))
-			}
+func (s *Service) providerConfigForModelRequest(ctx context.Context, cfg domain.AppConfig, providerID string, modelID string) domain.ProviderConfig {
+	providerID = s.normalizeProviderID(providerID)
+	if cfg.Provider != nil && s.normalizeProviderID(cfg.Provider.ID) == providerID {
+		provider := cloneProviderConfig(*cfg.Provider)
+		if saved, ok := s.savedProviderConfig(ctx, providerID); ok {
+			provider = mergeMissingProviderConfig(provider, saved)
 		}
+		provider.ID = providerID
 		provider.Model = modelID
-		return provider
+		return s.providerConfigWithDefaults(provider)
+	}
+	if provider, ok := s.savedProviderConfig(ctx, providerID); ok {
+		provider.ID = providerID
+		provider.Model = modelID
+		return s.providerConfigWithDefaults(provider)
 	}
 	if def, ok := s.providerDefinition(providerID); ok {
 		apiKeyEnv := ""
@@ -58,11 +60,76 @@ func (s *Service) providerConfigForModelRequest(cfg domain.AppConfig, providerID
 		}
 	}
 	return domain.ProviderConfig{
-		ID:      s.normalizeProviderID(providerID),
+		ID:      providerID,
 		Type:    string(inferTransport(providerID, "", "")),
 		BaseURL: defaultBaseURLFor(providerID),
 		Model:   modelID,
 	}
+}
+
+func (s *Service) savedProviderConfig(ctx context.Context, providerID string) (domain.ProviderConfig, bool) {
+	providerID = s.normalizeProviderID(providerID)
+	providers, err := s.store.ListProviders(ctx)
+	if err != nil {
+		return domain.ProviderConfig{}, false
+	}
+	for _, provider := range providers {
+		if s.normalizeProviderID(provider.ID) != providerID {
+			continue
+		}
+		provider = cloneProviderConfig(provider)
+		provider.ID = providerID
+		return provider, true
+	}
+	return domain.ProviderConfig{}, false
+}
+
+func (s *Service) providerConfigWithDefaults(provider domain.ProviderConfig) domain.ProviderConfig {
+	if def, ok := s.providerDefinition(provider.ID); ok {
+		if provider.Type == "" {
+			provider.Type = string(def.Transport)
+		}
+		if provider.BaseURL == "" {
+			provider.BaseURL = def.DefaultBaseURL
+		}
+		if provider.APIKeyEnv == "" && len(def.APIKeyEnvVars) > 0 {
+			provider.APIKeyEnv = def.APIKeyEnvVars[0]
+		}
+	} else if provider.Type == "" {
+		provider.Type = string(inferTransport(provider.ID, "", provider.BaseURL))
+	}
+	return provider
+}
+
+func mergeMissingProviderConfig(primary domain.ProviderConfig, fallback domain.ProviderConfig) domain.ProviderConfig {
+	if primary.ID == "" {
+		primary.ID = fallback.ID
+	}
+	if primary.Type == "" {
+		primary.Type = fallback.Type
+	}
+	if primary.BaseURL == "" {
+		primary.BaseURL = fallback.BaseURL
+	}
+	if primary.APIKeyEnv == "" {
+		primary.APIKeyEnv = fallback.APIKeyEnv
+	}
+	if primary.Model == "" {
+		primary.Model = fallback.Model
+	}
+	if len(primary.Headers) == 0 {
+		primary.Headers = cloneStringMap(fallback.Headers)
+	}
+	if len(primary.RequestParams) == 0 {
+		primary.RequestParams = cloneAnyMap(fallback.RequestParams)
+	}
+	return primary
+}
+
+func cloneProviderConfig(provider domain.ProviderConfig) domain.ProviderConfig {
+	provider.Headers = cloneStringMap(provider.Headers)
+	provider.RequestParams = cloneAnyMap(provider.RequestParams)
+	return provider
 }
 
 func normalizeChatGPTCodexModel(model domain.ModelRef) domain.ModelRef {

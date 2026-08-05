@@ -73,7 +73,7 @@ export function useProjectWorkspaceSidebarController({
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
   sidebarConversationSelectionRef: { current: number };
 }) {
-  const { projectConversationGroups, visibleConversations } =
+  const { projectConversationGroups, visibleSessions } =
     useProjectSidebarConversationState({
       archivedConversationIds,
       recentProjects,
@@ -113,6 +113,6 @@ export function useProjectWorkspaceSidebarController({
   return {
     ...sidebarActions,
     projectConversationGroups,
-    visibleConversations,
+    visibleSessions,
   };
 }

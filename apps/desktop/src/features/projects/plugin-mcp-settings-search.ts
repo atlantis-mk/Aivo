@@ -50,6 +50,14 @@ export function filterPlugins(items: PluginListItem[], query: string) {
   });
 }
 
+export function isApplicationPlugin(item: PluginListItem) {
+  const keywords = item.plugin.manifest.keywords ?? [];
+  return (
+    keywords.some((keyword) => /app|application|connector/i.test(keyword)) ||
+    Boolean(item.plugin.manifest.hooks?.length)
+  );
+}
+
 export function filterServers(items: MCPServerListItem[], query: string) {
   const normalized = normalizeSearch(query);
   if (!normalized) {

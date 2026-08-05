@@ -172,7 +172,7 @@ func isMCPTool(spec domain.ToolSpec) bool {
 func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.ToolExecutionContext) ([]string, map[string]any, error) {
 	switch name {
 	case "bash":
-		input, err := parseBashArgs(args)
+		input, err := parsePrimitiveBashArgs(args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -312,7 +312,31 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 			}
 		}
 		return paths, map[string]any{"files": files, "diff": diff.String(), "patchText": patchText, "patchTextPreview": bounded(patchText, 4000), "riskLevel": "high", "rememberScope": "exact_paths"}, nil
-	case "write_file":
+	case "write", "write_file":
+		if name == "write" {
+			var input struct {
+				Path    string `json:"path"`
+				Content string `json:"content"`
+			}
+			if err := decodeStrictToolArgs(args, &input); err != nil {
+				return nil, nil, err
+			}
+			path := filepath.ToSlash(filepath.Clean(input.Path))
+			oldText := ""
+			baseHash := "<missing>"
+			if target, err := safeTargetForWrite(execCtx.WorkspaceRoot, path); err == nil {
+				if raw, readErr := os.ReadFile(target); readErr == nil {
+					oldText = string(raw)
+					if hash, exists, _ := fileHashIfExists(target); exists {
+						baseHash = hash
+					}
+				}
+			}
+			diff := simpleFileDiff(path, path, oldText, input.Content)
+			file := map[string]any{"path": path, "fullPath": fullWorkspacePath(execCtx.WorkspaceRoot, path), "type": "write", "diff": bounded(diff, primitiveDiffMaxChars), "baseHash": baseHash, "currentHash": baseHash}
+			storePreparedExpectedHash(execCtx.ToolCallID, path, baseHash)
+			return []string{path}, map[string]any{"files": []map[string]any{file}, "diff": bounded(diff, primitiveDiffMaxChars), "riskLevel": "high", "rememberScope": "exact_paths"}, nil
+		}
 		input, err := parseWriteFileArgs(args)
 		if err != nil {
 			return nil, nil, err
@@ -337,7 +361,41 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 		storePreparedExpectedHash(execCtx.ToolCallID, path, baseHash)
 		file := map[string]any{"path": path, "fullPath": fullWorkspacePath(execCtx.WorkspaceRoot, path), "type": "write", "additions": additions, "deletions": deletions, "diff": diff, "baseHash": baseHash, "currentHash": baseHash}
 		return []string{path}, map[string]any{"files": []map[string]any{file}, "diff": diff, "riskLevel": "high", "rememberScope": "exact_paths"}, nil
-	case "edit_file":
+	case "edit", "edit_file":
+		if name == "edit" {
+			var input struct {
+				Path  string          `json:"path"`
+				Edits []primitiveEdit `json:"edits"`
+			}
+			if err := decodeStrictToolArgs(args, &input); err != nil {
+				return nil, nil, err
+			}
+			path := filepath.ToSlash(filepath.Clean(input.Path))
+			target, err := safeTargetForWrite(execCtx.WorkspaceRoot, path)
+			if err != nil {
+				return nil, nil, err
+			}
+			raw, err := os.ReadFile(target)
+			if err != nil {
+				return nil, nil, err
+			}
+			before := string(raw)
+			after := before
+			for _, item := range input.Edits {
+				if strings.Count(before, item.OldText) != 1 {
+					return nil, nil, errors.New("each oldText must occur exactly once")
+				}
+				after = strings.Replace(after, item.OldText, item.NewText, 1)
+			}
+			diff := bounded(simpleFileDiff(path, path, before, after), primitiveDiffMaxChars)
+			baseHash := ""
+			if snapshot, snapErr := snapshotForBytes(path, target, raw, "all", false); snapErr == nil {
+				baseHash = snapshot.SHA256
+			}
+			file := map[string]any{"path": path, "fullPath": fullWorkspacePath(execCtx.WorkspaceRoot, path), "type": "edit", "diff": diff, "baseHash": baseHash, "currentHash": baseHash}
+			storePreparedExpectedHash(execCtx.ToolCallID, path, baseHash)
+			return []string{path}, map[string]any{"files": []map[string]any{file}, "diff": diff, "riskLevel": "high", "rememberScope": "exact_paths"}, nil
+		}
 		input, err := parseEditFileArgs(args)
 		if err != nil {
 			return nil, nil, err
@@ -390,7 +448,10 @@ func deniedPathReason(paths []string) string {
 		if clean == "." || clean == "" {
 			continue
 		}
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+		if filepath.IsAbs(clean) {
+			return workspaceRelativePathErrorMessage
+		}
+		if clean == ".." || strings.HasPrefix(clean, "../") {
 			return "path escapes workspace root"
 		}
 		if strings.HasPrefix(clean, ".git/") || clean == ".git" {

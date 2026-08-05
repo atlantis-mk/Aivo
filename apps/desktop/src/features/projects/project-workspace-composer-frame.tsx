@@ -113,11 +113,11 @@ export function ProjectWorkspaceComposerFrame({
     <div
       ref={composerFrameRef}
       className={cn(
-        "absolute left-1/2 z-30 w-[calc(100%-2rem)] max-w-[680px] -translate-x-1/2 sm:w-[calc(100%-48px)]",
+        "absolute left-1/2 z-30 w-[calc(100%-2rem)] max-w-[720px] -translate-x-1/2 sm:w-[calc(100%-48px)]",
         showConversationLayout
           ? "bottom-[var(--conversation-composer-bottom)] will-change-[bottom,transform] sm:bottom-[var(--conversation-composer-bottom-sm)]"
-          : "top-[var(--empty-composer-top)] will-change-[top,transform]",
-        "transition-[bottom,top,transform,margin] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          : "bottom-[var(--conversation-composer-bottom)] will-change-[bottom,transform] sm:bottom-[var(--conversation-composer-bottom-sm)]",
+        "transition-[bottom,transform,margin] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
         showConversationLayout &&
           isPinnedSummaryOpen &&
           shouldShiftPinnedSummaryLayout &&

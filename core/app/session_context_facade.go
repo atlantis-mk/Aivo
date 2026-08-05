@@ -146,22 +146,28 @@ func (s *Service) ForkSession(ctx context.Context, input domain.ForkSessionReque
 }
 
 func (s *Service) CreateOrUpdateCodingContext(ctx context.Context, sessionID string, projectPath string) (domain.CodingContext, error) {
+	cc := s.buildCodingContext(ctx, sessionID, projectPath, true)
+	return s.store.UpsertCodingContext(ctx, cc)
+}
+
+func (s *Service) buildCodingContext(ctx context.Context, sessionID string, projectPath string, preserveCWD bool) domain.CodingContext {
 	abs, err := filepath.Abs(strings.TrimSpace(projectPath))
 	if err != nil {
 		abs = strings.TrimSpace(projectPath)
 	}
-	current, _ := s.store.GetCodingContext(ctx, sessionID)
 	cwd := abs
-	if restored := workspaceInternalCWD(abs, current.CWD); restored != "" {
-		cwd = restored
+	if preserveCWD {
+		current, _ := s.store.GetCodingContext(ctx, sessionID)
+		if restored := workspaceInternalCWD(abs, current.CWD); restored != "" {
+			cwd = restored
+		}
 	}
 	changed := lines(gitOutput(ctx, abs, "status", "--short"))
-	cc := domain.CodingContext{
+	return domain.CodingContext{
 		SessionID: sessionID, ProjectPath: abs, GitBranch: strings.TrimSpace(gitOutput(ctx, abs, "branch", "--show-current")),
 		CommitSHA: strings.TrimSpace(gitOutput(ctx, abs, "rev-parse", "HEAD")), RepoURL: strings.TrimSpace(gitOutput(ctx, abs, "config", "--get", "remote.origin.url")),
 		ChangedFiles: changed, LanguageStack: detectLanguageStack(abs), PackageManager: detectPackageManager(abs), CWD: cwd, Permissions: []string{"local-filesystem"}, TimeCreated: domain.NowString(s.now()), TimeUpdated: domain.NowString(s.now()),
 	}
-	return s.store.UpsertCodingContext(ctx, cc)
 }
 
 func (s *Service) ResumeRecap(ctx context.Context, input domain.ResumeSessionRequest) (domain.ResumeRecap, error) {
