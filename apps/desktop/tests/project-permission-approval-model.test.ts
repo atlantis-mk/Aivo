@@ -5,6 +5,7 @@ import {
   permissionApprovalTarget,
   permissionApprovalTitle,
   permissionCommand,
+  permissionMCPRegistration,
   permissionProject,
   permissionRememberLabel,
 } from "../src/features/projects/project-permission-approval-model.ts";
@@ -64,4 +65,41 @@ test("project association approval carries the permanent-binding warning state",
     immutableAssociation: true,
   });
   assert.equal(permissionRememberLabel(request, command), "记住此项目操作");
+});
+
+test("MCP registration approval exposes the exact global source without a reusable grant", () => {
+  const request = permission("aivo_tools_register_mcp", {
+    registrationKind: "mcp",
+    registrationServerId: "github_mcp",
+    registrationName: "GitHub MCP",
+    registrationTransport: "streamable_http",
+    registrationTarget: "https://mcp.example.test/v1",
+    registrationRoots: ["/Users/example/Aivo"],
+    registrationAuth: "bearer",
+    registrationBearerTokenEnv: "GITHUB_TOKEN",
+    registrationGlobal: true,
+    rememberScope: "never",
+  });
+  const command = permissionCommand(request);
+
+  assert.equal(permissionApprovalTitle(request, command), "批准注册 MCP 工具");
+  assert.equal(
+    permissionApprovalTarget(request, command),
+    "https://mcp.example.test/v1",
+  );
+  assert.deepEqual(permissionMCPRegistration(request), {
+    id: "github_mcp",
+    name: "GitHub MCP",
+    transport: "streamable_http",
+    target: "https://mcp.example.test/v1",
+    cwd: undefined,
+    roots: ["/Users/example/Aivo"],
+    auth: "bearer",
+    bearerTokenEnv: "GITHUB_TOKEN",
+    global: true,
+  });
+  assert.equal(
+    permissionRememberLabel(request, command),
+    "此注册必须每次单独确认",
+  );
 });

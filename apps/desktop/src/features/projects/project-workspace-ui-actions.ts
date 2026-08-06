@@ -18,6 +18,7 @@ export function useProjectWorkspaceUiActions({
   retryConversationTurn,
   selectSidebarConversation,
   setPinnedSummaryOpen,
+  setExtensionSettingsDrawerOpen,
   setToolActivationDialogOpen,
   startNewConversation,
   startNewProjectConversation,
@@ -38,6 +39,7 @@ export function useProjectWorkspaceUiActions({
   retryConversationTurn: (turn: ConversationTurn) => Promise<void>;
   selectSidebarConversation: (session: domain.Session) => Promise<void>;
   setPinnedSummaryOpen: Dispatch<SetStateAction<boolean>>;
+  setExtensionSettingsDrawerOpen: Dispatch<SetStateAction<boolean>>;
   setToolActivationDialogOpen: Dispatch<SetStateAction<boolean>>;
   startNewConversation: () => void;
   startNewProjectConversation: (projectPath: string) => void;
@@ -70,6 +72,10 @@ export function useProjectWorkspaceUiActions({
   const openToolActivationDialog = useCallback(() => {
     setToolActivationDialogOpen(true);
   }, [setToolActivationDialogOpen]);
+
+  const openExtensionSettingsDrawer = useCallback(() => {
+    setExtensionSettingsDrawerOpen(true);
+  }, [setExtensionSettingsDrawerOpen]);
 
   const openParentSession = useCallback(() => {
     void openConversationById(activeParentSessionId);
@@ -108,6 +114,7 @@ export function useProjectWorkspaceUiActions({
     applyToolActivityFileStateFromSidebar,
     conversationTimelineHandlers,
     openParentSession,
+    openExtensionSettingsDrawer,
     openToolActivationDialog,
     selectChatConversation,
     startChatConversation,

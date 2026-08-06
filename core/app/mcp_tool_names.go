@@ -19,7 +19,7 @@ func mcpServerToolPrefix(server domain.MCPServerConfig) string {
 	return generatedToolName("mcp", prefix)
 }
 
-// sanitizeMCPExtensionNameComponent produces one stable Manifest v1 namespace
+// sanitizeMCPExtensionNameComponent produces one stable Manifest v2 namespace
 // component. The original MCP tool name is retained separately for execution.
 func sanitizeMCPExtensionNameComponent(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))

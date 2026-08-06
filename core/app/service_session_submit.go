@@ -98,9 +98,6 @@ func (s *Service) submitSessionMessage(
 		return domain.PreparedSessionTurn{}, err
 	}
 	_, _ = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: input.SessionID, TurnID: turn.ID, Status: domain.ExecutionStatusRunning, Reason: "turn running"})
-	if s.pluginManager != nil {
-		_ = s.pluginManager.InvokeHook(ctx, "on_session_start", map[string]any{"sessionId": input.SessionID, "turnId": turn.ID, "agentMode": modeDef.ID})
-	}
 	history, err := s.modelVisibleSessionHistory(ctx, input.SessionID)
 	if err != nil {
 		_, _ = s.FailTurn(ctx, domain.FailTurnRequest{TurnID: turn.ID, Error: err.Error()})

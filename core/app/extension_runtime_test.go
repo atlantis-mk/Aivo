@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,11 +22,11 @@ import (
 	"aivo/core/domain"
 )
 
-func TestLoadExtensionManifestV1IsDeclarativeAndHashesSchemas(t *testing.T) {
+func TestLoadExtensionManifestV2IsDeclarativeAndHashesSchemas(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "schemas", "echo.json"), `{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`, 0o600)
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example_echo", "name": "Echo", "version": "1.0.0", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example_echo", "name": "Echo", "version": "1.0.0", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "process", "command": "bin/echo-extension", "transport": "stdio"},
 		"contributes": map[string]any{"tools": []any{map[string]any{"name": "example_echo", "description": "Echo text", "schema": "schemas/echo.json", "activation": "auto"}}},
 	})
@@ -48,7 +52,7 @@ func TestLoadExtensionManifestV1IsDeclarativeAndHashesSchemas(t *testing.T) {
 func TestLoadExtensionManifestRejectsReservedNamesAndEscapingAssets(t *testing.T) {
 	root := t.TempDir()
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.bad", "name": "Bad", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.bad", "name": "Bad", "version": "1", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "builtin"},
 		"contributes": map[string]any{"tools": []any{map[string]any{"name": "read", "schema": map[string]any{"type": "object"}}}},
 	})
@@ -56,7 +60,7 @@ func TestLoadExtensionManifestRejectsReservedNamesAndEscapingAssets(t *testing.T
 		t.Fatal("reserved core tool was accepted")
 	}
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.bad", "name": "Bad", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.bad", "name": "Bad", "version": "1", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "builtin"},
 		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "bad", "kind": "skill", "path": "../secret"}}},
 	})
@@ -65,7 +69,100 @@ func TestLoadExtensionManifestRejectsReservedNamesAndEscapingAssets(t *testing.T
 	}
 }
 
-type builtinExtensionTestClient struct{ events *[]string }
+func TestLoadExtensionManifestValidatesDynamicServiceTransport(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "bin", "service"), "service", 0o700)
+	base := map[string]any{
+		"schemaVersion": 2, "id": "com.example.dynamic", "name": "Dynamic", "version": "1", "apiVersion": "2",
+		"runtime": map[string]any{"type": "service", "command": "bin/service", "transport": "dynamic-http"},
+	}
+	writeTestExtensionManifest(t, root, base)
+	if _, err := LoadExtensionManifest(root); err != nil {
+		t.Fatalf("dynamic service manifest failed: %v", err)
+	}
+
+	base["runtime"] = map[string]any{"type": "service", "command": "bin/service", "transport": "dynamic-http", "url": "http://127.0.0.1:45000"}
+	writeTestExtensionManifest(t, root, base)
+	if _, err := LoadExtensionManifest(root); err == nil || !strings.Contains(err.Error(), "must omit runtime.url") {
+		t.Fatalf("dynamic service URL error = %v", err)
+	}
+
+	base["runtime"] = map[string]any{"type": "service", "command": "bin/service", "transport": "unknown"}
+	writeTestExtensionManifest(t, root, base)
+	if _, err := LoadExtensionManifest(root); err == nil || !strings.Contains(err.Error(), "http or dynamic-http") {
+		t.Fatalf("unknown service transport error = %v", err)
+	}
+}
+
+func TestLoadExtensionManifestV2ValidatesRuntimeMessagingPermission(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "bin", "service"), "service", 0o700)
+	manifest := map[string]any{
+		"schemaVersion": 2, "id": "com.example.messaging", "name": "Messaging", "version": "1", "apiVersion": "2",
+		"runtime":     map[string]any{"type": "service", "command": "bin/service", "transport": "dynamic-http"},
+		"permissions": []any{"runtime.messaging"},
+	}
+	writeTestExtensionManifest(t, root, manifest)
+	loaded, err := LoadExtensionManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loaded.Manifest.Permissions, []string{"runtime.messaging"}) {
+		t.Fatalf("permissions = %#v", loaded.Manifest.Permissions)
+	}
+
+	for name, testCase := range map[string]struct {
+		schema int
+		api    string
+		values []any
+		want   string
+	}{
+		"v1 unsupported": {1, "1", nil, "supported 2/2 pair"},
+		"mixed versions": {2, "1", nil, "supported 2/2 pair"},
+		"unknown":        {2, "2", []any{"tabs"}, "invalid or duplicate extension permission"},
+		"duplicate":      {2, "2", []any{"runtime.messaging", "runtime.messaging"}, "invalid or duplicate extension permission"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			manifest["schemaVersion"] = testCase.schema
+			manifest["apiVersion"] = testCase.api
+			manifest["permissions"] = testCase.values
+			writeTestExtensionManifest(t, root, manifest)
+			if _, err := LoadExtensionManifest(root); err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("invalid manifest error = %v; want %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func TestExtensionToolViewRefPrefersToolDetailAndUsesPageFallback(t *testing.T) {
+	manifest := domain.ExtensionManifest{
+		ID: "com.example.views",
+		Contributes: domain.ExtensionContributions{Views: []domain.ExtensionViewContribution{
+			{ID: "page", Title: "Page", Surfaces: []string{"page"}, Tools: []string{"example_tool"}},
+			{ID: "detail", Title: "Detail", Surfaces: []string{"page", "tool-detail"}, Tools: []string{"example_tool"}},
+			{ID: "other", Title: "Other", Surfaces: []string{"tool-detail"}, Tools: []string{"other_tool"}},
+		}},
+	}
+
+	ref := extensionToolViewRef(manifest, "example_tool")
+	if ref == nil || ref.ExtensionID != manifest.ID || ref.ViewID != "detail" || ref.Surface != "tool-detail" || ref.Title != "Detail" {
+		t.Fatalf("tool detail ref = %#v", ref)
+	}
+
+	manifest.Contributes.Views = manifest.Contributes.Views[:1]
+	ref = extensionToolViewRef(manifest, "example_tool")
+	if ref == nil || ref.ViewID != "page" || ref.Surface != "page" {
+		t.Fatalf("page fallback ref = %#v", ref)
+	}
+	if ref := extensionToolViewRef(manifest, "missing_tool"); ref != nil {
+		t.Fatalf("missing tool ref = %#v; want nil", ref)
+	}
+}
+
+type builtinExtensionTestClient struct {
+	events     *[]string
+	executeErr error
+}
 
 func (c *builtinExtensionTestClient) Initialize(context.Context, domain.ExtensionManifest) error {
 	*c.events = append(*c.events, "initialize")
@@ -73,6 +170,9 @@ func (c *builtinExtensionTestClient) Initialize(context.Context, domain.Extensio
 }
 func (c *builtinExtensionTestClient) Execute(_ context.Context, name string, _ json.RawMessage, _ domain.ToolExecutionContext) (domain.ToolResult, error) {
 	*c.events = append(*c.events, "execute:"+name)
+	if c.executeErr != nil {
+		return domain.ToolResult{Name: name}, c.executeErr
+	}
 	return domain.ToolResult{Name: name, OK: true, Content: "ok"}, nil
 }
 func (c *builtinExtensionTestClient) UIEvent(context.Context, string, string, any) (any, error) {
@@ -120,16 +220,21 @@ func (c *versionedBuiltinTestClient) Shutdown(context.Context) error { return ni
 func TestExtensionSupervisorSeparatesDiscoveryTrustActivationAndExecution(t *testing.T) {
 	root := t.TempDir()
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.builtin", "name": "Builtin", "version": "1.0.0", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.builtin", "name": "Builtin", "version": "1.0.0", "apiVersion": "2",
 		"runtime": map[string]any{"type": "builtin"},
 		"contributes": map[string]any{
 			"tools":       []any{map[string]any{"name": "example_echo", "description": "Echo", "schema": map[string]any{"type": "object"}, "activation": "manual"}},
+			"views":       []any{map[string]any{"id": "echo-detail", "title": "Echo detail", "type": "web", "route": "/ui", "surfaces": []string{"tool-detail"}, "tools": []string{"example_echo"}}},
 			"environment": map[string]any{"id": "example.environment"},
 		},
 	})
 	events := []string{}
 	supervisor := NewExtensionSupervisor()
-	supervisor.RegisterBuiltin("com.example.builtin", func() extensionRuntimeClient { return &builtinExtensionTestClient{events: &events} })
+	var client *builtinExtensionTestClient
+	supervisor.RegisterBuiltin("com.example.builtin", func() extensionRuntimeClient {
+		client = &builtinExtensionTestClient{events: &events}
+		return client
+	})
 	status, err := supervisor.Discover(root)
 	if err != nil {
 		t.Fatal(err)
@@ -165,8 +270,17 @@ func TestExtensionSupervisorSeparatesDiscoveryTrustActivationAndExecution(t *tes
 		t.Fatalf("activated specs = %#v", assembly.Specs)
 	}
 	result := supervisor.Execute(context.Background(), status.ID, "example_echo", json.RawMessage(`{}`), domain.ToolExecutionContext{ToolSnapshot: &assembly.Snapshot})
-	if !result.OK || !reflect.DeepEqual(events, []string{"initialize", "execute:environment.read", "execute:example_echo"}) {
+	if !result.OK || result.Details == nil || result.Details.View == nil || result.Details.View.ViewID != "echo-detail" || !reflect.DeepEqual(events, []string{"initialize", "execute:environment.read", "execute:example_echo"}) {
 		t.Fatalf("result = %#v, events = %v", result, events)
+	}
+	modelJSON, err := json.Marshal(result)
+	if err != nil || strings.Contains(string(modelJSON), "echo-detail") {
+		t.Fatalf("model result exposed Host-only view metadata: %s, err = %v", modelJSON, err)
+	}
+	client.executeErr = errors.New("extension failure")
+	failed := supervisor.Execute(context.Background(), status.ID, "example_echo", json.RawMessage(`{}`), domain.ToolExecutionContext{ToolSnapshot: &assembly.Snapshot})
+	if failed.OK || failed.Details == nil || failed.Details.View == nil || failed.Details.View.ViewID != "echo-detail" {
+		t.Fatalf("failed result lost Host-only view metadata: %#v", failed)
 	}
 	status, err = supervisor.Stop(context.Background(), status.ID)
 	if err != nil || status.State != domain.ExtensionStateStopped || events[len(events)-1] != "shutdown" {
@@ -177,7 +291,7 @@ func TestExtensionSupervisorSeparatesDiscoveryTrustActivationAndExecution(t *tes
 func TestExtensionPolicyInterceptsBeforeToolExecution(t *testing.T) {
 	root := t.TempDir()
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.policy", "name": "Policy", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.policy", "name": "Policy", "version": "1", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "builtin"},
 		"contributes": map[string]any{"policies": []string{"example.guard"}},
 	})
@@ -195,7 +309,7 @@ func TestExtensionPolicyInterceptsBeforeToolExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := NewToolRuntime(registry, t.TempDir())
-	runtime.PluginHooks = supervisor
+	runtime.ExtensionHooks = supervisor
 	result := runtime.Execute(context.Background(), domain.ChatToolCall{Name: "guarded", Arguments: json.RawMessage(`{}`)})
 	if result.OK || result.ToolError == nil || result.ToolError.Code != "policy_denied" || result.Error != "blocked by test policy" {
 		t.Fatalf("policy result = %#v", result)
@@ -206,7 +320,7 @@ func TestExtensionUpdateKeepsFrozenGenerationAndFailedUpdateKeepsCurrent(t *test
 	root := t.TempDir()
 	writeVersion := func(version string) {
 		writeTestExtensionManifest(t, root, map[string]any{
-			"schemaVersion": 1, "id": "com.example_versioned", "name": "Versioned", "version": version, "apiVersion": "1",
+			"schemaVersion": 2, "id": "com.example_versioned", "name": "Versioned", "version": version, "apiVersion": "2",
 			"runtime":     map[string]any{"type": "builtin"},
 			"contributes": map[string]any{"tools": []any{map[string]any{"name": "example_versioned", "description": version, "schema": map[string]any{"type": "object"}}}},
 		})
@@ -274,11 +388,50 @@ func TestExtensionUpdateKeepsFrozenGenerationAndFailedUpdateKeepsCurrent(t *test
 	}
 }
 
+func TestExtensionRemoveShutsDownRetiredGenerations(t *testing.T) {
+	writeStaticVersion := func(root string, version string) LoadedExtension {
+		writeTestExtensionManifest(t, root, map[string]any{
+			"schemaVersion": 2, "id": "com.example.retired", "name": "Retired", "version": version, "apiVersion": "2",
+			"runtime": map[string]any{"type": "static"},
+		})
+		loaded, err := LoadExtensionManifest(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loaded
+	}
+	first := writeStaticVersion(t.TempDir(), "1.0.0")
+	second := writeStaticVersion(t.TempDir(), "2.0.0")
+	supervisor := NewExtensionSupervisor()
+	if _, err := supervisor.Discover(first.Root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Enable(context.Background(), first.Manifest.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Discover(second.Root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := supervisor.Enable(context.Background(), second.Manifest.ID); err != nil {
+		t.Fatal(err)
+	}
+	retired := supervisor.retired[first.Manifest.ID][first.Integrity]
+	if retired == nil || retired.client == nil {
+		t.Fatal("first generation was not retained during update")
+	}
+	if err := supervisor.Remove(context.Background(), first.Manifest.ID); err != nil {
+		t.Fatal(err)
+	}
+	if retired.client != nil || supervisor.items[first.Manifest.ID] != nil || supervisor.retired[first.Manifest.ID] != nil {
+		t.Fatal("remove did not tear down all extension generations")
+	}
+}
+
 func TestExecutableExtensionRequiresIntegrityBoundTrust(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "extension"), "#!/bin/sh\nexit 0\n", 0o700)
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.process", "name": "Process", "version": "1.0.0", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.process", "name": "Process", "version": "1.0.0", "apiVersion": "2",
 		"runtime": map[string]any{"type": "process", "command": "extension", "transport": "stdio"},
 	})
 	supervisor := NewExtensionSupervisor()
@@ -328,7 +481,7 @@ func TestExtensionProcessProtocolCredentialsCatalogAndLifecycle(t *testing.T) {
 	script := "#!/bin/sh\nexec " + strconv.Quote(os.Args[0]) + " -test.run=TestExtensionProcessHelper -- extension-process\n"
 	writeTestFile(t, filepath.Join(root, "bin", "extension"), script, 0o700)
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.process", "name": "Process", "version": "1.0.0", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.process", "name": "Process", "version": "1.0.0", "apiVersion": "2",
 		"runtime":      map[string]any{"type": "process", "command": "bin/extension", "transport": "stdio"},
 		"requirements": map[string]any{"credentials": []string{"demo"}},
 		"contributes":  map[string]any{"tools": []any{map[string]any{"name": "example_echo", "description": "Echo", "schema": map[string]any{"type": "object"}, "activation": "auto"}}},
@@ -403,6 +556,174 @@ func TestExtensionProcessHelper(t *testing.T) {
 	}
 }
 
+func TestDynamicExtensionServiceEndpointHandshakeAndViewRouting(t *testing.T) {
+	firstSupervisor, firstStatus := startDynamicTestExtension(t, "com.example.dynamic_one")
+	defer func() { _, _ = firstSupervisor.Stop(context.Background(), firstStatus.ID) }()
+	secondSupervisor, secondStatus := startDynamicTestExtension(t, "com.example.dynamic_two")
+	defer func() { _, _ = secondSupervisor.Stop(context.Background(), secondStatus.ID) }()
+
+	firstView, err := firstSupervisor.ResolveView(context.Background(), firstStatus.ID, "detail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondView, err := secondSupervisor.ResolveView(context.Background(), secondStatus.ID, "detail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstURL, firstErr := url.Parse(firstView.BackendURL)
+	secondURL, secondErr := url.Parse(secondView.BackendURL)
+	if firstErr != nil || secondErr != nil || firstURL.Port() == "" || secondURL.Port() == "" || firstURL.Port() == secondURL.Port() {
+		t.Fatalf("dynamic view URLs = %q, %q; parse errors = %v, %v", firstView.BackendURL, secondView.BackendURL, firstErr, secondErr)
+	}
+	if firstURL.Path != "/ui" || firstView.BackendToken == "" || strings.Contains(firstView.LogicalURL, firstURL.Port()) {
+		t.Fatalf("first dynamic view descriptor = %#v", firstView)
+	}
+
+	result := firstSupervisor.Execute(context.Background(), firstStatus.ID, "dynamic_service", json.RawMessage(`{"message":"hello"}`), domain.ToolExecutionContext{ToolCallID: "dynamic-op"})
+	if !result.OK || result.Content != "dynamic service ok" {
+		t.Fatalf("dynamic tool result = %#v", result)
+	}
+	action, err := firstSupervisor.InvokeViewAction(context.Background(), firstStatus.ID, "detail", "view.refresh", map[string]any{"operationId": "dynamic-op"})
+	if err != nil || action.(map[string]any)["ok"] != true {
+		t.Fatalf("dynamic action = %#v, err = %v", action, err)
+	}
+}
+
+func TestDynamicServiceReadinessRejectsInvalidFramesAndOrigins(t *testing.T) {
+	valid := `{"protocol":"aivo-extension-service/1","url":"http://127.0.0.1:49152"}` + "\n"
+	if endpoint, err := readDynamicServiceEndpoint(context.Background(), io.NopCloser(strings.NewReader(valid))); err != nil || endpoint != "http://127.0.0.1:49152" {
+		t.Fatalf("valid endpoint = %q, err = %v", endpoint, err)
+	}
+
+	tests := []struct {
+		name  string
+		frame string
+	}{
+		{name: "missing newline", frame: strings.TrimSuffix(valid, "\n")},
+		{name: "invalid JSON", frame: "not-json\n"},
+		{name: "wrong protocol", frame: `{"protocol":"other","url":"http://127.0.0.1:49152"}` + "\n"},
+		{name: "public origin", frame: `{"protocol":"aivo-extension-service/1","url":"http://example.com:49152"}` + "\n"},
+		{name: "zero port", frame: `{"protocol":"aivo-extension-service/1","url":"http://127.0.0.1:0"}` + "\n"},
+		{name: "credentials", frame: `{"protocol":"aivo-extension-service/1","url":"http://user@127.0.0.1:49152"}` + "\n"},
+		{name: "path", frame: `{"protocol":"aivo-extension-service/1","url":"http://127.0.0.1:49152/api"}` + "\n"},
+		{name: "query", frame: `{"protocol":"aivo-extension-service/1","url":"http://127.0.0.1:49152/?token=x"}` + "\n"},
+		{name: "oversized", frame: strings.Repeat("x", extensionServiceHandshakeMaxFrame+1) + "\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if endpoint, err := readDynamicServiceEndpoint(context.Background(), io.NopCloser(strings.NewReader(tt.frame))); err == nil {
+				t.Fatalf("endpoint = %q, want refusal", endpoint)
+			}
+		})
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := readDynamicServiceEndpoint(cancelled, io.NopCloser(strings.NewReader(""))); err == nil {
+		t.Fatal("cancelled readiness was accepted")
+	}
+
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	if _, err := readDynamicServiceEndpointWithTimeout(context.Background(), reader, 5*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("timeout error = %v", err)
+	}
+}
+
+func TestDynamicExtensionServiceHelperProcess(t *testing.T) {
+	if !hasTestArgument("dynamic-extension-service") {
+		return
+	}
+	token := os.Getenv("AIVO_EXTENSION_BEARER_TOKEN")
+	if len(token) != 64 {
+		os.Exit(2)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		os.Exit(3)
+	}
+	address := listener.Addr().(*net.TCPAddr)
+	_, _ = fmt.Fprintf(os.Stdout, `{"protocol":"%s","url":"http://127.0.0.1:%d"}`+"\n", extensionServiceHandshakeProtocol, address.Port)
+	service := &http.Server{}
+	service.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var request struct {
+			ID     string `json:"id"`
+			Method string `json:"method"`
+		}
+		if json.NewDecoder(r.Body).Decode(&request) != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		result := map[string]any{}
+		switch request.Method {
+		case "catalog/list":
+			result["tools"] = []any{map[string]any{"name": "dynamic_service", "schemaHash": toolSchemaHash(domain.ToolSpec{InputSchema: map[string]any{"type": "object"}})}}
+		case "tool/execute":
+			result = map[string]any{"ok": true, "content": "dynamic service ok"}
+		case "ui/event":
+			result = map[string]any{"ok": true}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+		if request.Method == "extension/shutdown" {
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				os.Exit(0)
+			}()
+		}
+	})
+	if service.Serve(listener) != nil {
+		os.Exit(4)
+	}
+}
+
+func startDynamicTestExtension(t *testing.T, id string) (*ExtensionSupervisor, domain.ExtensionStatus) {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executableRaw, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	helperName := "dynamic-service-helper" + filepath.Ext(executable)
+	helperPath := filepath.Join(root, "bin", helperName)
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helperPath, executableRaw, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 2, "id": id, "name": "Dynamic service", "version": "1", "apiVersion": "2",
+		"runtime": map[string]any{
+			"type": "service", "command": filepath.ToSlash(filepath.Join("bin", helperName)), "transport": "dynamic-http",
+			"args": []string{"-test.run=TestDynamicExtensionServiceHelperProcess$", "--", "dynamic-extension-service"},
+		},
+		"contributes": map[string]any{
+			"tools": []any{map[string]any{"name": "dynamic_service", "description": "Dynamic", "schema": map[string]any{"type": "object"}}},
+			"views": []any{map[string]any{"id": "detail", "title": "Detail", "type": "web", "route": "/ui", "surfaces": []string{"tool-detail"}, "tools": []string{"dynamic_service"}, "actions": []string{"view.refresh"}}},
+		},
+	})
+	supervisor := NewExtensionSupervisor()
+	status, err := supervisor.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err = supervisor.Trust(status.ID, status.Integrity); err != nil {
+		t.Fatal(err)
+	}
+	if status, err = supervisor.Enable(context.Background(), status.ID); err != nil {
+		t.Fatal(err)
+	}
+	return supervisor, status
+}
+
 func TestServiceExternalAndStaticExtensionRuntimes(t *testing.T) {
 	schemaHash := toolSchemaHash(domain.ToolSpec{InputSchema: map[string]any{"type": "object"}})
 	serviceHandler := func(expectedBearer func(string) bool) http.HandlerFunc {
@@ -435,8 +756,9 @@ func TestServiceExternalAndStaticExtensionRuntimes(t *testing.T) {
 	localRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(localRoot, "bin", "service"), "#!/bin/sh\nsleep 30\n", 0o700)
 	writeTestExtensionManifest(t, localRoot, map[string]any{
-		"schemaVersion": 1, "id": "com.example_service", "name": "Service", "version": "1", "apiVersion": "1",
-		"runtime": map[string]any{"type": "service", "command": "bin/service", "url": localServer.URL},
+		"schemaVersion": 2, "id": "com.example_service", "name": "Service", "version": "1", "apiVersion": "2",
+		"runtime":     map[string]any{"type": "service", "command": "bin/service", "url": localServer.URL},
+		"permissions": []any{"runtime.messaging"},
 		"contributes": map[string]any{
 			"tools": []any{map[string]any{"name": "example_service", "schema": map[string]any{"type": "object"}}},
 			"views": []any{map[string]any{"id": "detail", "title": "Detail", "type": "web", "route": "/ui", "surfaces": []string{"tool-detail"}, "tools": []string{"example_service"}, "actions": []string{"view.refresh"}}},
@@ -455,7 +777,7 @@ func TestServiceExternalAndStaticExtensionRuntimes(t *testing.T) {
 		t.Fatal(err)
 	}
 	view, err := localSupervisor.ResolveView(context.Background(), localStatus.ID, "detail")
-	if err != nil || view.BackendToken == "" || !strings.HasPrefix(view.LogicalURL, "aivo-extension://") {
+	if err != nil || view.BackendToken == "" || !strings.HasPrefix(view.LogicalURL, "aivo-extension://") || !reflect.DeepEqual(view.Permissions, []string{"runtime.messaging"}) {
 		t.Fatalf("view = %#v, err = %v", view, err)
 	}
 	if err := localSupervisor.OpenView(context.Background(), localStatus.ID); err != nil {
@@ -481,7 +803,7 @@ func TestServiceExternalAndStaticExtensionRuntimes(t *testing.T) {
 	defer externalServer.Close()
 	externalRoot := t.TempDir()
 	writeTestExtensionManifest(t, externalRoot, map[string]any{
-		"schemaVersion": 1, "id": "com.example.external", "name": "External", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.external", "name": "External", "version": "1", "apiVersion": "2",
 		"runtime":      map[string]any{"type": "external", "url": externalServer.URL},
 		"requirements": map[string]any{"credentials": []string{"service"}},
 		"contributes": map[string]any{
@@ -516,7 +838,7 @@ func TestServiceExternalAndStaticExtensionRuntimes(t *testing.T) {
 	staticRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(staticRoot, "context", "guide.md"), "safe context", 0o600)
 	writeTestExtensionManifest(t, staticRoot, map[string]any{
-		"schemaVersion": 1, "id": "com.example.static", "name": "Static", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.static", "name": "Static", "version": "1", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "static"},
 		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "guide", "kind": "skill", "path": "context/guide.md"}}},
 	})

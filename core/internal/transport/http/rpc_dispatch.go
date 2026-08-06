@@ -34,7 +34,7 @@ func (api *API) call(ctx context.Context, method string, args []json.RawMessage)
 	if result, handled, err := api.callSkillRPC(ctx, method, args); handled {
 		return result, err
 	}
-	if result, handled, err := api.callPluginRPC(ctx, method, args); handled {
+	if result, handled, err := api.callExtensionRPC(ctx, method, args); handled {
 		return result, err
 	}
 	if result, handled, err := api.callWorktreeRPC(ctx, method, args); handled {

@@ -11,6 +11,7 @@ interface Window {
     coreUrl: string;
     invoke<T>(method: string, ...args: unknown[]): Promise<T>;
     selectProjectDirectory(): Promise<string>;
+    selectExtensionDirectory(): Promise<string>;
     openExternal(target: string): Promise<void>;
     openPath(target: string): Promise<void>;
     focusWindow(): Promise<void>;
@@ -22,5 +23,37 @@ interface Window {
       surface: "page" | "dialog" | "tool-detail" | "settings" | "notification";
       context?: unknown;
     }): Promise<{ opened: boolean; extensionId: string; viewId: string; surface: string }>;
+    mountEmbeddedExtensionView(input: {
+      requestId: string;
+      extensionId: string;
+      viewId: string;
+      surface: "tool-detail" | "page";
+      context?: unknown;
+      bounds: { x: number; y: number; width: number; height: number };
+    }): Promise<{
+      mounted: boolean;
+      mountId: string;
+      extensionId: string;
+      viewId: string;
+      surface: string;
+    }>;
+    updateEmbeddedExtensionViewBounds(input: {
+      mountId: string;
+      bounds: { x: number; y: number; width: number; height: number };
+    }): Promise<{
+      updated: boolean;
+      bounds?: { x: number; y: number; width: number; height: number };
+    }>;
+    updateEmbeddedExtensionViewContext(input: {
+      mountId: string;
+      context?: unknown;
+    }): Promise<{ updated: boolean; revision?: number }>;
+    closeEmbeddedExtensionView(input: {
+      mountId?: string;
+      requestId?: string;
+    }): Promise<{ closed: boolean }>;
+    onEmbeddedExtensionViewClosed(
+      listener: (event: { mountId: string; reason: string }) => void,
+    ): () => void;
   };
 }

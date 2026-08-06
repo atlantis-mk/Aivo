@@ -70,20 +70,6 @@ func (s *Service) providerRegistryForProject(projectPath string) *ProviderRegist
 			_ = registry.RegisterDefinition(definition)
 		}
 	}
-	if s.pluginManager != nil {
-		if plugins, err := s.pluginManager.List(context.Background(), domain.PluginListInput{IncludeDisabled: true}); err == nil {
-			for _, plugin := range plugins {
-				if !plugin.Plugin.Enabled {
-					continue
-				}
-				for id, extension := range plugin.Plugin.Manifest.Providers {
-					if definition, ok := providerDefinitionFromRuntimeExtension(id, extension); ok {
-						_ = registry.RegisterDefinition(definition)
-					}
-				}
-			}
-		}
-	}
 	return registry
 }
 

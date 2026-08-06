@@ -93,6 +93,60 @@
         "changes/CHG-2026-015-global-provider-safe-tool-names/change.md": "sha256:1333212605fce56ffb1f9fefb8edfeab3d1f66a5bb3ef0414459871d07c21f1d",
         "changes/CHG-2026-015-global-provider-safe-tool-names/change.yaml": "sha256:efeaa0883286cf2803c439fa667bd56cef208e7acadd335d93c1c5f452dcacb9"
       }
+    },
+    {
+      "work_id": "CHG-2026-017-conversational-mcp-registration",
+      "status": "Verified",
+      "archived_at": "2026-08-06T00:36:17.733Z",
+      "files": {
+        "changes/CHG-2026-017-conversational-mcp-registration/change.md": "sha256:906fc39bf2c07453844416a58201fa89ea958b382ffce81a289844af9ca2a583",
+        "changes/CHG-2026-017-conversational-mcp-registration/change.yaml": "sha256:782e329eacfcb010ed38db2605bf8c855fde6de8e7e865a83e597f92e3c8c888"
+      }
+    },
+    {
+      "work_id": "CHG-2026-018-dynamic-extension-service-endpoints",
+      "status": "Verified",
+      "archived_at": "2026-08-06T04:17:32.255Z",
+      "files": {
+        "changes/CHG-2026-018-dynamic-extension-service-endpoints/change.md": "sha256:19d6e18b121d4cd35a5c4a6dad78e9c555cb0ea064c4be8f96da2a7605c13dba",
+        "changes/CHG-2026-018-dynamic-extension-service-endpoints/change.yaml": "sha256:b5a56d95ac3bb0d99c3650cbf13771bddf9313bb4d4151d77a11a15187bb50a7"
+      }
+    },
+    {
+      "work_id": "CHG-2026-020-visual-extension-installation",
+      "status": "Verified",
+      "archived_at": "2026-08-06T05:17:57.895Z",
+      "files": {
+        "changes/CHG-2026-020-visual-extension-installation/change.md": "sha256:a56dee5810df6edb19bafcfce60253807645d465d90f5345457e6a40e0bae45f",
+        "changes/CHG-2026-020-visual-extension-installation/change.yaml": "sha256:e41c63b01bb873fc560a45e7fcd6435007e30cff68fd9aff35b2f31917a4211b"
+      }
+    },
+    {
+      "work_id": "CHG-2026-021-retire-legacy-plugins",
+      "status": "Verified",
+      "archived_at": "2026-08-06T05:48:39.206Z",
+      "files": {
+        "changes/CHG-2026-021-retire-legacy-plugins/change.md": "sha256:26860f736459d160eecd53f054389a286999143d067a27676f09061d100d66bf",
+        "changes/CHG-2026-021-retire-legacy-plugins/change.yaml": "sha256:e6662b8b08367ecd3733e811353a6d046d20c3ad779139ca02e3c1d46db6eaaa"
+      }
+    },
+    {
+      "work_id": "CHG-2026-023-managed-extension-packages",
+      "status": "Verified",
+      "archived_at": "2026-08-06T06:38:33.728Z",
+      "files": {
+        "changes/CHG-2026-023-managed-extension-packages/change.md": "sha256:ce293455a0c04a5d29c3b1293fa0ae06fb71d8e0b9458a8c8682d78d84010879",
+        "changes/CHG-2026-023-managed-extension-packages/change.yaml": "sha256:d2db55d916c8448281f6df194aaff2bffcc269215b15e4d79b0bec49f392c23b"
+      }
+    },
+    {
+      "work_id": "CHG-2026-024-platform-extension-storage",
+      "status": "Verified",
+      "archived_at": "2026-08-06T06:46:25.544Z",
+      "files": {
+        "changes/CHG-2026-024-platform-extension-storage/change.md": "sha256:1c02f0fc89186ecc1d0857b52bfcec96bb097eac636db7b243bf25b6093c2248",
+        "changes/CHG-2026-024-platform-extension-storage/change.yaml": "sha256:84daff13e177c78f292579cf90de462104c27789e410bb253c4ce9ff7ffd42a7"
+      }
     }
   ]
 }

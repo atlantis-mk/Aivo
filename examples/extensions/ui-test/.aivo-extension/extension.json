@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "id": "dev.aivo.ui-test",
+  "name": "Aivo UI Test Extension",
+  "version": "0.3.0",
+  "description": "A local development extension for exercising Aivo tool-detail Web views and the bounded view bridge.",
+  "apiVersion": "2",
+  "permissions": ["runtime.messaging"],
+  "runtime": {
+    "type": "service",
+    "command": "./server.mjs",
+    "transport": "dynamic-http"
+  },
+  "contributes": {
+    "tools": [
+      {
+        "name": "ui_test_show",
+        "description": "Open an interactive test panel with a supplied message.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "Message to display in the test panel."
+            }
+          },
+          "required": ["message"],
+          "additionalProperties": false
+        },
+        "activation": "auto",
+        "capability": "test.ui"
+      }
+    ],
+    "views": [
+      {
+        "id": "ui-test-detail",
+        "title": "UI Test",
+        "type": "web",
+        "route": "/ui",
+        "surfaces": ["tool-detail"],
+        "tools": ["ui_test_show"],
+        "actions": ["test.record", "view.refresh"]
+      }
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin", "linux"]
+  }
+}

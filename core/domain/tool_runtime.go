@@ -100,6 +100,7 @@ type ToolResult struct {
 	ModelContent        string              `json:"modelContent,omitempty"`
 	ModelAttachments    []MessageAttachment `json:"-"`
 	Structured          map[string]any      `json:"structured,omitempty"`
+	Details             *ToolResultDetails  `json:"-"`
 	RetainedOutputRefs  []string            `json:"retainedOutputRefs,omitempty"`
 	Files               []ToolResultFile    `json:"files,omitempty"`
 	Error               string              `json:"error,omitempty"`
@@ -109,6 +110,10 @@ type ToolResult struct {
 	PendingApprovalID   string              `json:"pendingApprovalId,omitempty"`
 	PermissionDecision  string              `json:"permissionDecision,omitempty"`
 	PermissionRequested bool                `json:"permissionRequested,omitempty"`
+}
+
+type ToolResultDetails struct {
+	View *ExtensionToolViewRef `json:"view,omitempty"`
 }
 
 type ToolResultFile struct {

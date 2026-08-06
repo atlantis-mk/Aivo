@@ -55,21 +55,18 @@ func (s *Service) runAssistantAgentLoop(
 		}
 		resolved := s.resolveHostPreCallResources(ctx, input.SessionID, turn.ID, input.Text, modeDef.ID, strings.TrimSpace(cc.ProjectPath), registry, specs)
 		if registry != nil {
+			for name := range s.disabledCoreTools(ctx, input.SessionID) {
+				resolved.ToolActivations[name] = "disabled"
+			}
 			assembly := AssembleToolSpecsWithSources(registry, specs, resolved.ToolActivations)
 			specs = assembly.Specs
 			expectedRegistrations = assembly.ExpectedRegistrations
 			toolSnapshot = assembly.Snapshot
 		}
 		requestMessages := appendHostPreCallContext(messages, resolved.Context)
-		if s.pluginManager != nil {
-			_ = s.pluginManager.InvokeHook(ctx, "pre_llm_call", map[string]any{"sessionId": input.SessionID, "turnId": turn.ID, "toolCount": len(specs), "messageCount": len(requestMessages), "agentMode": modeDef.ID})
-		}
 		resp, activeModel, err := s.GenerateChatResponseStreamWithToolDelta(ctx, domain.ChatRequest{Messages: requestMessages, Tools: specs, Temperature: modeDef.Temperature, TopP: modeDef.TopP, Options: modeDef.Options}, requestedModel, reasoningEffort, serviceTier, onDelta, func(call domain.ChatToolCall) {
 			s.emitApplyPatchDraft(input.SessionID, turn.ID, strings.TrimSpace(cc.ProjectPath), call)
 		})
-		if s.pluginManager != nil {
-			_ = s.pluginManager.InvokeHook(ctx, "post_llm_call", map[string]any{"sessionId": input.SessionID, "turnId": turn.ID, "toolCallCount": len(resp.ToolCalls), "textLength": len(resp.Text), "agentMode": modeDef.ID})
-		}
 		if err != nil {
 			return "", activeModel, err
 		}
@@ -101,7 +98,7 @@ func (s *Service) runAssistantAgentLoop(
 		})
 		if isParallelDelegateBatch(resp.ToolCalls) && runtime != nil {
 			for _, call := range resp.ToolCalls {
-				_ = s.recordToolCallStarted(ctx, input.SessionID, turn.ID, call)
+				_ = s.recordToolCallStarted(ctx, input.SessionID, turn.ID, call, expectedRegistrations[call.Name])
 			}
 			limit := loadEffectiveRuntimeConfig(strings.TrimSpace(cc.ProjectPath)).Config.MaxParallelChildren
 			results := executeBoundedParallelToolCalls(ctx, resp.ToolCalls, limit, func(call domain.ChatToolCall) domain.ToolResult {
@@ -121,7 +118,7 @@ func (s *Service) runAssistantAgentLoop(
 			continue
 		}
 		for _, call := range resp.ToolCalls {
-			_ = s.recordToolCallStarted(ctx, input.SessionID, turn.ID, call)
+			_ = s.recordToolCallStarted(ctx, input.SessionID, turn.ID, call, expectedRegistrations[call.Name])
 			var result domain.ToolResult
 			if runtime == nil {
 				result = domain.ToolResult{CallID: call.ID, Name: call.Name, OK: false, Error: "tool runtime unavailable: this session has no workspace root"}

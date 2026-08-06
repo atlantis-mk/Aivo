@@ -40,6 +40,9 @@ func (s *Service) saveToolResultWithMetadata(ctx context.Context, sessionID stri
 	if result.Structured != nil {
 		resultMap["structured"] = result.Structured
 	}
+	if result.Details != nil {
+		resultMap["details"] = result.Details
+	}
 	if len(result.RetainedOutputRefs) > 0 {
 		resultMap["retainedOutputRefs"] = result.RetainedOutputRefs
 	}

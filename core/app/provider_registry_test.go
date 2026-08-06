@@ -440,19 +440,18 @@ func TestDeleteProviderAccountDeletesSecretReferences(t *testing.T) {
 }
 
 type memoryProviderStore struct {
-	auth              map[string]domain.ProviderAuthRecord
-	authByID          map[string]domain.ProviderAuthRecord
-	config            *domain.AppConfig
-	providers         []domain.ProviderConfig
-	modelCaches       map[string]domain.ProviderModelCache
-	health            map[string]domain.ProviderHealth
-	callEvents        []domain.ProviderCallEvent
-	plugins           []domain.PluginInstall
-	pluginDiagnostics []domain.PluginDiagnostic
-	mcpServers        []domain.MCPServerConfig
-	mcpTools          map[string][]domain.MCPToolRecord
-	savedAuth         *domain.ProviderAuthRecord
-	savedCache        *domain.ProviderModelCache
-	savedValidation   *domain.ProviderValidationResult
-	savedHealth       *domain.ProviderHealth
+	auth            map[string]domain.ProviderAuthRecord
+	authByID        map[string]domain.ProviderAuthRecord
+	config          *domain.AppConfig
+	providers       []domain.ProviderConfig
+	modelCaches     map[string]domain.ProviderModelCache
+	health          map[string]domain.ProviderHealth
+	callEvents      []domain.ProviderCallEvent
+	mcpDiagnostics  []domain.MCPDiagnostic
+	mcpServers      []domain.MCPServerConfig
+	mcpTools        map[string][]domain.MCPToolRecord
+	savedAuth       *domain.ProviderAuthRecord
+	savedCache      *domain.ProviderModelCache
+	savedValidation *domain.ProviderValidationResult
+	savedHealth     *domain.ProviderHealth
 }

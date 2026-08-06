@@ -9,7 +9,7 @@ import type { domain } from "../../../bridge/go/models";
 
 export type ConversationSidebarProps = {
   activeConversationId: string;
-  activeProjectPage: "chat" | "plugins";
+  activeProjectPage: "chat" | "extensions";
   conversations: domain.Session[];
   onNewConversation: () => void;
   onNewProjectConversation: (projectPath: string) => void;

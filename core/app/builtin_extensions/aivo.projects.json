@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "aivo.projects",
   "name": "Aivo Projects",
   "version": "1.0.0",
   "description": "Query registered local projects, register an existing directory, and immutably bind the current unscoped coding session.",
-  "apiVersion": "1",
+  "apiVersion": "2",
   "runtime": {
     "type": "builtin"
   },

@@ -18,7 +18,7 @@ const permissions: PermissionRequest[] = [
     paths: ["project:add:opaque"],
     arguments: {
       agentMode: "code",
-      toolsets: ["coding", "plugin"],
+      toolsets: ["coding", "extension"],
       projectOperation: "add",
       projectRoot:
         "/Users/example/Documents/客户项目/2026/一个用于验证窄屏长路径折行行为的项目目录/Aivo-Agent-Projects",
@@ -36,7 +36,7 @@ const permissions: PermissionRequest[] = [
     paths: ["project:associate:opaque"],
     arguments: {
       agentMode: "code",
-      toolsets: ["coding", "plugin"],
+      toolsets: ["coding", "extension"],
       projectOperation: "associate",
       projectName: "Aivo Agent Projects",
       projectRoot: "/Users/example/Documents/Aivo-Agent-Projects",

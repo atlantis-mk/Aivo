@@ -27,8 +27,8 @@ type mcpStore interface {
 	ListMCPPrompts(context.Context, string) ([]domain.MCPPromptRecord, error)
 	ReplaceMCPResources(context.Context, string, []domain.MCPResourceRecord) error
 	ListMCPResources(context.Context, string, bool) ([]domain.MCPResourceRecord, error)
-	SavePluginDiagnostic(context.Context, domain.PluginDiagnostic) (domain.PluginDiagnostic, error)
-	ListPluginDiagnostics(context.Context, string, string, int) ([]domain.PluginDiagnostic, error)
+	SaveMCPDiagnostic(context.Context, domain.MCPDiagnostic) (domain.MCPDiagnostic, error)
+	ListMCPDiagnostics(context.Context, string, int) ([]domain.MCPDiagnostic, error)
 }
 
 type MCPManager struct {
@@ -77,7 +77,7 @@ func (m *MCPManager) List(ctx context.Context, input domain.MCPServerListInput) 
 			item.Resources, _ = m.store.ListMCPResources(ctx, server.ID, false)
 			item.ResourceTemplates, _ = m.store.ListMCPResources(ctx, server.ID, true)
 		}
-		item.Diagnostics, _ = m.store.ListPluginDiagnostics(ctx, "", server.ID, 20)
+		item.Diagnostics, _ = m.store.ListMCPDiagnostics(ctx, server.ID, 20)
 		out = append(out, item)
 	}
 	return out, nil
@@ -156,7 +156,7 @@ func (m *MCPManager) Probe(ctx context.Context, input domain.MCPProbeInput) (dom
 	}
 	server, err = m.authorizedServer(ctx, server)
 	if err != nil {
-		m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, err.Error(), nil)
+		m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, err.Error(), nil)
 		return domain.MCPProbeResult{OK: false, ServerID: server.ID, Status: domain.MCPServerStatusError, Error: err.Error()}, nil
 	}
 	if m.connections == nil {
@@ -166,7 +166,7 @@ func (m *MCPManager) Probe(ctx context.Context, input domain.MCPProbeInput) (dom
 	if err != nil {
 		err = m.handleMCPOAuthChallenge(ctx, server, err)
 		message := sanitizeMCPError(err.Error())
-		m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, message, nil)
+		m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, message, nil)
 		return domain.MCPProbeResult{OK: false, ServerID: server.ID, Status: domain.MCPServerStatusError, Error: message}, nil
 	}
 	if server.ID != "" {
@@ -205,7 +205,7 @@ func (m *MCPManager) GetPrompt(ctx context.Context, input domain.MCPPromptGetInp
 	}
 	result, err := m.callMCPMethod(ctx, server, "prompts/get", map[string]any{"name": name, "arguments": arguments})
 	if err != nil {
-		m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, err.Error(), map[string]any{"method": "prompts/get", "name": name})
+		m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, err.Error(), map[string]any{"method": "prompts/get", "name": name})
 		return domain.MCPPromptGetResult{}, err
 	}
 	return normalizeMCPPromptGetResult(server.ID, name, result), nil
@@ -230,7 +230,7 @@ func (m *MCPManager) ReadResource(ctx context.Context, input domain.MCPResourceR
 	}
 	result, err := m.callMCPMethod(ctx, server, "resources/read", map[string]any{"uri": uri})
 	if err != nil {
-		m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, err.Error(), map[string]any{"method": "resources/read", "uri": uri})
+		m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, err.Error(), map[string]any{"method": "resources/read", "uri": uri})
 		return domain.MCPResourceReadResult{}, err
 	}
 	return normalizeMCPResourceReadResult(server.ID, uri, result), nil
@@ -264,7 +264,7 @@ func (m *MCPManager) DiscoverOAuth(ctx context.Context, input domain.MCPOAuthDis
 	}
 	result, err := discoverMCPOAuth(ctx, server, "")
 	if err != nil {
-		m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, err.Error(), map[string]any{"method": "oauth_discovery"})
+		m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, err.Error(), map[string]any{"method": "oauth_discovery"})
 		return result, err
 	}
 	return result, nil
@@ -340,11 +340,11 @@ func (m *MCPManager) handleMCPOAuthChallenge(ctx context.Context, server domain.
 		next.Status = domain.MCPServerStatusError
 		next.Error = "MCP OAuth authorization requires additional scopes: " + strings.Join(requestedScopes, " ")
 		if _, saveErr := m.store.SaveMCPServer(ctx, next); saveErr != nil {
-			m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, saveErr.Error(), map[string]any{"method": "oauth_challenge"})
+			m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, saveErr.Error(), map[string]any{"method": "oauth_challenge"})
 		}
 		metadata["requestedScopes"] = requestedScopes
 	}
-	m.diagnostic(ctx, server.ID, domain.PluginDiagnosticError, challenge.Error(), metadata)
+	m.diagnostic(ctx, server.ID, domain.MCPDiagnosticError, challenge.Error(), metadata)
 	if len(requestedScopes) > 0 {
 		return fmt.Errorf("%w; reconnect OAuth to grant scopes: %s", err, strings.Join(requestedScopes, " "))
 	}
@@ -431,7 +431,7 @@ func (m *MCPManager) diagnostic(ctx context.Context, serverID string, level stri
 	if m == nil || m.store == nil || message == "" {
 		return
 	}
-	_, _ = m.store.SavePluginDiagnostic(ctx, domain.PluginDiagnostic{ServerID: serverID, Level: level, Message: sanitizeMCPError(message), Metadata: metadata})
+	_, _ = m.store.SaveMCPDiagnostic(ctx, domain.MCPDiagnostic{ServerID: serverID, Level: level, Message: sanitizeMCPError(message), Metadata: metadata})
 }
 
 func mcpRootEntries(server domain.MCPServerConfig) []map[string]any {

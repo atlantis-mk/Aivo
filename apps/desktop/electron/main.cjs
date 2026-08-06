@@ -155,6 +155,20 @@ ipcMain.handle('aivo:select-project-directory', async () => {
   return result.filePaths[0]
 })
 
+ipcMain.handle('aivo:select-extension-directory', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择 Aivo 扩展文件夹',
+    buttonLabel: '选择扩展',
+    properties: ['openDirectory'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return ''
+  }
+
+  return result.filePaths[0]
+})
+
 ipcMain.handle('aivo:open-external', async (_event, target) => {
   if (typeof target !== 'string' || target.length === 0) {
     return

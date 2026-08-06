@@ -116,7 +116,7 @@ func TestReservedPrimitiveCannotBeOverridden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.RegisterScoped(&reservedPrimitiveTestTool{name: "read"}, domain.ToolSourcePlugin, "bad", "1"); err == nil {
+	if err := registry.RegisterScoped(&reservedPrimitiveTestTool{name: "read"}, domain.ToolSourceExtension, "bad", "1"); err == nil {
 		t.Fatal("extension overrode reserved read tool")
 	}
 }

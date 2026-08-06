@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,6 +21,11 @@ import (
 
 var extensionIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 var extensionToolNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+const (
+	extensionPackageMaxFiles = 4096
+	extensionPackageMaxBytes = 64 << 20
+)
 
 type LoadedExtension struct {
 	Root         string
@@ -76,6 +83,11 @@ func LoadExtensionManifest(path string) (LoadedExtension, error) {
 	if err != nil {
 		return LoadedExtension{}, err
 	}
+	canonical, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return LoadedExtension{}, err
+	}
+	abs = filepath.Clean(canonical)
 	info, err := os.Stat(abs)
 	if err != nil {
 		return LoadedExtension{}, err
@@ -150,12 +162,72 @@ func LoadExtensionManifest(path string) (LoadedExtension, error) {
 		}
 		_, _ = hasher.Write(commandRaw)
 	}
+	if err := hashExtensionPackage(root, hasher); err != nil {
+		return LoadedExtension{}, err
+	}
 	return LoadedExtension{Root: root, ManifestPath: manifestPath, Manifest: manifest, ToolSchemas: schemas, Integrity: hex.EncodeToString(hasher.Sum(nil))}, nil
 }
 
+func hashExtensionPackage(root string, hasher hash.Hash) error {
+	files := 0
+	var totalBytes int64
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		relative = filepath.ToSlash(relative)
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("extension package cannot contain symbolic link %s", relative)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			_, _ = hasher.Write([]byte("directory\x00" + relative + "\x00"))
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("extension package contains unsupported file %s", relative)
+		}
+		files++
+		if files > extensionPackageMaxFiles {
+			return fmt.Errorf("extension package exceeds %d files", extensionPackageMaxFiles)
+		}
+		_, _ = hasher.Write([]byte(fmt.Sprintf("file\x00%s\x00%o\x00", relative, info.Mode().Perm())))
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		remaining := int64(extensionPackageMaxBytes) - totalBytes
+		written, copyErr := io.Copy(hasher, io.LimitReader(file, remaining+1))
+		closeErr := file.Close()
+		totalBytes += written
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if totalBytes > extensionPackageMaxBytes {
+			return fmt.Errorf("extension package exceeds %d bytes", extensionPackageMaxBytes)
+		}
+		_, _ = hasher.Write([]byte("\x00"))
+		return nil
+	})
+}
+
 func validateExtensionManifest(root string, manifest domain.ExtensionManifest) error {
-	if manifest.SchemaVersion != 1 || strings.TrimSpace(manifest.APIVersion) != "1" {
-		return errors.New("only extension manifest/api version 1 is supported")
+	apiVersion := strings.TrimSpace(manifest.APIVersion)
+	if manifest.SchemaVersion != 2 || apiVersion != "2" {
+		return errors.New("extension manifest and api versions must use the supported 2/2 pair")
 	}
 	if !extensionIDPattern.MatchString(manifest.ID) || strings.TrimSpace(manifest.Name) == "" || strings.TrimSpace(manifest.Version) == "" {
 		return errors.New("extension id, name, and version are required and id must be namespaced")
@@ -172,12 +244,24 @@ func validateExtensionManifest(root string, manifest domain.ExtensionManifest) e
 			}
 		}
 	case domain.ExtensionRuntimeService:
-		if strings.TrimSpace(manifest.Runtime.Command) == "" || strings.TrimSpace(manifest.Runtime.URL) == "" {
-			return errors.New("local service extensions require a supervised command and loopback URL")
+		if strings.TrimSpace(manifest.Runtime.Command) == "" {
+			return errors.New("local service extensions require a supervised command")
 		}
-		parsed, err := url.Parse(manifest.Runtime.URL)
-		if err != nil || parsed.Scheme != "http" || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "localhost" && parsed.Hostname() != "::1") {
-			return errors.New("local service extension URL must use loopback HTTP")
+		switch firstNonEmpty(manifest.Runtime.Transport, "http") {
+		case "http":
+			if strings.TrimSpace(manifest.Runtime.URL) == "" {
+				return errors.New("fixed local service extensions require a loopback URL")
+			}
+			parsed, err := url.Parse(manifest.Runtime.URL)
+			if err != nil || parsed.Scheme != "http" || !extensionLoopbackHost(parsed.Hostname()) {
+				return errors.New("local service extension URL must use loopback HTTP")
+			}
+		case "dynamic-http":
+			if strings.TrimSpace(manifest.Runtime.URL) != "" {
+				return errors.New("dynamic local service extensions must omit runtime.url")
+			}
+		default:
+			return errors.New("local service extension transport must be http or dynamic-http")
 		}
 	case domain.ExtensionRuntimeExternal:
 		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(manifest.Runtime.URL)), "https://") {
@@ -192,6 +276,16 @@ func validateExtensionManifest(root string, manifest domain.ExtensionManifest) e
 		}
 	default:
 		return fmt.Errorf("unsupported extension runtime %q", manifest.Runtime.Type)
+	}
+	seenPermissions := map[string]bool{}
+	for _, permission := range manifest.Permissions {
+		if permission != "runtime.messaging" || seenPermissions[permission] {
+			return fmt.Errorf("invalid or duplicate extension permission %q", permission)
+		}
+		if manifest.Runtime.Type != domain.ExtensionRuntimeService && manifest.Runtime.Type != domain.ExtensionRuntimeExternal {
+			return errors.New("runtime.messaging requires a service or external runtime")
+		}
+		seenPermissions[permission] = true
 	}
 	seenTools := map[string]bool{}
 	for _, tool := range manifest.Contributes.Tools {
@@ -279,6 +373,10 @@ func validateExtensionManifest(root string, manifest domain.ExtensionManifest) e
 	return nil
 }
 
+func extensionLoopbackHost(host string) bool {
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
 func loadExtensionToolSchema(root string, value any) (map[string]any, []byte, error) {
 	switch schema := value.(type) {
 	case string:
@@ -318,5 +416,12 @@ func resolveExtensionPackagePath(root, value string) (string, error) {
 	if !pathWithin(root, path) {
 		return "", errors.New("extension asset escapes package root")
 	}
-	return path, nil
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	if !pathWithin(root, canonical) {
+		return "", errors.New("extension asset escapes package root through symbolic link")
+	}
+	return canonical, nil
 }

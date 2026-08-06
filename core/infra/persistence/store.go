@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,10 +13,11 @@ import (
 )
 
 type Store struct {
-	db               *gorm.DB
-	sqlDB            *sql.DB
-	path             string
-	projectBindingMu sync.Map
+	db                   *gorm.DB
+	sqlDB                *sql.DB
+	path                 string
+	managedExtensionRoot string
+	projectBindingMu     sync.Map
 }
 
 func OpenDefault() (*Store, error) {
@@ -27,7 +29,17 @@ func OpenDefault() (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	return Open(filepath.Join(dir, "aivo.db"))
+	store, err := Open(filepath.Join(dir, "aivo.db"))
+	if err != nil {
+		return nil, err
+	}
+	managedRoot, err := defaultManagedExtensionRoot()
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	store.managedExtensionRoot = managedRoot
+	return store, nil
 }
 
 func Open(path string) (*Store, error) {
@@ -55,4 +67,40 @@ func (s *Store) Close() error {
 		return nil
 	}
 	return s.sqlDB.Close()
+}
+
+func (s *Store) ManagedExtensionRoot() (string, error) {
+	if s == nil || s.path == "" || s.path == ":memory:" {
+		return "", errors.New("managed extension storage requires a persistent database path")
+	}
+	root := s.managedExtensionRoot
+	if root == "" {
+		root = filepath.Join(filepath.Dir(s.path), "extensions")
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+func (s *Store) LegacyManagedExtensionRoot() (string, error) {
+	if s == nil || s.path == "" || s.path == ":memory:" {
+		return "", errors.New("legacy managed extension storage requires a persistent database path")
+	}
+	return filepath.Abs(filepath.Join(filepath.Dir(s.path), "extensions"))
+}
+
+func defaultManagedExtensionRoot() (string, error) {
+	configRoot, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configRoot, "Aivo", "Default", "Extensions"), nil
 }

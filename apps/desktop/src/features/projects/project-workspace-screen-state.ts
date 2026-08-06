@@ -10,6 +10,8 @@ export function useProjectWorkspaceScreenState() {
   const [activeSessionId, setActiveSessionId] = useState("");
   const [toolActivationDialogOpen, setToolActivationDialogOpen] =
     useState(false);
+  const [extensionSettingsDrawerOpen, setExtensionSettingsDrawerOpen] =
+    useState(false);
   const [isOpeningConversationFromEmpty, setOpeningConversationFromEmpty] =
     useState(false);
   const [isRevealingHistoryConversation, setRevealingHistoryConversation] =
@@ -26,12 +28,14 @@ export function useProjectWorkspaceScreenState() {
     isPinnedSummaryOpen,
     isRevealingHistoryConversation,
     prompt,
+    extensionSettingsDrawerOpen,
     recentProjects,
     selectedProjectPath,
     sessions,
     setActiveSessionId,
     setOpeningConversationFromEmpty,
     setPinnedSummaryOpen,
+    setExtensionSettingsDrawerOpen,
     setPrompt,
     setRecentProjects,
     setRevealingHistoryConversation,

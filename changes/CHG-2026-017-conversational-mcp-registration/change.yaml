@@ -1,0 +1,47 @@
+id: "CHG-2026-017-conversational-mcp-registration"
+title: "Register MCP tool sources through Agent conversation"
+type: "security"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-002"
+  - "REQ-EXTENSION-001"
+  - "REQ-SESSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-EXTENSION-002"
+  - "AT-EXTENSION-001"
+  - "AT-SESSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0003"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-002 Conversational MCP source registration"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+  - "CHG-2026-011-session-scoped-tool-activation"
+affected_surfaces:
+  - "Agent-visible Host-owned registration proposal tools"
+  - "MCP source validation, persistence, enablement, probing, and catalog readiness"
+  - "desktop permission confirmation and tool activity presentation"
+  - "new-conversation eligible tool catalog assembly"
+affected_formats:
+  - "aivo.tools Manifest v1 tool schemas and result envelopes"
+  - "privileged registration proposal and confirmation contract"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Allows a model to draft an exact MCP registration proposal, while the Host retains validation, explicit user authorization, secret ownership, persistence, enablement, probing, and rollback authority"
+migration: "none; committed MCP sources and discovered capabilities reuse the existing SQLite tables, while unapproved proposals are turn-owned ephemeral state"
+supersedes: []

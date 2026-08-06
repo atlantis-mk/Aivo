@@ -23,21 +23,21 @@ test("existing conversation activation remains session-scoped", () => {
 });
 
 test("activation without a conversation becomes a one-shot draft", () => {
-  assert.deepEqual(scopeToolActivationSave("", ["plugin_notes_write"]), {
+  assert.deepEqual(scopeToolActivationSave("", ["extension_notes_write"]), {
     kind: "pending",
-    toolNames: ["plugin_notes_write"],
+    toolNames: ["extension_notes_write"],
   });
 });
 
 test("new conversation consumption clears the draft", () => {
   assert.deepEqual(
     consumePendingToolActivation([
-      "plugin_notes_write",
+      "extension_notes_write",
       " mcp_chrome_list_tabs ",
-      "plugin_notes_write",
+      "extension_notes_write",
     ]),
     {
-      appliedToolNames: ["mcp_chrome_list_tabs", "plugin_notes_write"],
+      appliedToolNames: ["extension_notes_write", "mcp_chrome_list_tabs"],
       remainingToolNames: [],
     },
   );

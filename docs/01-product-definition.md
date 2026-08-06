@@ -2,7 +2,7 @@
 
 ## Product promise
 
-Aivo is a local-first desktop environment for running AI-assisted software work against user-selected projects. It coordinates model providers, conversations, tools, permissions, terminals, worktrees, skills, plugins, MCP, and code intelligence while keeping privileged execution in a local runtime.
+Aivo is a local-first desktop environment for running AI-assisted software work against user-selected projects. It coordinates model providers, conversations, tools, permissions, terminals, worktrees, skills, extensions, MCP, and code intelligence while keeping privileged execution in a local runtime.
 
 ## Current users
 
@@ -12,7 +12,7 @@ The working user is a software builder who wants an agent to inspect and change 
 
 - A user can configure a supported model provider without exposing credentials to the renderer or logs.
 - A user can open a local project, start or continue a conversation, submit a task, observe progress, answer questions or permissions, cancel work, and review results.
-- Tool, terminal, MCP, LSP, skill, plugin, and worktree activity has clear ownership, lifecycle, and recoverable failure behavior.
+- Tool, terminal, MCP, LSP, skill, extension, and worktree activity has clear ownership, lifecycle, and recoverable failure behavior.
 - Existing user data is not silently lost or corrupted during v2 development or migration.
 - The desktop remains usable for narrow windows, long content, loading, empty, failure, cancellation, and permission states.
 

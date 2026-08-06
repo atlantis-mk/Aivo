@@ -1,0 +1,40 @@
+id: "CHG-2026-018-dynamic-extension-service-endpoints"
+title: "Allocate dynamic loopback endpoints for local service extensions"
+type: "feature"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0004"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+  - "CHG-2026-016-extension-tool-detail-views"
+affected_surfaces:
+  - "Manifest v1 local-service startup"
+  - "Core Extension Supervisor"
+  - "Electron extension Web-view proxy"
+  - "UI test extension"
+affected_formats:
+  - "Manifest v1 runtime.transport dynamic-http"
+  - "aivo-extension-service/1 readiness handshake"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Adds a bounded child-to-Host endpoint handshake; Core accepts only root HTTP origins on an explicit non-zero loopback port, retains Host-owned bearer authentication, and kills services that time out or report malformed/non-loopback endpoints"
+migration: "No persistence or schema migration; existing fixed runtime.url local services remain compatible and dynamic endpoints are ephemeral per supervised process generation"
+supersedes: []

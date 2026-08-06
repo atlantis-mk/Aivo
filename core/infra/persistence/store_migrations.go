@@ -17,7 +17,7 @@ import (
 	"aivo/core/domain"
 )
 
-const latestSchemaVersion = 2
+const latestSchemaVersion = 4
 
 func (s *Store) migrate(ctx context.Context) error {
 	version, hasVersionTable, err := s.currentSchemaVersion(ctx)
@@ -30,6 +30,12 @@ func (s *Store) migrate(ctx context.Context) error {
 	if version == latestSchemaVersion {
 		if !s.db.WithContext(ctx).Migrator().HasColumn(&appConfigRow{}, "initial_workspace_path") {
 			return errors.New("database schema version 2 is missing app_config.initial_workspace_path")
+		}
+		if !s.db.WithContext(ctx).Migrator().HasTable(&extensionInstallRow{}) {
+			return errors.New("database schema version 4 is missing extension_installs")
+		}
+		if !s.db.WithContext(ctx).Migrator().HasColumn(&extensionInstallRow{}, "install_mode") {
+			return errors.New("database schema version 4 is missing extension_installs.install_mode")
 		}
 		return nil
 	}
@@ -52,7 +58,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		if err := migrateProviderAuth(ctx, tx); err != nil {
 			return err
 		}
-		if err := tx.AutoMigrate(&turnRow{}, &sessionEventRow{}, &toolCallRow{}, &sessionExecutionStateRow{}, &pendingSessionInputRow{}, &permissionRequestRow{}, &questionRequestRow{}, &permissionRuleRow{}, &sessionSummaryRow{}, &sessionCheckpointRow{}, &codingContextRow{}, &gitWorktreeRow{}, &agentRunRow{}, &todoItemRow{}, &scheduledJobRow{}, &pluginInstallRow{}, &pluginDiagnosticRow{}, &mcpServerRow{}, &mcpToolRow{}, &mcpPromptRow{}, &mcpResourceRow{}, &skillRow{}, &skillSourceRow{}, &skillImportCandidateRow{}, &toolRegistrationRow{}); err != nil {
+		if err := tx.AutoMigrate(&turnRow{}, &sessionEventRow{}, &toolCallRow{}, &sessionExecutionStateRow{}, &pendingSessionInputRow{}, &permissionRequestRow{}, &questionRequestRow{}, &permissionRuleRow{}, &sessionSummaryRow{}, &sessionCheckpointRow{}, &codingContextRow{}, &gitWorktreeRow{}, &agentRunRow{}, &todoItemRow{}, &scheduledJobRow{}, &pluginInstallRow{}, &pluginDiagnosticRow{}, &mcpServerRow{}, &mcpToolRow{}, &mcpPromptRow{}, &mcpResourceRow{}, &skillRow{}, &skillSourceRow{}, &skillImportCandidateRow{}, &toolRegistrationRow{}, &extensionInstallRow{}); err != nil {
 			return err
 		}
 		if err := migrateLegacyMessages(ctx, tx); err != nil {

@@ -36,6 +36,65 @@ export type PermissionProjectInfo = {
   immutableAssociation: boolean;
 };
 
+export type PermissionMCPRegistrationInfo = {
+  id: string;
+  name: string;
+  transport: string;
+  target: string;
+  cwd?: string;
+  roots: string[];
+  auth: string;
+  bearerTokenEnv?: string;
+  global: boolean;
+};
+
+export function permissionMCPRegistration(
+  permission: PermissionRequest,
+): PermissionMCPRegistrationInfo | null {
+  const args = permission.arguments;
+  if (!args || args.registrationKind !== "mcp") return null;
+  const id = args.registrationServerId;
+  const name = args.registrationName;
+  const transport = args.registrationTransport;
+  const target = args.registrationTarget;
+  if (
+    typeof id !== "string" ||
+    typeof name !== "string" ||
+    typeof transport !== "string" ||
+    typeof target !== "string" ||
+    !id ||
+    !name ||
+    !transport ||
+    !target
+  ) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    transport,
+    target,
+    cwd:
+      typeof args.registrationCwd === "string" && args.registrationCwd
+        ? args.registrationCwd
+        : undefined,
+    roots: Array.isArray(args.registrationRoots)
+      ? args.registrationRoots.filter(
+          (root): root is string => typeof root === "string" && Boolean(root),
+        )
+      : [],
+    auth:
+      typeof args.registrationAuth === "string"
+        ? args.registrationAuth
+        : "none",
+    bearerTokenEnv:
+      typeof args.registrationBearerTokenEnv === "string"
+        ? args.registrationBearerTokenEnv
+        : undefined,
+    global: args.registrationGlobal === true,
+  };
+}
+
 export function permissionProject(
   permission: PermissionRequest,
 ): PermissionProjectInfo | null {
@@ -104,6 +163,9 @@ export function permissionApprovalTitle(
   if (permission.toolName === "aivo_projects_associate") {
     return "批准关联项目";
   }
+  if (permissionMCPRegistration(permission)) {
+    return "批准注册 MCP 工具";
+  }
   return `批准 ${permission.toolName}`;
 }
 
@@ -116,6 +178,8 @@ export function permissionApprovalTarget(
   }
   const project = permissionProject(permission);
   if (project) return project.rootPath;
+  const registration = permissionMCPRegistration(permission);
+  if (registration) return registration.target;
   return permission.paths?.length ? permission.paths.join(", ") : permission.action;
 }
 
@@ -125,6 +189,7 @@ export function permissionRememberLabel(
 ) {
   if (command) return "记住此命令和 cwd";
   if (permissionProject(permission)) return "记住此项目操作";
+  if (permissionMCPRegistration(permission)) return "此注册必须每次单独确认";
   return "记住这类权限";
 }
 

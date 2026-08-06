@@ -122,7 +122,7 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	extensionRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(extensionRoot, "context.md"), "Use the extension UI review checklist.", 0o600)
 	writeTestExtensionManifest(t, extensionRoot, map[string]any{
-		"schemaVersion": 1, "id": "com.example.ui", "name": "UI Inspector", "description": "Inspect UI accessibility", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.ui", "name": "UI Inspector", "description": "Inspect UI accessibility", "version": "1", "apiVersion": "2",
 		"runtime": map[string]any{"type": "builtin"},
 		"contributes": map[string]any{
 			"tools":    []any{map[string]any{"name": "example_inspect_ui", "description": "Inspect UI accessibility", "schema": map[string]any{"type": "object"}, "activation": "auto"}},
@@ -380,7 +380,7 @@ func TestHostPreCallRendersOnlyValidatedSkillAndExtensionContextSelections(t *te
 	extensionRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(extensionRoot, "context", "tokens.md"), "Use semantic color and spacing tokens.", 0o600)
 	writeTestExtensionManifest(t, extensionRoot, map[string]any{
-		"schemaVersion": 1, "id": "com.example.design", "name": "Design Context", "description": "UI design token guidance", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.design", "name": "Design Context", "description": "UI design token guidance", "version": "1", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "static"},
 		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "design-tokens", "kind": "instructions", "path": "context/tokens.md"}}},
 	})
@@ -507,28 +507,6 @@ func TestCachedEnabledMCPWithoutToolRowsStillExposesResourceUtilities(t *testing
 	}
 }
 
-func TestFailedEnabledPluginIsExcludedFromPreCallCandidates(t *testing.T) {
-	store := &memoryProviderStore{plugins: []domain.PluginInstall{{
-		ID: "broken-plugin", Enabled: true, Status: domain.PluginStatusEnabled,
-		Manifest: domain.PluginManifest{
-			ID: "broken-plugin", Version: "1", Entrypoint: domain.PluginEntrypoint{Command: "definitely-not-a-real-plugin-command"},
-			Tools: []domain.PluginDeclaredTool{{Name: "broken_tool", Description: "Broken tool", InputSchema: map[string]any{"type": "object"}, Toolsets: []string{"coding"}}},
-		},
-	}}}
-	service := NewService(store)
-	failed := service.prepareEnabledToolCatalogs(context.Background())
-	registry, _ := service.toolsForWorkspace(t.TempDir())
-	specs := filterEligibleToolSpecs(registry, registry.Specs(), failed)
-	for _, spec := range specs {
-		if spec.Name == "broken_tool" {
-			t.Fatalf("failed plugin remained eligible: failed = %#v, specs = %#v", failed, specs)
-		}
-	}
-	if _, ok := registry.Get("read"); !ok {
-		t.Fatalf("failed plugin removed the core registry: %#v", registry.Specs())
-	}
-}
-
 func TestFailedEnabledMCPRefreshIsExcludedFromPreCallCandidates(t *testing.T) {
 	store := &memoryProviderStore{
 		mcpServers: []domain.MCPServerConfig{{
@@ -556,7 +534,7 @@ func TestStoppedExtensionContextIsNotEligible(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "context.md"), "private context", 0o600)
 	writeTestExtensionManifest(t, root, map[string]any{
-		"schemaVersion": 1, "id": "com.example.stopped", "name": "Stopped", "version": "1", "apiVersion": "1",
+		"schemaVersion": 2, "id": "com.example.stopped", "name": "Stopped", "version": "1", "apiVersion": "2",
 		"runtime":     map[string]any{"type": "static"},
 		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "only", "kind": "instructions", "path": "context.md"}}},
 	})
@@ -579,13 +557,13 @@ func TestStoppedExtensionContextIsNotEligible(t *testing.T) {
 }
 
 func TestCancelledHostCatalogPreparationPreservesCoreEligibility(t *testing.T) {
-	store := &memoryProviderStore{plugins: []domain.PluginInstall{{
-		ID: "cancelled-plugin", Enabled: true, Status: domain.PluginStatusEnabled,
-		Manifest: domain.PluginManifest{
-			ID: "cancelled-plugin", Version: "1", Entrypoint: domain.PluginEntrypoint{Command: "definitely-not-a-real-plugin-command"},
-			Tools: []domain.PluginDeclaredTool{{Name: "cancelled_tool", InputSchema: map[string]any{"type": "object"}, Toolsets: []string{"coding"}}},
-		},
-	}}}
+	store := &memoryProviderStore{
+		mcpServers: []domain.MCPServerConfig{{
+			ID: "cancelled-mcp", Name: "Cancelled MCP", Transport: domain.MCPTransportStdio,
+			Command: "definitely-not-a-real-mcp-command", Enabled: true,
+		}},
+		mcpTools: map[string][]domain.MCPToolRecord{"cancelled-mcp": {}},
+	}
 	service := NewService(store)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -601,8 +579,10 @@ func TestCancelledHostCatalogPreparationPreservesCoreEligibility(t *testing.T) {
 			t.Fatalf("cancelled preparation removed core tool %q: %#v", name, specs)
 		}
 	}
-	if names["cancelled_tool"] {
-		t.Fatalf("cancelled extension preparation left an unready candidate: %#v", specs)
+	for name := range names {
+		if strings.HasPrefix(name, "mcp_host_cancelled_mcp_") {
+			t.Fatalf("cancelled MCP preparation left an unready candidate: %#v", specs)
+		}
 	}
 }
 

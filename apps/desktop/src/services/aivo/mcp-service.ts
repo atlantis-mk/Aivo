@@ -1,6 +1,14 @@
-import type { PluginDiagnostic } from "@/services/aivo/plugin-service";
 import type { SessionEvent } from "@/services/aivo/session-event-service";
 import { invoke } from "@/services/aivo/invoke";
+
+export type MCPDiagnostic = {
+  id: string;
+  serverId?: string;
+  level: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  timeCreated: string;
+};
 
 export type MCPServerConfig = {
   id: string;
@@ -26,7 +34,6 @@ export type MCPServerConfig = {
   timeoutSeconds?: number;
   connectTimeoutSeconds?: number;
   enabled: boolean;
-  pluginId?: string;
   status?: string;
   error?: string;
   timeCreated?: string;
@@ -123,7 +130,7 @@ export type MCPServerListItem = {
   prompts?: MCPPromptRecord[];
   resources?: MCPResourceRecord[];
   resourceTemplates?: MCPResourceRecord[];
-  diagnostics?: PluginDiagnostic[];
+  diagnostics?: MCPDiagnostic[];
 };
 
 export type MCPProbeResult = {
@@ -135,7 +142,7 @@ export type MCPProbeResult = {
   prompts?: MCPPromptRecord[];
   resources?: MCPResourceRecord[];
   resourceTemplates?: MCPResourceRecord[];
-  diagnostics?: PluginDiagnostic[];
+  diagnostics?: MCPDiagnostic[];
 };
 
 export type MCPOAuthDiscoveryResult = {

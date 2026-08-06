@@ -145,7 +145,7 @@ func (s *Service) rememberedDeferredTools(ctx context.Context, sessionID string)
 	}
 	for _, name := range stringSliceFromAny(state.Metadata[sessionMetadataRememberedDeferredTools]) {
 		name = strings.TrimSpace(name)
-		if name != "" && !isBridgeToolName(name) {
+		if name != "" && !isReservedCoreToolName(name) && !isBridgeToolName(name) {
 			remembered[name] = true
 		}
 	}
@@ -163,7 +163,13 @@ func (s *Service) GetSessionActiveTools(ctx context.Context, sessionID string) (
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return domain.SessionActiveToolsResult{SessionID: sessionID, ToolNames: names}, nil
+	coreNames := make([]string, 0, len(coreToolNames()))
+	for _, name := range coreToolNames() {
+		if !s.disabledCoreTools(ctx, sessionID)[name] {
+			coreNames = append(coreNames, name)
+		}
+	}
+	return domain.SessionActiveToolsResult{SessionID: sessionID, ToolNames: names, CoreToolNames: coreNames}, nil
 }
 
 func (s *Service) SetSessionActiveTools(ctx context.Context, input domain.SessionActiveToolsInput) (domain.SessionActiveToolsResult, error) {
@@ -176,17 +182,28 @@ func (s *Service) SetSessionActiveTools(ctx context.Context, input domain.Sessio
 		return domain.SessionActiveToolsResult{}, err
 	}
 	names := normalizeDeferredToolNames(input.ToolNames)
+	selected := map[string]bool{}
+	for _, name := range input.ToolNames {
+		selected[strings.TrimSpace(name)] = true
+	}
+	disabledCore := make([]string, 0, len(coreToolNames()))
+	for _, name := range coreToolNames() {
+		if !selected[name] {
+			disabledCore = append(disabledCore, name)
+		}
+	}
 	if state.Metadata == nil {
 		state.Metadata = map[string]any{}
 	}
 	state.Metadata[sessionMetadataRememberedDeferredTools] = names
+	state.Metadata[sessionMetadataDisabledCoreTools] = disabledCore
 	if _, err := s.store.UpsertSessionExecutionState(ctx, state); err != nil {
 		return domain.SessionActiveToolsResult{}, err
 	}
 	if s.onSessionUpdated != nil {
 		s.onSessionUpdated(sessionID, nil)
 	}
-	return domain.SessionActiveToolsResult{SessionID: sessionID, ToolNames: names}, nil
+	return s.GetSessionActiveTools(ctx, sessionID)
 }
 
 func (s *Service) rememberDeferredToolUsed(ctx context.Context, sessionID string, toolName string) error {
@@ -201,7 +218,7 @@ func (s *Service) rememberDeferredToolUsed(ctx context.Context, sessionID string
 	remembered := map[string]bool{}
 	for _, name := range stringSliceFromAny(state.Metadata[sessionMetadataRememberedDeferredTools]) {
 		name = strings.TrimSpace(name)
-		if name != "" && !isBridgeToolName(name) {
+		if name != "" && !isReservedCoreToolName(name) && !isBridgeToolName(name) {
 			remembered[name] = true
 		}
 	}
@@ -227,7 +244,7 @@ func normalizeDeferredToolNames(toolNames []string) []string {
 	names := make([]string, 0, len(toolNames))
 	for _, name := range toolNames {
 		name = strings.TrimSpace(name)
-		if name == "" || isBridgeToolName(name) || seen[name] {
+		if name == "" || isReservedCoreToolName(name) || isBridgeToolName(name) || seen[name] {
 			continue
 		}
 		seen[name] = true
@@ -235,4 +252,26 @@ func normalizeDeferredToolNames(toolNames []string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func (s *Service) disabledCoreTools(ctx context.Context, sessionID string) map[string]bool {
+	disabled := map[string]bool{}
+	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
+		return disabled
+	}
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil || state.Metadata == nil {
+		return disabled
+	}
+	for _, name := range stringSliceFromAny(state.Metadata[sessionMetadataDisabledCoreTools]) {
+		name = strings.TrimSpace(name)
+		if isReservedCoreToolName(name) {
+			disabled[name] = true
+		}
+	}
+	return disabled
+}
+
+func coreToolNames() []string {
+	return []string{"read", "bash", "edit", "write"}
 }

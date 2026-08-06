@@ -108,7 +108,8 @@ func (s *Service) ReplaySessionToolCall(ctx context.Context, input domain.Replay
 		return domain.ToolCall{}, err
 	}
 	replayCall := domain.ChatToolCall{ID: replayID, Name: original.Name, Arguments: rawArgs}
-	if err := s.recordToolCallStarted(ctx, sessionID, original.TurnID, replayCall); err != nil {
+	identity, _ := registry.IdentityFor(replayCall.Name)
+	if err := s.recordToolCallStarted(ctx, sessionID, original.TurnID, replayCall, identity); err != nil {
 		return domain.ToolCall{}, err
 	}
 	mode := firstNonEmpty(turn.AgentMode, session.AgentMode, domain.AgentModeAssistant)

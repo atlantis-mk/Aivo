@@ -24,7 +24,7 @@ type ToolRuntime struct {
 	MaxOutputChars int
 	Timeout        time.Duration
 	Permissions    *PermissionEngine
-	PluginHooks    ToolHookRunner
+	ExtensionHooks ToolHookRunner
 }
 
 type ToolHookRunner interface {
@@ -277,11 +277,11 @@ func maxInt(a int, b int) int {
 }
 
 func (r *ToolRuntime) runPreToolHooks(ctx context.Context, call domain.ChatToolCall, spec domain.ToolSpec, execCtx domain.ToolExecutionContext) *domain.ToolResult {
-	if r == nil || r.PluginHooks == nil || execCtx.BridgeCallDepth > 0 {
+	if r == nil || r.ExtensionHooks == nil || execCtx.BridgeCallDepth > 0 {
 		return nil
 	}
 	payload := map[string]any{"tool": spec.Name, "arguments": rawMessageToAny(call.Arguments), "sessionId": execCtx.SessionID, "turnId": execCtx.TurnID, "toolCallId": call.ID, "capability": spec.Capability, "category": spec.Category}
-	for _, result := range r.PluginHooks.InvokeHook(ctx, "pre_tool_call", payload) {
+	for _, result := range r.ExtensionHooks.InvokeHook(ctx, "pre_tool_call", payload) {
 		block, _ := result["block"].(bool)
 		if !block {
 			continue
@@ -297,12 +297,12 @@ func (r *ToolRuntime) runPreToolHooks(ctx context.Context, call domain.ChatToolC
 }
 
 func (r *ToolRuntime) runPostToolHooks(ctx context.Context, call domain.ChatToolCall, spec domain.ToolSpec, execCtx domain.ToolExecutionContext, result *domain.ToolResult) {
-	if r == nil || r.PluginHooks == nil || result == nil || execCtx.BridgeCallDepth > 0 {
+	if r == nil || r.ExtensionHooks == nil || result == nil || execCtx.BridgeCallDepth > 0 {
 		return
 	}
 	payload := map[string]any{"tool": spec.Name, "arguments": rawMessageToAny(call.Arguments), "result": result.Structured, "content": result.Content, "ok": result.OK, "sessionId": execCtx.SessionID, "turnId": execCtx.TurnID, "toolCallId": call.ID}
-	_ = r.PluginHooks.InvokeHook(ctx, "post_tool_call", payload)
-	for _, hookResult := range r.PluginHooks.InvokeHook(ctx, "transform_tool_result", payload) {
+	_ = r.ExtensionHooks.InvokeHook(ctx, "post_tool_call", payload)
+	for _, hookResult := range r.ExtensionHooks.InvokeHook(ctx, "transform_tool_result", payload) {
 		if content, _ := hookResult["content"].(string); strings.TrimSpace(content) != "" {
 			result.Content = content
 			result.ModelContent = content

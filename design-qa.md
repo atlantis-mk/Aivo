@@ -12,7 +12,7 @@
 - Colors: semantic system tokens applied; final visual sign-off pending.
 - Images and icons: existing Hugeicons and project icon assets only; no new raster content required.
 - Copy: title, subtitle, four shortcut labels, and existing composer controls retained.
-- Interactions: implementation preserves new conversation, history, plugins, settings, project, model, permission, agent mode, attachment, microphone, and submit entry points; manual interaction verification pending.
+- Interactions: implementation preserves new conversation, history, extensions, settings, project, model, permission, agent mode, attachment, microphone, and submit entry points; manual interaction verification pending.
 - Console: not fully reviewed after the user stopped automated QA.
 - Findings history: initial wide capture showed the intended hierarchy without a persistent sidebar. Narrow-view, focused-state, overflow, and interaction checks were not completed.
 - History popover implementation: conversation-only outlined shadcn `Item` rows; ordinary and project conversations share one recency-sorted list. Associated project names are conditional, and the active row uses `aria-current="page"` with a muted selected background.

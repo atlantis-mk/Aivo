@@ -1,4 +1,4 @@
-import { Layers3, Plug, Server, Wrench } from "lucide-react";
+import { Plug, Wrench } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,7 +48,7 @@ export function ToolActivationToolList({
         <EmptyHeader>
           <EmptyTitle>没有可激活工具</EmptyTitle>
           <EmptyDescription>
-            当前插件和运行环境没有提供可手动激活的工具。
+            当前扩展和运行环境没有提供可手动激活的工具。
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -69,7 +69,7 @@ export function ToolActivationToolList({
         return (
           <Item asChild key={group.id} variant="outline">
             <label className="cursor-pointer" htmlFor={switchId}>
-              <ItemMedia variant={group.section === "mcp" ? "image" : "icon"}>
+              <ItemMedia variant="icon">
                 <Icon />
               </ItemMedia>
               <ItemContent>
@@ -110,11 +110,7 @@ export function ToolActivationToolList({
 
 function toolGroupIcon(group: ToolCatalogGroup) {
   switch (group.section) {
-    case "apps":
-      return Layers3;
-    case "mcp":
-      return Server;
-    case "plugins":
+    case "extensions":
       return Plug;
     default:
       return Wrench;

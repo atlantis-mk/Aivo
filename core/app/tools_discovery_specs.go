@@ -6,13 +6,13 @@ func toolResolveSpec(deferredCount int) domain.ToolSpec {
 	_ = deferredCount
 	return domain.ToolSpec{
 		Name: ToolResolveName, Description: "Resolve allowed deferred tools for one concise, specific missing capability. Use only when current tools cannot perform the required action. This does not call tools or bypass permissions.",
-		Capability: "tool.resolve", Category: "tool_discovery", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp", "plugin"},
+		Capability: "tool.resolve", Category: "tool_discovery", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp", "extension"},
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"intent":    map[string]any{"type": "string", "description": "Concise, specific missing capability. Describe the required action, not a guessed tool name, plan, or broad topic."},
 			"required":  map[string]any{"type": "boolean", "description": "Whether the task cannot proceed without a matching tool. Defaults to true."},
 			"maxTools":  map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum number of tools to activate. Defaults to 8."},
-			"source":    map[string]any{"type": "string", "description": "Optional source filter, such as mcp, plugin, builtin, or bridge."},
-			"category":  map[string]any{"type": "string", "description": "Optional category filter, such as mcp, plugin, automation, or filesystem."},
+			"source":    map[string]any{"type": "string", "description": "Optional source filter, such as mcp, extension, builtin, or bridge."},
+			"category":  map[string]any{"type": "string", "description": "Optional category filter, such as mcp, extension, automation, or filesystem."},
 			"riskLevel": map[string]any{"type": "string", "description": "Optional risk filter, such as low, medium, or high."},
 		}, "required": []string{"intent"}, "additionalProperties": false},
 	}
@@ -35,11 +35,11 @@ func toolListSpec() domain.ToolSpec {
 		Name: ToolListName, Description: "List available tools with names and descriptions only. Use this for MCP/tool inventory, then call tool_detail for the selected tool's exact input schema.",
 		Capability: "tool.list", Category: "tool_discovery", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp"},
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
-			"source":          map[string]any{"type": "string", "description": "Optional source filter, such as mcp, plugin, builtin, or bridge."},
-			"category":        map[string]any{"type": "string", "description": "Optional category filter, such as mcp, plugin, automation, or filesystem."},
+			"source":          map[string]any{"type": "string", "description": "Optional source filter, such as mcp, extension, builtin, or bridge."},
+			"category":        map[string]any{"type": "string", "description": "Optional category filter, such as mcp, extension, automation, or filesystem."},
 			"query":           map[string]any{"type": "string", "description": "Optional substring filter over name, description, namespace, capability, category, and source."},
 			"includeCore":     map[string]any{"type": "boolean", "description": "Include core visible tools such as file, shell, web, bridge, and planning tools. Defaults to true."},
-			"includeLongTail": map[string]any{"type": "boolean", "description": "Include deferred long-tail tools from MCP, plugins, automation, and admin sources. Defaults to true."},
+			"includeLongTail": map[string]any{"type": "boolean", "description": "Include deferred long-tail tools from MCP, extensions, automation, and admin sources. Defaults to true."},
 			"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximum number of tools to return. Defaults to 100."},
 			"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Pagination offset. Defaults to 0."},
 		}, "additionalProperties": false},

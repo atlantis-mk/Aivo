@@ -168,7 +168,7 @@ func TestCodeModeWildcardToolsetsExposeAllTools(t *testing.T) {
 	for _, tool := range []domain.Tool{
 		agentSpecTool{spec: domain.ToolSpec{Name: "read_file", Toolsets: []string{"safe", "coding"}}},
 		agentSpecTool{spec: domain.ToolSpec{Name: "bash", Toolsets: []string{"shell", "coding"}}},
-		agentSpecTool{spec: domain.ToolSpec{Name: "plugin_echo", Toolsets: []string{"plugin"}}},
+		agentSpecTool{spec: domain.ToolSpec{Name: "extension_echo", Toolsets: []string{"extension"}}},
 		agentSpecTool{spec: domain.ToolSpec{Name: "mcp_fetch", Toolsets: []string{"mcp"}}},
 	} {
 		if err := registry.Register(tool); err != nil {
@@ -226,15 +226,15 @@ func TestRegistrySpecsForToolsets(t *testing.T) {
 	for _, tool := range []domain.Tool{
 		agentSpecTool{spec: domain.ToolSpec{Name: "read_file", Toolsets: []string{"safe", "coding"}}},
 		agentSpecTool{spec: domain.ToolSpec{Name: "write_file", Toolsets: []string{"coding"}}},
-		agentSpecTool{spec: domain.ToolSpec{Name: "plugin_echo", Toolsets: []string{"plugin", "safe"}}},
+		agentSpecTool{spec: domain.ToolSpec{Name: "extension_echo", Toolsets: []string{"extension", "safe"}}},
 	} {
 		if err := registry.Register(tool); err != nil {
 			t.Fatal(err)
 		}
 	}
-	specs := registry.SpecsForToolsets([]string{"plugin"})
-	if len(specs) != 1 || specs[0].Name != "plugin_echo" {
-		t.Fatalf("plugin specs = %#v", specs)
+	specs := registry.SpecsForToolsets([]string{"extension"})
+	if len(specs) != 1 || specs[0].Name != "extension_echo" {
+		t.Fatalf("extension specs = %#v", specs)
 	}
 	specs = registry.SpecsForToolsets([]string{"safe"})
 	if len(specs) != 2 {
@@ -312,11 +312,11 @@ func TestUpdatePlanDoesNotRequirePermission(t *testing.T) {
 
 func TestToolRuntimeRejectsToolsOutsideAllowedToolsets(t *testing.T) {
 	registry := NewRegistry()
-	if err := registry.Register(agentSpecTool{spec: domain.ToolSpec{Name: "plugin_echo", Toolsets: []string{"plugin"}, InputSchema: map[string]any{"type": "object"}}}); err != nil {
+	if err := registry.Register(agentSpecTool{spec: domain.ToolSpec{Name: "extension_echo", Toolsets: []string{"extension"}, InputSchema: map[string]any{"type": "object"}}}); err != nil {
 		t.Fatal(err)
 	}
 	runtime := NewToolRuntime(registry, "")
-	result := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{Name: "plugin_echo", Arguments: json.RawMessage(`{}`)}, domain.ToolExecutionContext{AllowedToolsets: []string{"safe"}})
+	result := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{Name: "extension_echo", Arguments: json.RawMessage(`{}`)}, domain.ToolExecutionContext{AllowedToolsets: []string{"safe"}})
 	if result.OK || result.ToolError == nil || result.ToolError.Code != "toolset_denied" {
 		t.Fatalf("result = %#v", result)
 	}
@@ -328,7 +328,7 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 	ctx := context.Background()
 	extensionRoot := t.TempDir()
 	writeTestExtensionManifest(t, extensionRoot, map[string]any{
-		"schemaVersion": 1, "id": "aivo.agent", "name": "Agent", "version": "1.0.0", "apiVersion": "1",
+		"schemaVersion": 2, "id": "aivo.agent", "name": "Agent", "version": "1.0.0", "apiVersion": "2",
 		"runtime": map[string]any{"type": "builtin"},
 		"contributes": map[string]any{"tools": []any{map[string]any{
 			"name": "agent_delegate", "description": "Delegate a bounded task", "activation": "manual",

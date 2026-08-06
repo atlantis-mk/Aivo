@@ -1,0 +1,46 @@
+id: "CHG-2026-021-retire-legacy-plugins"
+title: "Retire the legacy plugin runtime"
+type: "feature"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-001"
+  - "REQ-WORKSPACE-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-EXTENSION-001"
+  - "AT-WORKSPACE-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0008"
+context_refs:
+  - "docs/01-product-definition.md"
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/03-functional-requirements.md#REQ-WORKSPACE-001 Sidebarless chat workspace"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+  - "CHG-2026-020-visual-extension-installation"
+affected_surfaces:
+  - "desktop extension, MCP, Skill, and tool management"
+  - "Core tool catalog and Host pre-call resource preparation"
+  - "legacy plugin RPC and process lifecycle"
+affected_formats:
+  - "legacy aivo.plugin.json and .aivo-plugin/plugin.json packages"
+  - "legacy plugin RPC methods"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Removes a redundant executable-process trust path; Manifest v2 extensions remain the only local extension installation and runtime contract"
+migration: "No schema migration; existing legacy plugin rows remain inert for downgrade compatibility and are never read, started, or exposed"
+supersedes: []

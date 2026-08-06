@@ -42,6 +42,7 @@ export function ProjectTopBar({
   isConversationPinned,
   isLayoutPanelOpen,
   onNewPage,
+  onOpenExtensions,
   onArchiveConversation,
   onToggleLayoutPanel,
   onTogglePinnedConversation,
@@ -56,6 +57,7 @@ export function ProjectTopBar({
   isConversationPinned: boolean;
   isLayoutPanelOpen?: boolean;
   onNewPage: () => void;
+  onOpenExtensions: () => void;
   onArchiveConversation: () => void;
   onToggleLayoutPanel?: () => void;
   onTogglePinnedConversation: () => void;
@@ -117,10 +119,8 @@ export function ProjectTopBar({
         className="relative z-20 ml-auto flex items-center gap-aivo-1"
         data-app-no-drag
       >
-        <ProjectTopBarIconButton asChild aria-label="打开插件">
-          <Link to="/projects/plugins">
-            <HugeiconsIcon icon={Plug01Icon} strokeWidth={1.8} />
-          </Link>
+        <ProjectTopBarIconButton aria-label="打开扩展" onClick={onOpenExtensions}>
+          <HugeiconsIcon icon={Plug01Icon} strokeWidth={1.8} />
         </ProjectTopBarIconButton>
         <ProjectTopBarIconButton
           aria-label="切换系统环境"

@@ -1,0 +1,45 @@
+id: "CHG-2026-023-managed-extension-packages"
+title: "Copy installed extensions into Aivo-managed storage"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-004"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-EXTENSION-004"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0009"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-004 Visual local extension installation"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-020-visual-extension-installation"
+affected_surfaces:
+  - "desktop extension installation and uninstall copy"
+  - "Core managed extension package storage"
+  - "extension startup restoration"
+affected_formats:
+  - "SQLite schema v4 extension_installs.install_mode"
+  - "managed extension directory layout"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Moves confirmed extension code into Host-owned private storage, verifies the copied package before publication, and prevents later user-source mutation from changing installed executable code"
+migration: "SQLite schema v3 to v4 adds install_mode after a verified v3 backup; exact unchanged linked installations are copied into managed storage on startup, while unsafe or unavailable linked sources remain disabled for explicit reinstall"
+supersedes:
+  - "CHG-2026-020-visual-extension-installation"

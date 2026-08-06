@@ -7,6 +7,9 @@ const (
 	ExtensionRuntimeExternal = "external"
 	ExtensionRuntimeStatic   = "static"
 
+	ExtensionInstallModeLinked  = "linked"
+	ExtensionInstallModeManaged = "managed"
+
 	ExtensionStateDiscovered = "discovered"
 	ExtensionStateValidated  = "validated"
 	ExtensionStateUntrusted  = "untrusted"
@@ -27,6 +30,7 @@ type ExtensionManifest struct {
 	Description   string                 `json:"description,omitempty"`
 	APIVersion    string                 `json:"apiVersion"`
 	Runtime       ExtensionRuntime       `json:"runtime"`
+	Permissions   []string               `json:"permissions,omitempty"`
 	Contributes   ExtensionContributions `json:"contributes,omitempty"`
 	Requirements  ExtensionRequirements  `json:"requirements,omitempty"`
 }
@@ -91,6 +95,85 @@ type ExtensionStatus struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type ExtensionInstallSummary struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Version       string   `json:"version"`
+	Description   string   `json:"description,omitempty"`
+	APIVersion    string   `json:"apiVersion"`
+	RuntimeType   string   `json:"runtimeType"`
+	Transport     string   `json:"transport,omitempty"`
+	Command       string   `json:"command,omitempty"`
+	Permissions   []string `json:"permissions,omitempty"`
+	CredentialIDs []string `json:"credentialIds,omitempty"`
+	Platforms     []string `json:"platforms,omitempty"`
+	Network       bool     `json:"network,omitempty"`
+	Tools         []string `json:"tools,omitempty"`
+	Views         []string `json:"views,omitempty"`
+	Contexts      []string `json:"contexts,omitempty"`
+	Policies      []string `json:"policies,omitempty"`
+	Executable    bool     `json:"executable"`
+}
+
+func ExtensionSummary(manifest ExtensionManifest) ExtensionInstallSummary {
+	summary := ExtensionInstallSummary{
+		ID: manifest.ID, Name: manifest.Name, Version: manifest.Version, Description: manifest.Description,
+		APIVersion: manifest.APIVersion, RuntimeType: manifest.Runtime.Type, Transport: manifest.Runtime.Transport,
+		Command: manifest.Runtime.Command, Permissions: append([]string(nil), manifest.Permissions...),
+		CredentialIDs: append([]string(nil), manifest.Requirements.Credentials...), Platforms: append([]string(nil), manifest.Requirements.Platforms...),
+		Network: manifest.Requirements.Network, Policies: append([]string(nil), manifest.Contributes.Policies...),
+		Executable: manifest.Runtime.Type == ExtensionRuntimeProcess || manifest.Runtime.Type == ExtensionRuntimeService,
+	}
+	for _, item := range manifest.Contributes.Tools {
+		summary.Tools = append(summary.Tools, item.Name)
+	}
+	for _, item := range manifest.Contributes.Views {
+		summary.Views = append(summary.Views, item.ID)
+	}
+	for _, item := range manifest.Contributes.Contexts {
+		summary.Contexts = append(summary.Contexts, item.ID)
+	}
+	return summary
+}
+
+type ExtensionInstallPreview struct {
+	Path         string                  `json:"path"`
+	ManifestPath string                  `json:"manifestPath"`
+	Integrity    string                  `json:"integrity"`
+	Summary      ExtensionInstallSummary `json:"summary"`
+	Update       bool                    `json:"update"`
+}
+
+type ExtensionInstall struct {
+	ID           string                  `json:"id"`
+	Manifest     ExtensionManifest       `json:"-"`
+	Summary      ExtensionInstallSummary `json:"summary"`
+	InstallMode  string                  `json:"installMode"`
+	RootPath     string                  `json:"rootPath"`
+	ManifestPath string                  `json:"manifestPath"`
+	Integrity    string                  `json:"integrity"`
+	Enabled      bool                    `json:"enabled"`
+	Status       string                  `json:"status"`
+	Error        string                  `json:"error,omitempty"`
+	TimeCreated  string                  `json:"timeCreated"`
+	TimeUpdated  string                  `json:"timeUpdated"`
+}
+
+type PreviewExtensionInstallInput struct {
+	Path string `json:"path"`
+}
+
+type InstallExtensionInput struct {
+	Path      string `json:"path"`
+	Integrity string `json:"integrity"`
+	Enable    bool   `json:"enable"`
+}
+
+type SetExtensionEnabledInput struct {
+	ID      string `json:"id"`
+	Enabled bool   `json:"enabled"`
+}
+
 type DiscoverExtensionInput struct {
 	Path string `json:"path"`
 }
@@ -139,5 +222,13 @@ type ExtensionViewDescriptor struct {
 	BackendToken string   `json:"backendToken,omitempty"`
 	Surface      []string `json:"surfaces"`
 	Actions      []string `json:"actions,omitempty"`
+	Permissions  []string `json:"permissions,omitempty"`
 	CSP          string   `json:"csp"`
+}
+
+type ExtensionToolViewRef struct {
+	ExtensionID string `json:"extensionId"`
+	ViewID      string `json:"viewId"`
+	Surface     string `json:"surface"`
+	Title       string `json:"title,omitempty"`
 }

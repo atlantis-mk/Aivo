@@ -20,10 +20,10 @@ import type { CatalogState } from "@/lib/provider-catalog";
 import type { TodoItem } from "@/services/aivo";
 import type { domain } from "../../../bridge/go/models";
 
-export type ProjectWorkspacePage = "chat" | "plugins";
+export type ProjectWorkspacePage = "chat" | "extensions";
 
 export function getActiveProjectPage(pathname: string): ProjectWorkspacePage {
-  return pathname.startsWith("/projects/plugins") ? "plugins" : "chat";
+  return pathname.startsWith("/projects/extensions") ? "extensions" : "chat";
 }
 
 export function useProjectModelSelection({

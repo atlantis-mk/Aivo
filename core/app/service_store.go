@@ -19,6 +19,16 @@ type Store interface {
 	scheduledJobStore
 }
 
+type extensionInstallStore interface {
+	ManagedExtensionRoot() (string, error)
+	LegacyManagedExtensionRoot() (string, error)
+	SaveExtensionInstall(context.Context, domain.ExtensionInstall) (domain.ExtensionInstall, error)
+	GetExtensionInstall(context.Context, string) (domain.ExtensionInstall, error)
+	ListExtensionInstalls(context.Context) ([]domain.ExtensionInstall, error)
+	SetExtensionInstallState(context.Context, string, bool, string, string) (domain.ExtensionInstall, error)
+	DeleteExtensionInstall(context.Context, string) error
+}
+
 type configStore interface {
 	LoadConfig(context.Context) (domain.AppConfig, error)
 	SaveConfig(context.Context, domain.AppConfig) error

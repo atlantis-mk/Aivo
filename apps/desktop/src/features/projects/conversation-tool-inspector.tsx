@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert02Icon,
   ArrowLeft01Icon,
@@ -36,6 +36,13 @@ import {
 } from "@/components/ui/item";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { ExtensionToolWebView } from "@/features/projects/extension-tool-web-view";
+import {
+  extensionToolViewRef,
+  latestExtensionViewToolCallId,
+  selectedExtensionViewToolCallId,
+} from "@/features/projects/extension-tool-view-model";
+import { toolTimelineDescription } from "@/features/projects/conversation-tool-inspector-model";
 import {
   getToolCallCommand,
   getToolResultText,
@@ -73,16 +80,27 @@ export function ConversationToolInspector({
   onClose: () => void;
 }) {
   const [selectedToolCallId, setSelectedToolCallId] = useState("");
+  const autoOpenedViewRef = useRef({ activityId: "", toolCallId: "" });
   const timelineEntries = useMemo(
     () => sortedActivityToolCalls(activity),
     [activity],
   );
+  const latestViewToolCallId = useMemo(
+    () => latestExtensionViewToolCallId(timelineEntries),
+    [timelineEntries],
+  );
+  const effectiveSelectedToolCallId = selectedExtensionViewToolCallId({
+    activityId: activity?.id ?? "",
+    latestViewToolCallId,
+    selectedToolCallId,
+    trackedActivityId: autoOpenedViewRef.current.activityId,
+  });
   const selectedTimelineEntry = useMemo(
     () =>
       timelineEntries.find(
-        ({ toolCall }) => toolCall.id === selectedToolCallId,
+        ({ toolCall }) => toolCall.id === effectiveSelectedToolCallId,
       ) ?? null,
-    [selectedToolCallId, timelineEntries],
+    [effectiveSelectedToolCallId, timelineEntries],
   );
   const selectedToolCall = selectedTimelineEntry?.toolCall ?? null;
   const selectedToolDescription = selectedToolCall
@@ -91,10 +109,27 @@ export function ConversationToolInspector({
         selectedTimelineEntry?.description ?? "",
       )
     : "";
-
   useEffect(() => {
-    setSelectedToolCallId("");
-  }, [activity?.id]);
+    const activityId = activity?.id ?? "";
+    const state = autoOpenedViewRef.current;
+    if (!activityId) {
+      autoOpenedViewRef.current = { activityId: "", toolCallId: "" };
+      setSelectedToolCallId("");
+      return;
+    }
+    if (state.activityId !== activityId) {
+      autoOpenedViewRef.current = {
+        activityId,
+        toolCallId: latestViewToolCallId,
+      };
+      setSelectedToolCallId(latestViewToolCallId);
+      return;
+    }
+    if (latestViewToolCallId && state.toolCallId !== latestViewToolCallId) {
+      autoOpenedViewRef.current.toolCallId = latestViewToolCallId;
+      setSelectedToolCallId(latestViewToolCallId);
+    }
+  }, [activity?.id, latestViewToolCallId]);
 
   const open = Boolean(activity);
 
@@ -179,6 +214,17 @@ function ToolCallTimeline({
             toolCall,
             description,
           );
+          const previousEntry = entries[index - 1];
+          const previousInvocationDescription = previousEntry
+            ? toolCallDescription(
+                previousEntry.toolCall,
+                previousEntry.description,
+              )
+            : "";
+          const title = toolTimelineDescription(
+            invocationDescription,
+            previousInvocationDescription,
+          );
           return (
             <div className="relative pb-2 last:pb-0" key={toolCall.id}>
               {index < entries.length - 1 ? (
@@ -206,8 +252,8 @@ function ToolCallTimeline({
                     <ItemDescription>
                       {formatToolTimelineTime(toolCall.timeCreated)}
                     </ItemDescription>
-                    {invocationDescription ? (
-                      <ItemTitle>{invocationDescription}</ItemTitle>
+                    {title ? (
+                      <ItemTitle>{title}</ItemTitle>
                     ) : null}
                     <ItemDescription>
                       {toolCall.name || command.label}
@@ -241,6 +287,7 @@ function ToolCallDetail({
   const command = toolCall ? getToolCallCommand(toolCall) : null;
   const resultText = toolCall ? getToolResultText(toolCall) : "";
   const argumentsText = toolCall ? formatToolArguments(toolCall.arguments) : "";
+  const view = extensionToolViewRef(toolCall);
 
   return (
     <div
@@ -258,7 +305,7 @@ function ToolCallDetail({
             {description ? (
               <CardTitle>{description}</CardTitle>
             ) : null}
-            <CardDescription>{command.label}</CardDescription>
+            <CardDescription>{view?.title || command.label}</CardDescription>
             <CardAction className="flex items-center gap-1">
               <Button
                 aria-label="返回工具时间线"
@@ -272,41 +319,76 @@ function ToolCallDetail({
               </Button>
             </CardAction>
           </CardHeader>
-          <CardContent className="min-h-0 flex-1">
-            <ScrollArea className="h-full pr-2">
-              <div className="flex flex-col gap-3 px-1 pb-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={toolCallStatusVariant(toolCall.status)}>
-                    {toolCallStatusLabel(toolCall.status)}
-                  </Badge>
-                  <Badge variant="outline">
-                    {formatToolTime(toolCall.timeCreated)}
-                  </Badge>
-                  {toolCall.timeUpdated &&
-                  toolCall.timeUpdated !== toolCall.timeCreated ? (
-                    <Badge variant="outline">
-                      更新于 {formatToolTime(toolCall.timeUpdated)}
-                    </Badge>
-                  ) : null}
-                </div>
-
-                <DetailCard
-                  content={argumentsText || "无参数"}
-                  description="发送给工具的结构化参数"
-                  title="参数"
-                />
-                <DetailCard
-                  content={resultText || toolCall.error || "暂无结果"}
-                  description="工具返回的安全摘要或可见内容"
-                  destructive={Boolean(toolCall.error)}
-                  title="结果"
-                />
-              </div>
-            </ScrollArea>
+          <CardContent
+            className={cn(
+              "min-h-0 flex-1",
+              view && "overflow-hidden p-0",
+            )}
+          >
+            {view ? (
+              <ExtensionToolWebView
+                fallback={
+                  <NativeToolCallDetails
+                    argumentsText={argumentsText}
+                    resultText={resultText}
+                    toolCall={toolCall}
+                  />
+                }
+                onRequestClose={onBack}
+                toolCall={toolCall}
+                view={view}
+              />
+            ) : (
+              <NativeToolCallDetails
+                argumentsText={argumentsText}
+                resultText={resultText}
+                toolCall={toolCall}
+              />
+            )}
           </CardContent>
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function NativeToolCallDetails({
+  argumentsText,
+  resultText,
+  toolCall,
+}: {
+  argumentsText: string;
+  resultText: string;
+  toolCall: domain.ToolCall;
+}) {
+  return (
+    <ScrollArea className="h-full pr-2">
+      <div className="flex flex-col gap-3 px-1 pb-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={toolCallStatusVariant(toolCall.status)}>
+            {toolCallStatusLabel(toolCall.status)}
+          </Badge>
+          <Badge variant="outline">{formatToolTime(toolCall.timeCreated)}</Badge>
+          {toolCall.timeUpdated &&
+          toolCall.timeUpdated !== toolCall.timeCreated ? (
+            <Badge variant="outline">
+              更新于 {formatToolTime(toolCall.timeUpdated)}
+            </Badge>
+          ) : null}
+        </div>
+        <DetailCard
+          content={argumentsText || "无参数"}
+          description="发送给工具的结构化参数"
+          title="参数"
+        />
+        <DetailCard
+          content={resultText || toolCall.error || "暂无结果"}
+          description="工具返回的安全摘要或可见内容"
+          destructive={Boolean(toolCall.error)}
+          title="结果"
+        />
+      </div>
+    </ScrollArea>
   );
 }
 

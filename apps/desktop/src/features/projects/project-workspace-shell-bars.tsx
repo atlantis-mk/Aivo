@@ -8,7 +8,7 @@ import {
 import type { ProjectWorkspacePage } from "@/features/projects/project-workspace-derived-state";
 
 function getProjectWorkspacePageHeader(activeProjectPage: ProjectWorkspacePage) {
-  if (activeProjectPage !== "plugins") {
+  if (activeProjectPage !== "extensions") {
     return { pageIcon: undefined, pageTitle: undefined };
   }
 
@@ -19,7 +19,7 @@ function getProjectWorkspacePageHeader(activeProjectPage: ProjectWorkspacePage) 
         className="size-4 shrink-0 text-muted-foreground"
       />
     ),
-    pageTitle: "Plugins & MCP",
+    pageTitle: "扩展与 MCP",
   };
 }
 
@@ -33,6 +33,7 @@ export function ProjectWorkspaceTopBar({
   isPinnedSummaryOpen,
   onArchiveConversation,
   onNewPage,
+  onOpenExtensions,
   onTogglePinnedConversation,
   onTogglePinnedSummary,
   repositoryPath,
@@ -47,6 +48,7 @@ export function ProjectWorkspaceTopBar({
   isPinnedSummaryOpen: boolean;
   onArchiveConversation: () => void;
   onNewPage: () => void;
+  onOpenExtensions: () => void;
   onTogglePinnedConversation: () => void;
   onTogglePinnedSummary: () => void;
   repositoryPath?: string;
@@ -65,6 +67,7 @@ export function ProjectWorkspaceTopBar({
       isLayoutPanelOpen={isPinnedSummaryOpen}
       onArchiveConversation={onArchiveConversation}
       onNewPage={onNewPage}
+      onOpenExtensions={onOpenExtensions}
       onToggleLayoutPanel={onTogglePinnedSummary}
       onTogglePinnedConversation={onTogglePinnedConversation}
       pageIcon={pageIcon}

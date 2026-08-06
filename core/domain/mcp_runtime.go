@@ -13,7 +13,20 @@ const (
 	MCPAuthNone   = "none"
 	MCPAuthBearer = "bearer"
 	MCPAuthOAuth  = "oauth"
+
+	MCPDiagnosticInfo  = "info"
+	MCPDiagnosticWarn  = "warn"
+	MCPDiagnosticError = "error"
 )
+
+type MCPDiagnostic struct {
+	ID          string         `json:"id"`
+	ServerID    string         `json:"serverId,omitempty"`
+	Level       string         `json:"level"`
+	Message     string         `json:"message"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	TimeCreated string         `json:"timeCreated"`
+}
 
 type MCPServerConfig struct {
 	ID                    string            `json:"id"`
@@ -41,7 +54,6 @@ type MCPServerConfig struct {
 	TimeoutSeconds        int               `json:"timeoutSeconds,omitempty"`
 	ConnectTimeoutSeconds int               `json:"connectTimeoutSeconds,omitempty"`
 	Enabled               bool              `json:"enabled"`
-	PluginID              string            `json:"pluginId,omitempty"`
 	Status                string            `json:"status,omitempty"`
 	Error                 string            `json:"error,omitempty"`
 	TimeCreated           string            `json:"timeCreated,omitempty"`
@@ -97,7 +109,7 @@ type MCPServerListItem struct {
 	Prompts           []MCPPromptRecord   `json:"prompts,omitempty"`
 	Resources         []MCPResourceRecord `json:"resources,omitempty"`
 	ResourceTemplates []MCPResourceRecord `json:"resourceTemplates,omitempty"`
-	Diagnostics       []PluginDiagnostic  `json:"diagnostics,omitempty"`
+	Diagnostics       []MCPDiagnostic     `json:"diagnostics,omitempty"`
 }
 
 type SaveMCPServerInput struct {
@@ -123,7 +135,7 @@ type MCPProbeResult struct {
 	Prompts           []MCPPromptRecord   `json:"prompts,omitempty"`
 	Resources         []MCPResourceRecord `json:"resources,omitempty"`
 	ResourceTemplates []MCPResourceRecord `json:"resourceTemplates,omitempty"`
-	Diagnostics       []PluginDiagnostic  `json:"diagnostics,omitempty"`
+	Diagnostics       []MCPDiagnostic     `json:"diagnostics,omitempty"`
 }
 
 type MCPPromptGetInput struct {

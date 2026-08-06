@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "id": "aivo.tools",
+  "name": "Aivo Tool Registration",
+  "version": "1.0.0",
+  "description": "List installed MCP sources and propose registering an MCP tool source through exact Host confirmation. 对话式查询和注册 MCP 工具来源。",
+  "apiVersion": "2",
+  "runtime": {
+    "type": "builtin"
+  },
+  "contributes": {
+    "tools": [
+      {
+        "name": "aivo_tools_list_mcp",
+        "description": "List safe summaries of installed MCP tool sources. Use this when the user asks which MCP sources or registered tools are available. 查询已注册的 MCP 工具来源。",
+        "activation": "auto",
+        "capability": "extensions.read",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "includeDisabled": { "type": "boolean", "default": true }
+          }
+        }
+      },
+      {
+        "name": "aivo_tools_register_mcp",
+        "description": "Propose and, only after exact native user approval, register one MCP tool source globally so later conversations can resolve it. Never put raw secrets in arguments; use bearerTokenEnv for an existing environment-variable reference. 对话式注册 MCP 工具来源。",
+        "activation": "auto",
+        "capability": "extensions.write",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "displayName", "transport"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 48, "description": "Stable Provider-safe MCP source ID." },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "description": { "type": "string", "maxLength": 500 },
+            "transport": { "type": "string", "enum": ["stdio", "streamable_http", "sse"] },
+            "command": { "type": "string", "description": "For stdio only: an absolute executable path or a simple executable name. No shell expression." },
+            "args": { "type": "array", "maxItems": 64, "items": { "type": "string", "maxLength": 2000 } },
+            "cwd": { "type": "string", "description": "For stdio only: optional existing absolute working directory." },
+            "url": { "type": "string", "description": "For HTTP/SSE only: HTTPS endpoint, or loopback HTTP for local development. User info, query, and fragment are refused." },
+            "roots": { "type": "array", "maxItems": 16, "items": { "type": "string", "description": "Existing absolute local directory exposed as an MCP root." } },
+            "authType": { "type": "string", "enum": ["none", "bearer"], "default": "none" },
+            "bearerTokenEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "description": "Existing Host environment-variable name. Never provide its value." },
+            "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 120, "default": 30 },
+            "connectTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 60, "default": 30 }
+          }
+        }
+      }
+    ]
+  }
+}

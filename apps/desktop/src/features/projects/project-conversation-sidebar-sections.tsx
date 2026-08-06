@@ -30,7 +30,7 @@ export function ConversationSidebarPrimaryNav({
   activeProjectPage,
   onNewConversation,
 }: {
-  activeProjectPage: "chat" | "plugins";
+  activeProjectPage: "chat" | "extensions";
   onNewConversation: () => void;
 }) {
   return (
@@ -51,12 +51,12 @@ export function ConversationSidebarPrimaryNav({
           <SidebarMenuButton
             asChild
             className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
-            isActive={activeProjectPage === "plugins"}
-            tooltip="插件"
+            isActive={activeProjectPage === "extensions"}
+            tooltip="扩展"
           >
-            <Link to="/projects/plugins">
+            <Link to="/projects/extensions">
               <Plug />
-              <span>插件</span>
+              <span>扩展</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,8 +28,12 @@ import (
 )
 
 const (
-	extensionProtocolMaxFrame  = 1 << 20
-	extensionProtocolQueueSize = 64
+	extensionProtocolMaxFrame            = 1 << 20
+	extensionProtocolQueueSize           = 64
+	extensionServiceHandshakeMaxFrame    = 16 << 10
+	extensionServiceHandshakeTimeout     = 10 * time.Second
+	extensionServiceHandshakeProtocol    = "aivo-extension-service/1"
+	extensionServiceDynamicHTTPTransport = "dynamic-http"
 )
 
 type extensionRuntimeClient interface {
@@ -290,7 +295,7 @@ func (s *ExtensionSupervisor) RegisterReadyTools(id string, registry *Registry) 
 	}
 	tools := make([]domain.Tool, 0, len(item.loaded.Manifest.Contributes.Tools))
 	for _, contribution := range item.loaded.Manifest.Contributes.Tools {
-		spec := domain.ToolSpec{Name: contribution.Name, Description: contribution.Description, InputSchema: domain.CloneRawMap(item.loaded.ToolSchemas[contribution.Name]), Capability: contribution.Capability, Category: "extension", Toolsets: []string{"coding", "plugin"}, ActivationPolicy: firstNonEmpty(contribution.Activation, "auto"), ImplementationHash: item.loaded.Integrity}
+		spec := domain.ToolSpec{Name: contribution.Name, Description: contribution.Description, InputSchema: domain.CloneRawMap(item.loaded.ToolSchemas[contribution.Name]), Capability: contribution.Capability, Category: "extension", Toolsets: []string{"coding", "extension"}, ActivationPolicy: firstNonEmpty(contribution.Activation, "auto"), ImplementationHash: item.loaded.Integrity}
 		tools = append(tools, &extensionTool{supervisor: s, extensionID: id, generation: item.loaded.Integrity, spec: spec})
 	}
 	return registry.RegisterScopedBatch(tools, domain.ToolSourceExtension, id, item.loaded.Manifest.Version)
@@ -454,20 +459,55 @@ func (s *ExtensionSupervisor) ResolveView(ctx context.Context, id, viewID string
 		if view.ID != strings.TrimSpace(viewID) {
 			continue
 		}
-		backend := strings.TrimRight(item.loaded.Manifest.Runtime.URL, "/") + view.Route
-		if strings.TrimSpace(item.loaded.Manifest.Runtime.URL) == "" {
+		endpoint, backendToken := extensionServiceEndpoint(item.client)
+		if endpoint == "" {
 			return domain.ExtensionViewDescriptor{}, errors.New("extension view service URL is unavailable")
 		}
-		backendToken := ""
-		switch service := item.client.(type) {
-		case *supervisedServiceExtensionClient:
-			backendToken = service.bearer
-		case *serviceExtensionClient:
-			backendToken = service.bearer
-		}
-		return domain.ExtensionViewDescriptor{ExtensionID: id, ViewID: view.ID, Title: view.Title, LogicalURL: "aivo-extension://" + id + view.Route, BackendURL: backend, BackendToken: backendToken, Surface: append([]string(nil), view.Surfaces...), Actions: append([]string(nil), view.Actions...), CSP: "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"}, nil
+		backend := strings.TrimRight(endpoint, "/") + view.Route
+		return domain.ExtensionViewDescriptor{ExtensionID: id, ViewID: view.ID, Title: view.Title, LogicalURL: "aivo-extension://" + id + view.Route, BackendURL: backend, BackendToken: backendToken, Surface: append([]string(nil), view.Surfaces...), Actions: append([]string(nil), view.Actions...), Permissions: append([]string(nil), item.loaded.Manifest.Permissions...), CSP: "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"}, nil
 	}
 	return domain.ExtensionViewDescriptor{}, errors.New("extension view not found")
+}
+
+func (s *ExtensionSupervisor) ToolViewRef(id, generation, name string) *domain.ExtensionToolViewRef {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id = strings.TrimSpace(id)
+	name = strings.TrimSpace(name)
+	if id == "" || name == "" {
+		return nil
+	}
+	item := s.generationLocked(id, strings.TrimSpace(generation))
+	if item == nil {
+		return nil
+	}
+	return extensionToolViewRef(item.loaded.Manifest, name)
+}
+
+func extensionToolViewRef(manifest domain.ExtensionManifest, name string) *domain.ExtensionToolViewRef {
+	var page *domain.ExtensionToolViewRef
+	for _, view := range manifest.Contributes.Views {
+		associated := false
+		for _, toolName := range view.Tools {
+			if toolName == name {
+				associated = true
+				break
+			}
+		}
+		if !associated {
+			continue
+		}
+		for _, surface := range view.Surfaces {
+			ref := &domain.ExtensionToolViewRef{ExtensionID: manifest.ID, ViewID: view.ID, Surface: surface, Title: view.Title}
+			if surface == "tool-detail" {
+				return ref
+			}
+			if surface == "page" && page == nil {
+				page = ref
+			}
+		}
+	}
+	return page
 }
 
 func (s *ExtensionSupervisor) OpenView(ctx context.Context, id string) error {
@@ -568,13 +608,19 @@ func (s *ExtensionSupervisor) Execute(ctx context.Context, id, name string, args
 	return s.executeGeneration(ctx, id, generation, name, args, execCtx)
 }
 
-func (s *ExtensionSupervisor) executeGeneration(ctx context.Context, id, generation, name string, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+func (s *ExtensionSupervisor) executeGeneration(ctx context.Context, id, generation, name string, args json.RawMessage, execCtx domain.ToolExecutionContext) (result domain.ToolResult) {
 	s.mu.Lock()
 	item := s.generationLocked(id, generation)
 	if item == nil {
 		s.mu.Unlock()
 		return primitiveError(name, "extension_unavailable", errors.New("extension generation is unavailable"))
 	}
+	viewRef := extensionToolViewRef(item.loaded.Manifest, name)
+	defer func() {
+		if viewRef != nil {
+			result.Details = &domain.ToolResultDetails{View: viewRef}
+		}
+	}()
 	if item.client == nil && item.status.Enabled && item.status.State == domain.ExtensionStateReady {
 		s.mu.Unlock()
 		if _, startErr := s.startItem(ctx, item); startErr != nil {
@@ -843,6 +889,35 @@ func (s *ExtensionSupervisor) Status(id string) (domain.ExtensionStatus, error) 
 	return item.status, nil
 }
 
+func (s *ExtensionSupervisor) Remove(ctx context.Context, id string) error {
+	s.mu.Lock()
+	item, err := s.itemLocked(id)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	if item.loaded.Manifest.Runtime.Type == domain.ExtensionRuntimeBuiltin {
+		s.mu.Unlock()
+		return errors.New("built-in extensions cannot be removed")
+	}
+	s.mu.Unlock()
+	_, stopErr := s.Stop(ctx, id)
+	s.mu.Lock()
+	retired := make([]*supervisedExtension, 0, len(s.retired[id]))
+	for _, generation := range s.retired[id] {
+		retired = append(retired, generation)
+	}
+	delete(s.items, id)
+	delete(s.retired, id)
+	s.mu.Unlock()
+	for _, generation := range retired {
+		if err := s.shutdownItem(ctx, generation); stopErr == nil && err != nil {
+			stopErr = err
+		}
+	}
+	return stopErr
+}
+
 func (s *ExtensionSupervisor) itemLocked(id string) (*supervisedExtension, error) {
 	item := s.items[strings.TrimSpace(id)]
 	if item == nil {
@@ -876,7 +951,7 @@ func (s *ExtensionSupervisor) runtimeClientLocked(ctx context.Context, item *sup
 		}
 		return client, err
 	case domain.ExtensionRuntimeService:
-		return newSupervisedServiceExtensionClient(item.loaded, s.httpClient)
+		return newSupervisedServiceExtensionClient(ctx, item.loaded, s.httpClient)
 	case domain.ExtensionRuntimeExternal:
 		if s.credentials == nil || len(item.loaded.Manifest.Requirements.Credentials) == 0 {
 			return nil, errors.New("external extension credential broker is unavailable")
@@ -957,7 +1032,7 @@ func newProcessExtensionClient(loaded LoadedExtension) (*processExtensionClient,
 }
 
 func (c *processExtensionClient) Initialize(ctx context.Context, manifest domain.ExtensionManifest) error {
-	_, err := c.call(ctx, "extension/initialize", map[string]any{"apiVersion": "1", "extensionId": manifest.ID, "extensionVersion": manifest.Version}, "")
+	_, err := c.call(ctx, "extension/initialize", map[string]any{"apiVersion": manifest.APIVersion, "extensionId": manifest.ID, "extensionVersion": manifest.Version}, "")
 	return err
 }
 func (c *processExtensionClient) Activate(ctx context.Context) error {
@@ -1131,7 +1206,7 @@ type supervisedServiceExtensionClient struct {
 	bearer string
 }
 
-func newSupervisedServiceExtensionClient(loaded LoadedExtension, httpClient *http.Client) (*supervisedServiceExtensionClient, error) {
+func newSupervisedServiceExtensionClient(ctx context.Context, loaded LoadedExtension, httpClient *http.Client) (*supervisedServiceExtensionClient, error) {
 	tokenRaw := make([]byte, 32)
 	if _, err := rand.Read(tokenRaw); err != nil {
 		return nil, err
@@ -1148,18 +1223,112 @@ func newSupervisedServiceExtensionClient(loaded LoadedExtension, httpClient *htt
 	cmd := exec.Command(command, loaded.Manifest.Runtime.Args...)
 	cmd.Dir = loaded.Root
 	cmd.Env = append(SanitizedEnvironment(loaded.Root, defaultEnvAllowlist(), nil, nil), "AIVO_EXTENSION_BEARER_TOKEN="+bearer)
-	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	setProcessGroup(cmd)
+	dynamicEndpoint := strings.TrimSpace(loaded.Manifest.Runtime.Transport) == extensionServiceDynamicHTTPTransport
+	var stdout io.ReadCloser
+	var err error
+	if dynamicEndpoint {
+		stdout, err = cmd.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cmd.Stdout = io.Discard
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	client, err := newServiceExtensionClient(loaded.Manifest.Runtime.URL, bearer, httpClient)
+	endpoint := loaded.Manifest.Runtime.URL
+	if dynamicEndpoint {
+		endpoint, err = readDynamicServiceEndpoint(ctx, stdout)
+		_ = stdout.Close()
+		if err != nil {
+			_ = killProcessGroup(cmd.Process)
+			return nil, err
+		}
+	}
+	client, err := newServiceExtensionClient(endpoint, bearer, httpClient)
 	if err != nil {
 		_ = killProcessGroup(cmd.Process)
 		return nil, err
 	}
 	return &supervisedServiceExtensionClient{serviceExtensionClient: client, cmd: cmd, bearer: bearer}, nil
+}
+
+func readDynamicServiceEndpoint(ctx context.Context, stdout io.ReadCloser) (string, error) {
+	return readDynamicServiceEndpointWithTimeout(ctx, stdout, extensionServiceHandshakeTimeout)
+}
+
+func readDynamicServiceEndpointWithTimeout(ctx context.Context, stdout io.ReadCloser, timeout time.Duration) (string, error) {
+	if stdout == nil {
+		return "", errors.New("dynamic extension service readiness stream is unavailable")
+	}
+	readCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	type readResult struct {
+		line []byte
+		err  error
+	}
+	resultChannel := make(chan readResult, 1)
+	go func() {
+		reader := bufio.NewReader(io.LimitReader(stdout, extensionServiceHandshakeMaxFrame+1))
+		line, err := reader.ReadBytes('\n')
+		resultChannel <- readResult{line: line, err: err}
+	}()
+	var result readResult
+	select {
+	case <-readCtx.Done():
+		_ = stdout.Close()
+		return "", fmt.Errorf("dynamic extension service readiness timed out: %w", readCtx.Err())
+	case result = <-resultChannel:
+	}
+	if len(result.line) > extensionServiceHandshakeMaxFrame {
+		return "", errors.New("dynamic extension service readiness exceeds 16 KiB")
+	}
+	if result.err != nil {
+		return "", fmt.Errorf("dynamic extension service readiness ended before one frame: %w", result.err)
+	}
+	if len(result.line) == 0 || result.line[len(result.line)-1] != '\n' {
+		return "", errors.New("dynamic extension service readiness must be newline terminated")
+	}
+	var handshake struct {
+		Protocol string `json:"protocol"`
+		URL      string `json:"url"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(result.line), &handshake); err != nil {
+		return "", errors.New("dynamic extension service readiness is invalid JSON")
+	}
+	if handshake.Protocol != extensionServiceHandshakeProtocol {
+		return "", errors.New("dynamic extension service readiness protocol is unsupported")
+	}
+	return validateDynamicServiceEndpoint(handshake.URL)
+}
+
+func validateDynamicServiceEndpoint(endpoint string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || parsed.Scheme != "http" || parsed.Opaque != "" || parsed.User != nil || !extensionLoopbackHost(parsed.Hostname()) {
+		return "", errors.New("dynamic extension service must announce loopback HTTP")
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return "", errors.New("dynamic extension service must announce an explicit non-zero port")
+	}
+	if (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery {
+		return "", errors.New("dynamic extension service must announce a root origin without query or fragment")
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+func extensionServiceEndpoint(client extensionRuntimeClient) (string, string) {
+	switch service := client.(type) {
+	case *supervisedServiceExtensionClient:
+		return service.endpoint, service.bearer
+	case *serviceExtensionClient:
+		return service.endpoint, service.bearer
+	default:
+		return "", ""
+	}
 }
 
 func (c *supervisedServiceExtensionClient) Initialize(ctx context.Context, manifest domain.ExtensionManifest) error {
@@ -1198,7 +1367,7 @@ func newServiceExtensionClient(endpoint, bearer string, client *http.Client) (*s
 	return &serviceExtensionClient{endpoint: endpoint, bearer: bearer, client: client}, nil
 }
 func (c *serviceExtensionClient) Initialize(ctx context.Context, manifest domain.ExtensionManifest) error {
-	_, err := c.call(ctx, "extension/initialize", map[string]any{"apiVersion": "1", "extensionId": manifest.ID, "extensionVersion": manifest.Version})
+	_, err := c.call(ctx, "extension/initialize", map[string]any{"apiVersion": manifest.APIVersion, "extensionId": manifest.ID, "extensionVersion": manifest.Version})
 	return err
 }
 func (c *serviceExtensionClient) Activate(ctx context.Context) error {

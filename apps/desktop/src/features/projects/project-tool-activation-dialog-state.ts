@@ -16,15 +16,14 @@ import {
   getSessionActiveTools,
   ignoreSkillCandidatesByName,
   importSkill,
+  listExtensionInstalls,
   listMCPServers,
-  listPlugins,
   listSkills,
   listToolCatalog,
   loadSkillIntoSession,
   setSessionActiveSkills,
   setSessionActiveTools,
   type MCPServerListItem,
-  type PluginListItem,
   type SkillEntry,
   type SkillImportCandidate,
   type ToolCatalogEntry,
@@ -116,10 +115,12 @@ export function useToolActivationDialogState({
         ? getSessionActiveTools(activeSessionId).catch(() => ({
             sessionId: activeSessionId,
             toolNames: [],
+            coreToolNames: [],
           }))
         : Promise.resolve({
             sessionId: "",
             toolNames: pendingActiveToolNamesRef.current,
+            coreToolNames: [],
           }),
       activeSessionId
         ? getSessionActiveSkills(activeSessionId).catch(() => ({
@@ -128,7 +129,7 @@ export function useToolActivationDialogState({
             skills: [],
           }))
         : Promise.resolve({ sessionId: "", skillIds: [], skills: [] }),
-      listPlugins(true).catch(() => [] as PluginListItem[]),
+      listExtensionInstalls().catch(() => []),
       listMCPServers(true, false).catch(() => [] as MCPServerListItem[]),
     ])
       .then(
@@ -137,13 +138,19 @@ export function useToolActivationDialogState({
           skillList,
           activeTools,
           activeSkills,
-          plugins,
+          extensions,
           servers,
         ]) => {
           if (cancelled) return;
-          const normalizedActiveTools = normalizeToolNames(
-            activeTools.toolNames,
-          );
+          const defaultCoreTools = catalogTools
+            .filter((tool) => tool.source === "builtin")
+            .map((tool) => tool.name);
+          const normalizedActiveTools = normalizeToolNames([
+            ...activeTools.toolNames,
+            ...(activeSessionId
+              ? activeTools.coreToolNames
+              : defaultCoreTools),
+          ]);
           const normalizedActiveSkills = normalizeToolNames(
             activeSkills.skillIds,
           );
@@ -154,7 +161,7 @@ export function useToolActivationDialogState({
           setSavedToolNames(normalizedActiveTools);
           setActiveSkillIds(normalizedActiveSkills);
           setSavedSkillIds(normalizedActiveSkills);
-          setSourceMetadata(toolActivationSourceMetadata(plugins, servers));
+          setSourceMetadata(toolActivationSourceMetadata(extensions, servers));
         },
       )
       .catch((err) => {

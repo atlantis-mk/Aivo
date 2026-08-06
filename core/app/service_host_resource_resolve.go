@@ -52,11 +52,6 @@ func (s *Service) prepareEnabledToolCatalogs(ctx context.Context) map[string]boo
 	prepareCtx, cancel := context.WithTimeout(ctx, hostCatalogPreparationTimeout)
 	defer cancel()
 	failed := map[string]bool{}
-	if s.pluginManager != nil {
-		for key := range s.pluginManager.PrepareEnabled(prepareCtx) {
-			failed[key] = true
-		}
-	}
 	if s.mcpManager != nil {
 		for key := range s.mcpManager.PrepareEnabledCatalogs(prepareCtx) {
 			failed[key] = true

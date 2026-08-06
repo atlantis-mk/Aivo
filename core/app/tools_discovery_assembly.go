@@ -55,7 +55,9 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 			continue
 		}
 		if isCoreVisibleToolSpec(spec) {
-			visible = append(visible, spec)
+			if activationSources[spec.Name] != "disabled" {
+				visible = append(visible, spec)
+			}
 			continue
 		}
 		if !isDeferrableToolSpec(spec, allIdentities[spec.Name]) {

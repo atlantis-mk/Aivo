@@ -35,8 +35,14 @@ func (s *Service) emitApplyPatchDraft(sessionID string, turnID string, workspace
 	}, false)
 }
 
-func (s *Service) recordToolCallStarted(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall) error {
+func (s *Service) recordToolCallStarted(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall, identity domain.ToolRegistrationIdentity) error {
 	args := toolCallArgumentsMap(call)
+	var result map[string]any
+	if s.extensionSupervisor != nil && identity.Source == domain.ToolSourceExtension {
+		if view := s.extensionSupervisor.ToolViewRef(identity.SourceID, identity.ImplementationHash, call.Name); view != nil {
+			result = map[string]any{"details": map[string]any{"view": view}}
+		}
+	}
 	_, err := s.SaveToolCall(ctx, domain.CreateToolCallRequest{
 		ID:        call.ID,
 		SessionID: sessionID,
@@ -44,6 +50,7 @@ func (s *Service) recordToolCallStarted(ctx context.Context, sessionID string, t
 		Name:      call.Name,
 		Arguments: args,
 		Status:    domain.ToolCallStatusRunning,
+		Result:    result,
 	})
 	if err == nil && s.onSessionUpdated != nil {
 		s.onSessionUpdated(sessionID, nil)
@@ -100,16 +107,14 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 	if s.extensionSupervisor != nil {
 		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}
-	if s.pluginManager != nil {
-		s.pluginManager.RegisterCachedEnabledTools(context.Background(), registry)
-	}
 	if s.mcpManager != nil {
 		s.mcpManager.RegisterCachedEnabledTools(context.Background(), registry)
 	}
 	runtime := NewToolRuntime(registry, workspaceRoot)
-	runtime.PluginHooks = s.extensionSupervisor
+	runtime.ExtensionHooks = s.extensionSupervisor
 	runtime.Permissions = NewPermissionEngine(s.store)
 	runtime.Permissions.ProjectPreflight = s.prepareProjectPermission
+	runtime.Permissions.MCPRegistrationPreflight = s.prepareMCPRegistrationPermission
 	runtime.Permissions.notifier = s.permissionNotifier
 	runtime.Permissions.onRequest = func(request domain.PermissionRequest) {
 		if request.SessionID != "" && request.ToolCallID != "" {

@@ -47,12 +47,12 @@ func TestRegistryAcceptsGlobalToolNameBoundaryAndRejectsBatchAtomically(t *testi
 
 func TestManifestAndGeneratedMCPToolsUseGlobalCanonicalNames(t *testing.T) {
 	invalidManifest := []byte(`{
-		"schemaVersion":1,"id":"com.example.invalid","name":"Invalid","version":"1","apiVersion":"1",
+		"schemaVersion":2,"id":"com.example.invalid","name":"Invalid","version":"1","apiVersion":"2",
 		"runtime":{"type":"builtin"},
 		"contributes":{"tools":[{"name":"example.invalid","schema":{"type":"object"}}]}
 	}`)
 	if _, err := LoadBuiltinExtensionManifest(invalidManifest); err == nil {
-		t.Fatal("Manifest v1 accepted a dotted tool name")
+		t.Fatal("Manifest v2 accepted a dotted tool name")
 	}
 
 	server := domain.MCPServerConfig{ID: "Docs.Server", Name: "Docs Server"}

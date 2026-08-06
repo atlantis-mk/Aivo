@@ -28,10 +28,21 @@ contextBridge.exposeInMainWorld('aivo', {
   coreUrl: CORE_URL,
   invoke,
   selectProjectDirectory: () => ipcRenderer.invoke('aivo:select-project-directory'),
+  selectExtensionDirectory: () => ipcRenderer.invoke('aivo:select-extension-directory'),
   openExternal: (target) => ipcRenderer.invoke('aivo:open-external', target),
   openPath: (target) => ipcRenderer.invoke('aivo:open-path', target),
   focusWindow: () => ipcRenderer.invoke('aivo:focus-window'),
   toggleMaximize: () => ipcRenderer.invoke('aivo:toggle-maximize'),
   exportDiagnostics: () => ipcRenderer.invoke('aivo:export-diagnostics'),
   openExtensionView: (input) => ipcRenderer.invoke('aivo:open-extension-view', input),
+  mountEmbeddedExtensionView: (input) => ipcRenderer.invoke('aivo:mount-embedded-extension-view', input),
+  updateEmbeddedExtensionViewBounds: (input) => ipcRenderer.invoke('aivo:update-embedded-extension-view-bounds', input),
+  updateEmbeddedExtensionViewContext: (input) => ipcRenderer.invoke('aivo:update-embedded-extension-view-context', input),
+  closeEmbeddedExtensionView: (input) => ipcRenderer.invoke('aivo:close-embedded-extension-view', input),
+  onEmbeddedExtensionViewClosed: (listener) => {
+    if (typeof listener !== 'function') return () => {}
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on('aivo:embedded-extension-view-closed', handler)
+    return () => ipcRenderer.removeListener('aivo:embedded-extension-view-closed', handler)
+  },
 })

@@ -8,6 +8,7 @@ import {
   permissionApprovalTitle,
   permissionCommand,
   permissionFiles,
+  permissionMCPRegistration,
   permissionProject,
   permissionRememberLabel,
   permissionToolsets,
@@ -34,6 +35,7 @@ export function PermissionRequestCard({
   const files = permissionFiles(permission);
   const command = permissionCommand(permission);
   const project = permissionProject(permission);
+  const registration = permissionMCPRegistration(permission);
   const title = permissionApprovalTitle(permission, command);
   const target = permissionApprovalTarget(permission, command);
   const permissionModeLabel = permissionAgentMode(permission);
@@ -133,6 +135,50 @@ export function PermissionRequestCard({
           </div>
         </div>
       ) : null}
+      {registration ? (
+        <div className="mt-3 grid gap-2 rounded-md bg-muted/70 p-3 text-xs">
+          <div className="grid gap-1.5">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <span className="font-semibold text-foreground">
+                {registration.name}
+              </span>
+              <span className="rounded bg-background px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                {registration.id}
+              </span>
+            </div>
+            <div className="grid gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
+              <span>transport: {registration.transport}</span>
+              <span>
+                auth: {registration.auth}
+                {registration.bearerTokenEnv
+                  ? ` (${registration.bearerTokenEnv})`
+                  : ""}
+              </span>
+            </div>
+            <div className="break-all rounded border border-border/70 bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground">
+              {registration.target}
+            </div>
+            {registration.cwd ? (
+              <div className="break-all text-[11px] text-muted-foreground">
+                cwd: {registration.cwd}
+              </div>
+            ) : null}
+            {registration.roots.length > 0 ? (
+              <div className="grid gap-1 text-[11px] text-muted-foreground">
+                <span className="font-semibold">MCP roots</span>
+                {registration.roots.map((root) => (
+                  <span className="break-all font-mono" key={root}>
+                    {root}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="rounded border border-border/70 bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            批准后 Host 才会启动或连接该来源并探测能力。成功后它会全局保存，后续会话可按需使用；这不是进程沙箱。
+          </div>
+        </div>
+      ) : null}
       {command ? (
         <div className="mt-3 grid gap-2 rounded-md bg-muted/70 p-3 text-xs">
           <div className="min-w-0">
@@ -158,17 +204,23 @@ export function PermissionRequestCard({
         </div>
       ) : null}
       <div className="mt-3 flex flex-col gap-2 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <input
-            checked={remember}
-            className="size-3.5 accent-primary"
-            onChange={(event) => setRemember(event.target.checked)}
-            type="checkbox"
-          />
-          <span className="truncate">
-            {permissionRememberLabel(permission, command)}
+        {registration ? (
+          <span className="text-xs text-muted-foreground">
+            此注册必须单独确认，不能记住授权
           </span>
-        </label>
+        ) : (
+          <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <input
+              checked={remember}
+              className="size-3.5 accent-primary"
+              onChange={(event) => setRemember(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="truncate">
+              {permissionRememberLabel(permission, command)}
+            </span>
+          </label>
+        )}
         <div className="flex shrink-0 items-center gap-2">
           <Button
             className="h-8 px-3 text-xs"

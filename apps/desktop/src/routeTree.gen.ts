@@ -13,7 +13,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ProjectsPluginsRouteImport } from './routes/projects.plugins'
+import { Route as ProjectsExtensionsRouteImport } from './routes/projects.extensions'
 import { Route as ProjectsChatRouteImport } from './routes/projects.chat'
 
 const SetupRoute = SetupRouteImport.update({
@@ -36,9 +36,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsPluginsRoute = ProjectsPluginsRouteImport.update({
-  id: '/plugins',
-  path: '/plugins',
+const ProjectsExtensionsRoute = ProjectsExtensionsRouteImport.update({
+  id: '/extensions',
+  path: '/extensions',
   getParentRoute: () => ProjectsRoute,
 } as any)
 const ProjectsChatRoute = ProjectsChatRouteImport.update({
@@ -53,7 +53,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/projects/chat': typeof ProjectsChatRoute
-  '/projects/plugins': typeof ProjectsPluginsRoute
+  '/projects/extensions': typeof ProjectsExtensionsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -61,7 +61,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/projects/chat': typeof ProjectsChatRoute
-  '/projects/plugins': typeof ProjectsPluginsRoute
+  '/projects/extensions': typeof ProjectsExtensionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -70,7 +70,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/projects/chat': typeof ProjectsChatRoute
-  '/projects/plugins': typeof ProjectsPluginsRoute
+  '/projects/extensions': typeof ProjectsExtensionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -80,7 +80,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/projects/chat'
-    | '/projects/plugins'
+    | '/projects/extensions'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -88,7 +88,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/projects/chat'
-    | '/projects/plugins'
+    | '/projects/extensions'
   id:
     | '__root__'
     | '/'
@@ -96,7 +96,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/projects/chat'
-    | '/projects/plugins'
+    | '/projects/extensions'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -136,11 +136,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects/plugins': {
-      id: '/projects/plugins'
-      path: '/plugins'
-      fullPath: '/projects/plugins'
-      preLoaderRoute: typeof ProjectsPluginsRouteImport
+    '/projects/extensions': {
+      id: '/projects/extensions'
+      path: '/extensions'
+      fullPath: '/projects/extensions'
+      preLoaderRoute: typeof ProjectsExtensionsRouteImport
       parentRoute: typeof ProjectsRoute
     }
     '/projects/chat': {
@@ -155,12 +155,12 @@ declare module '@tanstack/react-router' {
 
 interface ProjectsRouteChildren {
   ProjectsChatRoute: typeof ProjectsChatRoute
-  ProjectsPluginsRoute: typeof ProjectsPluginsRoute
+  ProjectsExtensionsRoute: typeof ProjectsExtensionsRoute
 }
 
 const ProjectsRouteChildren: ProjectsRouteChildren = {
   ProjectsChatRoute: ProjectsChatRoute,
-  ProjectsPluginsRoute: ProjectsPluginsRoute,
+  ProjectsExtensionsRoute: ProjectsExtensionsRoute,
 }
 
 const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(

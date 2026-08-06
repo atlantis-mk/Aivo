@@ -1,25 +1,22 @@
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
-import {
-  isApplicationPlugin,
-  type PluginSettingsSection,
-} from "@/features/projects/plugin-mcp-settings-model";
+import type { ExtensionSettingsSection } from "@/features/projects/extension-settings-model";
 import type {
+  ExtensionInstall,
   MCPServerListItem,
-  PluginListItem,
   ToolCatalogEntry,
 } from "@/services/aivo";
 
 type ToolActivationSourceMetadata = {
   description?: string;
   label: string;
-  section: Exclude<PluginSettingsSection, "skills" | "tools">;
+  section: Exclude<ExtensionSettingsSection, "skills" | "tools">;
 };
 
 export type ToolCatalogGroup = {
   description?: string;
   id: string;
   label: string;
-  section: Exclude<PluginSettingsSection, "skills">;
+  section: Exclude<ExtensionSettingsSection, "skills">;
   tools: ToolCatalogEntry[];
 };
 
@@ -34,23 +31,7 @@ export function usedToolNamesFromTurns(turns: ConversationTurn[]) {
 }
 
 export function isToggleableCatalogTool(tool: ToolCatalogEntry) {
-  if (!tool.enabled || isBridgeCatalogTool(tool)) return false;
-  if (tool.source === "plugin" || tool.source === "mcp") return true;
-  if (
-    ["mcp", "plugin", "agent", "automation", "admin"].includes(
-      tool.category ?? "",
-    )
-  ) {
-    return true;
-  }
-  return (tool.toolsets ?? []).some(
-    (toolset) =>
-      toolset === "mcp" ||
-      toolset === "plugin" ||
-      toolset === "admin" ||
-      toolset.startsWith("mcp:") ||
-      toolset.startsWith("plugin:"),
-  );
+  return tool.enabled && !isBridgeCatalogTool(tool) && !isMcpCatalogTool(tool);
 }
 
 export function groupToolCatalogEntries(
@@ -62,7 +43,7 @@ export function groupToolCatalogEntries(
     const baseSection = toolActivationSection(tool);
     const metadata = tool.sourceId
       ? sourceMetadata[
-          `${baseSection === "mcp" ? "mcp" : "plugin"}:${tool.sourceId}`
+          `${baseSection}:${tool.sourceId}`
         ]
       : undefined;
     const section = toolActivationSection(tool, metadata);
@@ -86,18 +67,15 @@ export function groupToolCatalogEntries(
 }
 
 export function toolActivationSourceMetadata(
-  plugins: PluginListItem[],
+  extensions: ExtensionInstall[],
   servers: MCPServerListItem[],
 ) {
   const metadata: Record<string, ToolActivationSourceMetadata> = {};
-  for (const item of plugins) {
-    metadata[`plugin:${item.plugin.id}`] = {
-      description: item.plugin.manifest.description,
-      label:
-        item.plugin.manifest.displayName ||
-        item.plugin.manifest.name ||
-        item.plugin.id,
-      section: isApplicationPlugin(item) ? "apps" : "plugins",
+  for (const item of extensions) {
+    metadata[`extensions:${item.id}`] = {
+      description: item.summary.description,
+      label: item.summary.name || item.id,
+      section: "extensions",
     };
   }
   for (const item of servers) {
@@ -168,7 +146,7 @@ function isBridgeCatalogTool(tool: ToolCatalogEntry) {
 
 function toolCategoryLabel(tool: ToolCatalogEntry) {
   if (tool.source === "mcp") return "MCP";
-  if (tool.source === "plugin") return "插件";
+  if (tool.source === "extension") return "扩展";
   if (tool.category) return tool.category;
   return "工具";
 }
@@ -176,7 +154,7 @@ function toolCategoryLabel(tool: ToolCatalogEntry) {
 function toolActivationSection(
   tool: ToolCatalogEntry,
   metadata?: ToolActivationSourceMetadata,
-): Exclude<PluginSettingsSection, "skills"> {
+): Exclude<ExtensionSettingsSection, "skills"> {
   if (
     tool.source === "mcp" ||
     tool.category === "mcp" ||
@@ -189,15 +167,28 @@ function toolActivationSection(
   }
   if (metadata) return metadata.section;
   if (
-    tool.source === "plugin" ||
-    tool.category === "plugin" ||
+    tool.source === "extension" ||
+    tool.category === "extension" ||
     (tool.toolsets ?? []).some(
-      (toolset) => toolset === "plugin" || toolset.startsWith("plugin:"),
+      (toolset) =>
+        toolset === "extension" || toolset.startsWith("extension:"),
     )
   ) {
-    return "plugins";
+    return "extensions";
   }
   return "tools";
+}
+
+function isMcpCatalogTool(tool: ToolCatalogEntry) {
+  return (
+    tool.source === "mcp" ||
+    tool.category === "mcp" ||
+    tool.sourceId?.startsWith("mcp.") ||
+    (tool.toolsets ?? []).some(
+      (toolset) => toolset === "mcp" || toolset.startsWith("mcp:"),
+    ) ||
+    /(^|_)mcp(_|$)/i.test(tool.name)
+  );
 }
 
 function sanitizeMcpSourceId(value: string) {

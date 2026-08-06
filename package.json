@@ -9,7 +9,7 @@
   "scripts": {
     "docs:check": "node scripts/docs-check.mjs",
     "work:archive": "node scripts/archive-work.mjs",
-    "scripts:test": "node --test scripts/*.test.mjs && node --test --experimental-strip-types apps/desktop/tests/*.test.ts",
+    "scripts:test": "node --test scripts/*.test.mjs && node --test --experimental-strip-types apps/desktop/tests/*.test.ts && node --test examples/extensions/ui-test/server.test.mjs",
     "dev": "node scripts/dev.mjs",
     "build:core": "node scripts/build-core.mjs",
     "build": "npm --workspace @aivo/desktop run build",
