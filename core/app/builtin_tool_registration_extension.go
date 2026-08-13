@@ -14,7 +14,6 @@ import (
 
 const (
 	toolRegistrationExtensionID = "aivo.tools"
-	toolRegistrationListName    = "aivo_tools_list_mcp"
 	toolRegistrationMCPName     = "aivo_tools_register_mcp"
 )
 
@@ -35,31 +34,6 @@ func (c *toolRegistrationBuiltinExtensionClient) Initialize(_ context.Context, m
 
 func (c *toolRegistrationBuiltinExtensionClient) Execute(ctx context.Context, name string, args json.RawMessage, execCtx domain.ToolExecutionContext) (domain.ToolResult, error) {
 	switch name {
-	case toolRegistrationListName:
-		var input struct {
-			IncludeDisabled bool `json:"includeDisabled"`
-		}
-		if err := decodeStrictToolArgs(args, &input); err != nil {
-			return primitiveError(name, "invalid_arguments", err), nil
-		}
-		items, err := c.service.ListMCPServers(ctx, domain.MCPServerListInput{IncludeDisabled: input.IncludeDisabled, IncludeTools: true})
-		if err != nil {
-			return primitiveError(name, "mcp_list_failed", errors.New(sanitizeMCPError(err.Error()))), nil
-		}
-		summaries := make([]map[string]any, 0, len(items))
-		lines := make([]string, 0, len(items))
-		for _, item := range items {
-			displayName := firstNonEmptyApp(item.Server.DisplayName, item.Server.Name, item.Server.ID)
-			summaries = append(summaries, map[string]any{
-				"id": item.Server.ID, "displayName": displayName, "description": bounded(item.Server.Description, 300),
-				"transport": item.Server.Transport, "enabled": item.Server.Enabled, "status": item.Server.Status, "toolCount": len(item.Tools),
-			})
-			lines = append(lines, fmt.Sprintf("- %s | %s | %s | enabled=%t | tools=%d", item.Server.ID, displayName, item.Server.Transport, item.Server.Enabled, len(item.Tools)))
-		}
-		if len(lines) == 0 {
-			lines = append(lines, "No MCP sources are registered.")
-		}
-		return domain.ToolResult{Name: name, OK: true, Content: strings.Join(lines, "\n"), Structured: map[string]any{"sources": summaries}}, nil
 	case toolRegistrationMCPName:
 		var input domain.MCPRegistrationProposalInput
 		if err := decodeStrictToolArgs(args, &input); err != nil {

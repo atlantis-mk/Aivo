@@ -34,6 +34,9 @@ func (s *Service) submitSessionMessage(
 	async func(context.Context, domain.PreparedSessionTurn, func(context.Context) (domain.PreparedSessionTurn, error)) (domain.PreparedSessionTurn, error),
 ) (domain.PreparedSessionTurn, error) {
 	text := strings.TrimSpace(input.Text)
+	if err := validateSessionMessageAttachments(input.Attachments); err != nil {
+		return domain.PreparedSessionTurn{}, err
+	}
 	attachments := sanitizeSessionMessageAttachments(input.Attachments)
 	input.Attachments = attachments
 	if input.SessionID == "" {
@@ -48,6 +51,9 @@ func (s *Service) submitSessionMessage(
 	delivery, err := domain.NormalizeInputDelivery(input.Delivery)
 	if err != nil {
 		return domain.PreparedSessionTurn{}, err
+	}
+	if delivery != domain.InputDeliveryImmediate && len(input.ResourceReferences) > 0 {
+		return domain.PreparedSessionTurn{}, errors.New("resource references require immediate delivery")
 	}
 	if delivery != domain.InputDeliveryImmediate {
 		state, _ := s.store.GetSessionExecutionState(ctx, input.SessionID)
@@ -75,13 +81,28 @@ func (s *Service) submitSessionMessage(
 	if input.Model != nil || strings.TrimSpace(input.ReasoningEffort) != "" || strings.TrimSpace(input.ServiceTier) != "" {
 		_, _ = s.UpdateModelPreferences(ctx, domain.ModelPreferencesInput{Model: input.Model, ReasoningEffort: reasoningEffort, ServiceTier: serviceTier})
 	}
+	preparedReferences, err := s.prepareSessionResourceReferences(ctx, input.SessionID, input.ResourceReferences)
+	if err != nil {
+		return domain.PreparedSessionTurn{}, err
+	}
+	if err := s.applySessionResourceReferences(ctx, input.SessionID, preparedReferences); err != nil {
+		return domain.PreparedSessionTurn{}, err
+	}
+	input.ResourceReferences = preparedReferences.references
+	eventPayload := sessionMessageEventPayload(attachments)
+	if len(preparedReferences.references) > 0 {
+		if eventPayload == nil {
+			eventPayload = map[string]any{}
+		}
+		eventPayload["resourceReferences"] = sessionResourceReferencePayload(preparedReferences.references)
+	}
 	userEvent, err := s.AppendEvent(ctx, domain.AppendEventRequest{
 		SessionID:  input.SessionID,
 		Type:       domain.EventTypeUserMessage,
 		Role:       domain.EventRoleUser,
 		Visibility: domain.EventVisibilityNormal,
 		Content:    eventText,
-		Payload:    sessionMessageEventPayload(attachments),
+		Payload:    eventPayload,
 	})
 	if err != nil {
 		return domain.PreparedSessionTurn{}, err

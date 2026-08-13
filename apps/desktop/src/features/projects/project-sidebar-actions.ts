@@ -134,10 +134,10 @@ export function useProjectSidebarActions({
     setSelectedProjectPath("");
   }
 
-  async function addComposerProject() {
+  async function addComposerProject(selectedRootPath?: string) {
     if (!hasAppBridge()) return;
     try {
-      const rootPath = await selectProjectDirectory();
+      const rootPath = selectedRootPath || await selectProjectDirectory();
       if (!rootPath) return;
       const project = await upsertProject(rootPath);
       if (projectIsUserSelectable(project)) {

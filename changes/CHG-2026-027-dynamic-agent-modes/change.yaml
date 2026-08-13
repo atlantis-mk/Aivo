@@ -1,0 +1,43 @@
+id: "CHG-2026-027-dynamic-agent-modes"
+title: "Manage dynamic Agent modes"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-AGENT-001"
+  - "REQ-SESSION-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-AGENT-001"
+  - "AT-SESSION-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0013"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-AGENT-001 Dynamic Agent mode management"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+  - "docs/runtime-configuration.md"
+related_changes:
+  - "CHG-2026-025-global-tool-eligibility"
+affected_surfaces:
+  - "Extensions and MCP Agent-mode management tab"
+  - "conversation Agent-mode picker and runtime resolution"
+  - "Core Agent catalog and SQLite persistence"
+affected_formats:
+  - "SQLite schema v6 agent_mode_definitions"
+  - "typed local Core Agent-mode CRUD RPCs"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Persists non-secret mode prompts and capability policy in Core; Core validates identifiers, scope, toolsets, and protected internal-mode boundaries before use"
+migration: "SQLite schema v5 to v6 adds agent_mode_definitions after a verified v5 backup; built-ins remain code-owned defaults until a user override is saved"
+supersedes: []

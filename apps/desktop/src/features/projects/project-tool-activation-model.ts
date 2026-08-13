@@ -31,7 +31,7 @@ export function usedToolNamesFromTurns(turns: ConversationTurn[]) {
 }
 
 export function isToggleableCatalogTool(tool: ToolCatalogEntry) {
-  return tool.enabled && !isBridgeCatalogTool(tool) && !isMcpCatalogTool(tool);
+  return tool.enabled && !isBridgeCatalogTool(tool);
 }
 
 export function groupToolCatalogEntries(
@@ -42,9 +42,7 @@ export function groupToolCatalogEntries(
   for (const tool of tools) {
     const baseSection = toolActivationSection(tool);
     const metadata = tool.sourceId
-      ? sourceMetadata[
-          `${baseSection}:${tool.sourceId}`
-        ]
+      ? sourceMetadata[`${baseSection}:${tool.sourceId}`]
       : undefined;
     const section = toolActivationSection(tool, metadata);
     const id = `${section}:${tool.source}:${tool.sourceId || tool.namespace || tool.category || tool.name}`;
@@ -88,8 +86,10 @@ export function toolActivationSourceMetadata(
     for (const key of [
       server.id,
       `mcp.${sanitizeMcpSourceId(server.id)}`,
+      `mcp_${sanitizeMcpSourceId(server.id)}`,
       server.name,
       `mcp.${sanitizeMcpSourceId(server.name)}`,
+      `mcp_${sanitizeMcpSourceId(server.name)}`,
     ]) {
       if (key) metadata[`mcp:${key}`] = value;
     }
@@ -177,18 +177,6 @@ function toolActivationSection(
     return "extensions";
   }
   return "tools";
-}
-
-function isMcpCatalogTool(tool: ToolCatalogEntry) {
-  return (
-    tool.source === "mcp" ||
-    tool.category === "mcp" ||
-    tool.sourceId?.startsWith("mcp.") ||
-    (tool.toolsets ?? []).some(
-      (toolset) => toolset === "mcp" || toolset.startsWith("mcp:"),
-    ) ||
-    /(^|_)mcp(_|$)/i.test(tool.name)
-  );
 }
 
 function sanitizeMcpSourceId(value: string) {

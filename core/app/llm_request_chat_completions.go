@@ -51,7 +51,7 @@ func chatCompletionContentParts(text string, attachments []domain.MessageAttachm
 		}
 		data := strings.TrimSpace(attachment.Data)
 		if data == "" {
-			if text := strings.TrimSpace(attachment.Text); text != "" {
+			if text := attachment.Text; strings.TrimSpace(text) != "" {
 				parts = append(parts, map[string]any{"type": "text", "text": attachment.Name + "\n" + text})
 			}
 			continue
@@ -63,7 +63,15 @@ func chatCompletionContentParts(text string, attachments []domain.MessageAttachm
 					"url": dataURLForAttachment(mimeType, data),
 				},
 			})
+			continue
 		}
+		parts = append(parts, map[string]any{
+			"type": "file",
+			"file": map[string]string{
+				"filename":  attachment.Name,
+				"file_data": dataURLForAttachment(mimeType, data),
+			},
+		})
 	}
 	return parts
 }

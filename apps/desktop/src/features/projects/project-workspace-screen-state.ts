@@ -16,7 +16,6 @@ export function useProjectWorkspaceScreenState() {
     useState(false);
   const [isRevealingHistoryConversation, setRevealingHistoryConversation] =
     useState(false);
-  const [isPinnedSummaryOpen, setPinnedSummaryOpen] = useState(false);
   const [recentProjects, setRecentProjects] = useState<
     domain.AssistantProject[]
   >([]);
@@ -25,7 +24,6 @@ export function useProjectWorkspaceScreenState() {
   return {
     activeSessionId,
     isOpeningConversationFromEmpty,
-    isPinnedSummaryOpen,
     isRevealingHistoryConversation,
     prompt,
     extensionSettingsDrawerOpen,
@@ -34,7 +32,6 @@ export function useProjectWorkspaceScreenState() {
     sessions,
     setActiveSessionId,
     setOpeningConversationFromEmpty,
-    setPinnedSummaryOpen,
     setExtensionSettingsDrawerOpen,
     setPrompt,
     setRecentProjects,

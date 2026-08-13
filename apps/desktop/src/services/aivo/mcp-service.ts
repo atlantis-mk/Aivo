@@ -24,6 +24,9 @@ export type MCPServerConfig = {
   headers?: Record<string, string>;
   authType?: "none" | "bearer" | "oauth";
   bearerTokenEnv?: string;
+  bearerTokenRef?: string;
+  bearerToken?: string;
+  bearerAuthMode?: "direct" | "env";
   oauthIssuerUrl?: string;
   oauthClientId?: string;
   oauthScopes?: string[];
@@ -145,6 +148,10 @@ export type MCPProbeResult = {
   diagnostics?: MCPDiagnostic[];
 };
 
+export type MCPDescriptionGenerateResult = {
+  description: string;
+};
+
 export type MCPOAuthDiscoveryResult = {
   serverId?: string;
   resource?: string;
@@ -193,11 +200,24 @@ export function listMCPServers(includeDisabled = true, includeTools = true) {
 }
 
 export function saveMCPServer(server: MCPServerConfig) {
-  return invoke<MCPServerConfig>("SaveMCPServer", { server });
+  const bearerToken = server.bearerToken;
+  const configuration = { ...server };
+  delete configuration.bearerAuthMode;
+  delete configuration.bearerToken;
+  return invoke<MCPServerConfig>("SaveMCPServer", {
+    server: configuration,
+    bearerToken: bearerToken?.trim() || undefined,
+  });
 }
 
 export function setMCPServerEnabled(serverId: string, enabled: boolean) {
   return invoke<MCPServerConfig>("SetMCPServerEnabled", { serverId, enabled });
+}
+
+export function generateMCPDescription(serverId: string) {
+  return invoke<MCPDescriptionGenerateResult>("GenerateMCPDescription", {
+    serverId,
+  });
 }
 
 export function probeMCPServer(serverId: string) {

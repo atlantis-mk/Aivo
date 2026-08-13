@@ -25,6 +25,18 @@ export function listToolCatalog(workspaceRoot = "") {
   return invoke<ToolCatalogEntry[]>("ListToolCatalog", { workspaceRoot });
 }
 
+export function setGlobalToolEnabled(
+  name: string,
+  enabled: boolean,
+  workspaceRoot = "",
+) {
+  return invoke<ToolCatalogEntry>("SetGlobalToolEnabled", {
+    name,
+    enabled,
+    workspaceRoot,
+  });
+}
+
 export function getSessionActiveTools(sessionId: string) {
   return invoke<SessionActiveToolsResult>("GetSessionActiveTools", sessionId);
 }

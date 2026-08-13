@@ -14,7 +14,6 @@ import {
 import type { ProjectWorkspaceMainContentProps } from "@/features/projects/project-workspace-main-content-model";
 import {
   ProjectComposerDropOverlay,
-  ProjectEnvironmentSummaryAside,
   ProjectWorkspaceEmptyPrompt,
 } from "@/features/projects/project-workspace-chat-overlays";
 import { ProjectWorkspaceComposerFrame } from "@/features/projects/project-workspace-composer-frame";
@@ -31,7 +30,6 @@ export function ProjectWorkspaceChatContent({
   agentRuns,
   allModelOptions,
   attachments,
-  canDockPinnedSummary,
   composerBottom,
   composerBottomSm,
   composerFrameRef,
@@ -44,11 +42,9 @@ export function ProjectWorkspaceChatContent({
   hasPendingTurn,
   hasTurns,
   isComposerDropActive,
-  isPinnedSummaryOpen,
   isRevealingHistoryConversation,
   isSubagentSession,
   isVisibleTodoPlanComplete,
-  mainRef,
   messagesScrollRootRef,
   modelId,
   modelLabel,
@@ -71,6 +67,8 @@ export function ProjectWorkspaceChatContent({
   onProjectClear,
   onProjectSelect,
   onPromptChange,
+  onPromptMentionRemove,
+  onPromptMentionSelect,
   onReasoningEffortSelect,
   onRemoveAttachment,
   onScrollToBottom,
@@ -83,10 +81,9 @@ export function ProjectWorkspaceChatContent({
   projectPath,
   projects,
   prompt,
+  promptResourceReferences,
   reasoningEffort,
   serviceTier,
-  shouldShiftPinnedSummaryLayout,
-  shouldShowEnvironmentSummaryPanel,
   shouldShowTodoFloatingStatus,
   showConversationLayout,
   showProjectPicker,
@@ -194,7 +191,6 @@ export function ProjectWorkspaceChatContent({
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        ref={mainRef}
         style={
           {
             "--composer-height": `${composerHeight}px`,
@@ -215,9 +211,6 @@ export function ProjectWorkspaceChatContent({
         <ProjectConversationViewport
           agentRuns={agentRuns}
           contentRef={contentRef}
-          dockPinnedSummary={
-            isPinnedSummaryOpen && shouldShiftPinnedSummaryLayout
-          }
           handlers={viewportHandlers}
           hasTurns={hasTurns}
           onOpenToolActivity={openToolActivity}
@@ -228,31 +221,18 @@ export function ProjectWorkspaceChatContent({
           turns={turns}
         />
 
-        {shouldShowEnvironmentSummaryPanel ? (
-          <ProjectEnvironmentSummaryAside
-            canDockPinnedSummary={canDockPinnedSummary}
-            onOpenTools={onOpenToolActivationDialog}
-          />
-        ) : null}
-
         {showConversationLayout && (
           <div className="pointer-events-none absolute bottom-0 left-0 right-2.5 z-5 h-10 bg-background" />
         )}
 
         {hasPendingPermissionRequest && showConversationLayout ? (
           <PermissionApprovalDock
-            dockPinnedSummary={
-              isPinnedSummaryOpen && shouldShiftPinnedSummaryLayout
-            }
             permissions={pendingPermissionRequests}
           />
         ) : hasPendingQuestionRequest &&
           pendingQuestionRequest &&
           showConversationLayout ? (
           <QuestionRequestDock
-            dockPinnedSummary={
-              isPinnedSummaryOpen && shouldShiftPinnedSummaryLayout
-            }
             request={pendingQuestionRequest}
           />
         ) : (
@@ -263,7 +243,6 @@ export function ProjectWorkspaceChatContent({
             allModelOptions={allModelOptions}
             attachments={attachments}
             composerFrameRef={composerFrameRef}
-            isPinnedSummaryOpen={isPinnedSummaryOpen}
             isSubagentSession={isSubagentSession}
             isVisibleTodoPlanComplete={isVisibleTodoPlanComplete}
             modelId={modelId}
@@ -277,11 +256,14 @@ export function ProjectWorkspaceChatContent({
             onHeightChange={onHeightChange}
             onHideCompletedTodoPlan={onHideCompletedTodoPlan}
             onModelSelect={onModelSelect}
+            onOpenToolActivationDialog={onOpenToolActivationDialog}
             onPermissionModeSelect={onPermissionModeSelect}
             onProjectAdd={onProjectAdd}
             onProjectClear={onProjectClear}
             onProjectSelect={onProjectSelect}
             onPromptChange={onPromptChange}
+            onPromptMentionRemove={onPromptMentionRemove}
+            onPromptMentionSelect={onPromptMentionSelect}
             onReasoningEffortSelect={onReasoningEffortSelect}
             onRemoveAttachment={onRemoveAttachment}
             onScrollToBottom={onScrollToBottom}
@@ -290,12 +272,12 @@ export function ProjectWorkspaceChatContent({
             pending={hasPendingTurn}
             permissionMode={permissionMode}
             prompt={prompt}
+            promptResourceReferences={promptResourceReferences}
             project={project}
             projectPath={projectPath}
             projects={projects}
             reasoningEffort={reasoningEffort}
             serviceTier={serviceTier}
-            shouldShiftPinnedSummaryLayout={shouldShiftPinnedSummaryLayout}
             shouldShowTodoFloatingStatus={shouldShowTodoFloatingStatus}
             showConversationLayout={showConversationLayout}
             showProjectPicker={showProjectPicker}

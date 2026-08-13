@@ -20,11 +20,9 @@ export function getProjectConversationViewState({
 }
 
 export function getProjectWorkspacePanelViewState({
-  isPinnedSummaryOpen,
   pendingPermissionRequests,
   pendingQuestionRequests,
 }: {
-  isPinnedSummaryOpen: boolean;
   pendingPermissionRequests: readonly unknown[];
   pendingQuestionRequests: readonly unknown[];
 }) {
@@ -34,11 +32,9 @@ export function getProjectWorkspacePanelViewState({
     hasPendingPermissionRequest || hasPendingQuestionRequest;
 
   return {
-    canUseTerminalPanel: !hasPendingInteractionRequest,
     hasPendingInteractionRequest,
     hasPendingPermissionRequest,
     hasPendingQuestionRequest,
-    shouldShowEnvironmentSummaryPanel: isPinnedSummaryOpen,
   };
 }
 

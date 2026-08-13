@@ -31,12 +31,15 @@ Unmount the bottom and right panel compositions rather than changing their servi
 ## Acceptance and evidence
 
 - The project chat workspace contains no right activity panel, bottom terminal panel, related resize handles, or their top-right buttons.
+- The top bar does not expose the standalone environment-information trigger, and the environment-information popover is not mounted.
 - The main chat canvas consumes the available workspace.
 - New conversation, history, project context, plugins, settings, Worktree, conversation actions, and composer controls remain reachable.
 - Existing terminal and tool runtime services, process ownership, cancellation, teardown, persistence, and security behavior are unchanged because their UI compositions are only unmounted.
 - `pnpm docs:check`, `pnpm lint`, and `pnpm build` pass without new warnings; final visual verification remains user-owned.
 
 Implementation evidence recorded on 2026-08-01: the chat shell no longer mounts `ProjectWorkspaceRightSidebar`, `ProjectWorkspaceBottomPanel`, their providers, resize handles, or floating terminal/right-panel controls. `pnpm build`, `pnpm lint`, `pnpm docs:check`, and `git diff --check` passed; lint reported only the repository's existing Fast Refresh warnings. `CANVAS-QA-001` remains pending for user visual verification, so this Work stays `Implementing`.
+
+Additional implementation evidence recorded on 2026-08-07: the standalone environment-information button and popover, their renderer state, and their chat/composer/interaction-dock layout offsets were removed. `pnpm lint`, `pnpm build`, and `git diff --check` passed; lint retained only the existing Fast Refresh warnings and build retained the existing large-chunk notice. Browser acceptance at 1280×720 and 760×720 found no `切换系统环境` control, no `环境信息` content, and no horizontal overflow. Captures are stored at `artifacts/design-qa/environment-info-removed-wide-2026-08-07.jpg` and `artifacts/design-qa/environment-info-removed-narrow-2026-08-07.jpg`. Broader Electron acceptance remains pending, so `CANVAS-QA-001` and the Work remain `Implementing`.
 
 ## Security and data lifecycle
 

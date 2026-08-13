@@ -26,6 +26,7 @@ func TestConfiguredAgentOverridesAreResolvedPerProject(t *testing.T) {
       "prompt": "Inspect this project carefully.",
       "toolsets": ["safe"],
       "permissionScope": "read_only",
+      "subagents": ["review"],
       "maxSteps": 3,
       "model": {"providerId": "openai", "modelId": "gpt-5.5"}
     }
@@ -39,7 +40,7 @@ func TestConfiguredAgentOverridesAreResolvedPerProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if definition.Prompt != "Inspect this project carefully." || definition.MaxSteps != 3 || definition.PermissionScope != "read_only" || definition.Model == nil || definition.Revision == "" {
+	if definition.Prompt != "Inspect this project carefully." || definition.MaxSteps != 3 || definition.PermissionScope != "read_only" || len(definition.Subagents) != 1 || definition.Subagents[0] != domain.AgentModeReview || definition.Model == nil || definition.Revision == "" {
 		t.Fatalf("definition = %#v", definition)
 	}
 	updated, err := service.SetSessionAgentMode(ctx, domain.SetSessionAgentModeInput{SessionID: session.ID, Mode: "researcher"})
@@ -178,6 +179,81 @@ func TestCodeModeWildcardToolsetsExposeAllTools(t *testing.T) {
 	specs := visibleToolSpecsForMode(code.ID, registry.SpecsForToolsets(code.Toolsets))
 	if len(specs) != 4 {
 		t.Fatalf("code visible tools = %#v, want all registered tools", specs)
+	}
+}
+
+func TestAssociatedSubagentsControlDelegateToolSchemaAndPrompt(t *testing.T) {
+	specs := []domain.ToolSpec{
+		{Name: "read", InputSchema: map[string]any{"type": "object"}},
+		{Name: "agent_delegate_task", InputSchema: map[string]any{"type": "object"}},
+	}
+	withoutAssociations := configureAgentDelegateToolSpecs(domain.AgentModeDefinition{ID: "orchestrator"}, specs)
+	if len(withoutAssociations) != 1 || withoutAssociations[0].Name != "read" {
+		t.Fatalf("delegate tool should be omitted without associations: %#v", withoutAssociations)
+	}
+	mode := domain.AgentModeDefinition{ID: "orchestrator", DisplayName: "Orchestrator", Prompt: "Coordinate work.", Subagents: []string{domain.AgentModeExplore, domain.AgentModeReview}}
+	configured := configureAgentDelegateToolSpecs(mode, specs)
+	if len(configured) != 2 {
+		t.Fatalf("configured specs = %#v", configured)
+	}
+	properties, _ := configured[1].InputSchema["properties"].(map[string]any)
+	modeSchema, _ := properties["mode"].(map[string]any)
+	enum, _ := modeSchema["enum"].([]string)
+	if len(enum) != 2 || enum[0] != domain.AgentModeExplore || enum[1] != domain.AgentModeReview {
+		t.Fatalf("delegate mode enum = %#v", modeSchema["enum"])
+	}
+	prompt := buildAgentSystemPrompt(mode)
+	if !strings.Contains(prompt, "associated_subagents") || !strings.Contains(prompt, "`explore`") || !strings.Contains(prompt, "do not delegate routine work") {
+		t.Fatalf("association prompt = %q", prompt)
+	}
+	registry := NewRegistry()
+	for _, tool := range newAgentRuntimeTools(&Service{}) {
+		if tool.Spec().Name == "agent_delegate_task" {
+			if err := registry.Register(tool); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	dynamicSpecs := configureAgentDelegateToolSpecs(mode, registry.SpecsForToolsets([]string{"safe"}))
+	assembly := AssembleToolSpecsWithSources(registry, dynamicSpecs, map[string]string{"agent_delegate_task": "modeAssociation"})
+	if len(assembly.Specs) != 1 || len(assembly.Snapshot.Tools) != 1 || assembly.Snapshot.Tools[0].ActivationSource != "modeAssociation" {
+		t.Fatalf("associated delegate assembly = %#v", assembly)
+	}
+	identity, ok := registry.IdentityFor("agent_delegate_task")
+	if !ok || assembly.Snapshot.Tools[0].SchemaHash == identity.SchemaHash || assembly.Snapshot.Tools[0].SchemaHash != toolSchemaHash(assembly.Specs[0]) {
+		t.Fatalf("dynamic delegate snapshot = %#v identity = %#v", assembly.Snapshot.Tools[0], identity)
+	}
+}
+
+func TestDelegateTaskRejectsUnassociatedModeBeforeCreatingChild(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	assistant, err := service.GetAgentMode(ctx, domain.AgentModeAssistant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant.Subagents = []string{domain.AgentModeReview}
+	if _, err := service.SaveAgentMode(ctx, assistant); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, AgentMode: domain.AgentModeAssistant, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := service.delegateTaskToolNamed(ctx, json.RawMessage(`{"mode":"explore","prompt":"inspect"}`), domain.ToolExecutionContext{
+		SessionID: session.ID, AgentMode: domain.AgentModeAssistant,
+	}, "agent_delegate_task")
+	if result.OK || !strings.Contains(result.Error, "not associated") {
+		t.Fatalf("forged delegation result = %#v", result)
+	}
+	runs, err := service.ListAgentRuns(ctx, domain.AgentRunListRequest{SessionID: session.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("forged delegation created runs: %#v", runs)
 	}
 }
 
@@ -359,7 +435,7 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 		requestCount++
 		switch requestCount {
 		case 1:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_delegate","type":"function","function":{"name":"agent_delegate","arguments":"{\"mode\":\"planner\",\"prompt\":\"delegate demo\",\"title\":\"delegate demo\"}"}}]}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_delegate","type":"function","function":{"name":"agent_delegate","arguments":"{\"mode\":\"plan\",\"prompt\":\"delegate demo\",\"title\":\"delegate demo\"}"}}]}}]}`))
 		case 2:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"child done"}}]}`))
 		default:
@@ -370,7 +446,15 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 	if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
 		t.Fatal(err)
 	}
-	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: t.TempDir()})
+	assistant, err := service.GetAgentMode(ctx, domain.AgentModeAssistant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant.Subagents = []string{domain.AgentModePlan}
+	if _, err := service.SaveAgentMode(ctx, assistant); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, AgentMode: domain.AgentModeAssistant, ProjectPath: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

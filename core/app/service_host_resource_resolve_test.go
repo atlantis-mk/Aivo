@@ -76,26 +76,21 @@ func TestFirstPrimaryRequestReceivesHostResolvedSkillInventoryAndDefaultTools(t 
 	if !strings.Contains(joined, "<host_preactivated_resources>") || !strings.Contains(joined, "<name>ui-components</name>") {
 		t.Fatalf("primary request did not receive Host-resolved Skill inventory: %s", joined)
 	}
-	if strings.Contains(joined, "call the skill tool") || strings.Contains(joined, "call tool_resolve") {
-		t.Fatalf("primary request retained removed discovery protocol: %s", joined)
+	if strings.Contains(joined, "call the skill tool") || !strings.Contains(joined, "call tool_resolve") {
+		t.Fatalf("primary request missing the replaceable tool-selection protocol: %s", joined)
 	}
-	wantCoreTools := []string{"read", "bash", "edit", "write"}
-	if len(capturedTools) != len(wantCoreTools)+3 {
-		t.Fatalf("provider tools = %#v, want four core tools plus three builtin project extension tools", capturedTools)
+	wantCoreTools := []string{"read", "bash", "edit", "write", ToolResolveName}
+	if len(capturedTools) != len(wantCoreTools) {
+		t.Fatalf("provider tools = %#v, want four core tools plus the Host selection control", capturedTools)
 	}
 	for index, want := range wantCoreTools {
 		if capturedTools[index].Function.Name != want {
 			t.Fatalf("provider tool[%d] = %q, want %q", index, capturedTools[index].Function.Name, want)
 		}
 	}
-	projectTools := 0
-	for _, tool := range capturedTools[len(wantCoreTools):] {
-		if strings.HasPrefix(tool.Function.Name, "aivo_projects_") {
-			projectTools++
-		}
-	}
-	if projectTools != 3 {
-		t.Fatalf("provider tools = %#v, want three unchanged canonical builtin project extension tools", capturedTools)
+	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
+	if !initialized || len(automatic) != 0 {
+		t.Fatalf("automatic selection = %#v initialized=%t, want initialized empty inventory-task set", automatic, initialized)
 	}
 	activeIDs, _ := service.activeSkills(ctx, session.ID)
 	if len(activeIDs) != 0 {
@@ -125,7 +120,10 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 		"schemaVersion": 2, "id": "com.example.ui", "name": "UI Inspector", "description": "Inspect UI accessibility", "version": "1", "apiVersion": "2",
 		"runtime": map[string]any{"type": "builtin"},
 		"contributes": map[string]any{
-			"tools":    []any{map[string]any{"name": "example_inspect_ui", "description": "Inspect UI accessibility", "schema": map[string]any{"type": "object"}, "activation": "auto"}},
+			"tools": []any{
+				map[string]any{"name": "example_inspect_ui", "description": "Inspect UI accessibility", "schema": map[string]any{"type": "object"}, "activation": "auto"},
+				map[string]any{"name": "example_capture_ui", "description": "Capture the current UI", "schema": map[string]any{"type": "object"}, "activation": "auto"},
+			},
 			"contexts": []any{map[string]any{"id": "ui-checklist", "kind": "instructions", "path": "context.md"}},
 		},
 	})
@@ -145,9 +143,10 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.mcpManager.store.ReplaceMCPTools(ctx, mcpServer.ID, []domain.MCPToolRecord{{
-		ID: "docs:search_docs", ServerID: mcpServer.ID, Name: "search_docs", Description: "Search UI documentation", InputSchema: map[string]any{"type": "object"},
-	}}); err != nil {
+	if err := service.mcpManager.store.ReplaceMCPTools(ctx, mcpServer.ID, []domain.MCPToolRecord{
+		{ID: "docs:search_docs", ServerID: mcpServer.ID, Name: "search_docs", Description: "Search UI documentation", InputSchema: map[string]any{"type": "object"}},
+		{ID: "docs:read_docs", ServerID: mcpServer.ID, Name: "read_docs", Description: "Read UI documentation", InputSchema: map[string]any{"type": "object"}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -173,11 +172,14 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 		index := len(requests)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		if index == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[\"example_inspect_ui\",\"mcp_docs_search_docs\"],\"resources\":[\"skill:ui-review\",\"context:com.example.ui:ui-checklist\"],\"skillInstructions\":[\"skill:ui-review\"],\"reason\":\"direct matches\"}"}}]}`))
-			return
+		switch index {
+		case 1:
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[\"extension_com_example_ui\",\"mcp_docs\"]"}}]}`))
+		case 2:
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"resources\":[\"skill:ui-review\",\"context:com.example.ui:ui-checklist\"],\"skillInstructions\":[\"skill:ui-review\"],\"reason\":\"direct matches\"}"}}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"resolved"}}]}`))
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"resolved"}}]}`))
 	}))
 	defer server.Close()
 	if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
@@ -199,35 +201,33 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	mu.Lock()
 	captured := append([]capturedRequest(nil), requests...)
 	mu.Unlock()
-	if len(captured) != 2 {
-		t.Fatalf("provider request count = %d, want one auxiliary resolution plus one primary request", len(captured))
+	if len(captured) != 3 {
+		t.Fatalf("provider request count = %d, want tool-group resolution, resource resolution, and primary request", len(captured))
 	}
-	auxiliaryText := ""
+	toolGroupText := ""
 	for _, message := range captured[0].Messages {
-		auxiliaryText += message.Content
+		toolGroupText += message.Content
 	}
-	if !strings.Contains(auxiliaryText, "Host pre-call resource resolver") || len(captured[0].Tools) != 0 {
-		t.Fatalf("first request was not the tool/resource resolver: %#v", captured[0])
+	if !strings.Contains(toolGroupText, "Host tool-group selector") || !strings.Contains(toolGroupText, "extension_com_example_ui：Inspect UI accessibility") || !strings.Contains(toolGroupText, "mcp_docs：Search UI documentation") || strings.Contains(toolGroupText, "example_capture_ui") || strings.Contains(toolGroupText, "mcp_docs_read_docs") || len(captured[0].Tools) != 0 {
+		t.Fatalf("first request was not the minimal source-group resolver: %#v", captured[0])
 	}
 	primaryText := ""
-	for _, message := range captured[1].Messages {
+	for _, message := range captured[2].Messages {
 		primaryText += message.Content
 	}
 	if !strings.Contains(primaryText, `<skill_summary name="ui-review"`) || !strings.Contains(primaryText, `<skill_content name="ui-review"`) || !strings.Contains(primaryText, `<extension_context extension="com.example.ui" id="ui-checklist"`) {
 		t.Fatalf("primary request missing selected Skill/context: %s", primaryText)
 	}
 	toolNames := map[string]bool{}
-	for _, tool := range captured[1].Tools {
+	for _, tool := range captured[2].Tools {
 		toolNames[tool.Function.Name] = true
 	}
-	projectTools := 0
-	for name := range toolNames {
-		if strings.HasPrefix(name, "aivo_projects_") {
-			projectTools++
-		}
+	if len(toolNames) != 12 || !toolNames["read"] || !toolNames["bash"] || !toolNames["edit"] || !toolNames["write"] || !toolNames[ToolResolveName] || !toolNames["example_inspect_ui"] || !toolNames["example_capture_ui"] || !toolNames["mcp_docs_search_docs"] || !toolNames["mcp_docs_read_docs"] || !toolNames["mcp_host_docs_list_resource_templates"] || !toolNames["mcp_host_docs_list_resources"] || !toolNames["mcp_host_docs_read_resource"] {
+		t.Fatalf("primary tools = %#v, want core, selection control, and every member of the selected Manifest/MCP groups", captured[2].Tools)
 	}
-	if len(toolNames) != 9 || projectTools != 3 || !toolNames["read"] || !toolNames["bash"] || !toolNames["edit"] || !toolNames["write"] {
-		t.Fatalf("primary tools = %#v, want four core, three builtin project, selected Manifest, and MCP tools", captured[1].Tools)
+	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
+	if !initialized || !automatic["example_inspect_ui"] || !automatic["example_capture_ui"] || !automatic["mcp_docs_search_docs"] || !automatic["mcp_docs_read_docs"] || !automatic["mcp_host_docs_list_resource_templates"] || !automatic["mcp_host_docs_list_resources"] || !automatic["mcp_host_docs_read_resource"] || len(automatic) != 7 {
+		t.Fatalf("persisted automatic selection = %#v initialized=%t", automatic, initialized)
 	}
 	activeIDs, _ := service.activeSkills(ctx, session.ID)
 	if len(activeIDs) != 0 {
@@ -269,6 +269,10 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if index == 1 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+			return
+		}
+		if index == 2 {
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"resources\":[\"skill:ui-summary\"],\"reason\":\"summary is sufficient\"}"}}]}`))
 			return
 		}
@@ -294,18 +298,18 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 	mu.Lock()
 	captured := append([]capturedRequest(nil), requests...)
 	mu.Unlock()
-	if len(captured) != 2 {
-		t.Fatalf("provider request count = %d, want auxiliary plus primary", len(captured))
+	if len(captured) != 3 {
+		t.Fatalf("provider request count = %d, want tool-group auxiliary, resource auxiliary, and primary", len(captured))
 	}
 	auxiliaryText := ""
-	for _, message := range captured[0].Messages {
+	for _, message := range captured[1].Messages {
 		auxiliaryText += message.Content
 	}
 	if !strings.Contains(auxiliaryText, "Explain the available UI component workflow") || strings.Contains(auxiliaryText, "PRIVATE_UI_WORKFLOW") {
 		t.Fatalf("auxiliary catalog was not summary-only: %s", auxiliaryText)
 	}
 	primaryText := ""
-	for _, message := range captured[1].Messages {
+	for _, message := range captured[2].Messages {
 		primaryText += message.Content
 	}
 	if !strings.Contains(primaryText, `<skill_summary name="ui-summary"`) || !strings.Contains(primaryText, "Explain the available UI component workflow") {

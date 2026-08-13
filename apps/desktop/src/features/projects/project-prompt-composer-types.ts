@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 
-import type { ComposerAttachment } from "@/features/projects/project-composer-attachments";
+import type { ComposerAttachment, ComposerAttachmentInput } from "@/features/projects/project-composer-attachments";
+import type { PromptMentionReference } from "@/features/projects/project-prompt-mention-model";
 import type { ModelOption } from "@/features/projects/project-model-options";
 import type { ModelInfo } from "@/lib/provider-catalog";
 import type {
@@ -17,14 +18,17 @@ export type PromptComposerProps = {
   modelId: string;
   modelLabel: string;
   modelOptions: ModelInfo[];
-  onAddAttachments: (files: FileList | null) => void;
+  onAddAttachments: (files: ComposerAttachmentInput) => void;
   onAgentModeSelect: (mode: AgentModeId) => void;
   onExtraHeightChange: (height: number) => void;
   onHeightChange: (height: number) => void;
   onModelSelect: (option: ModelOption) => void;
+  onPromptMentionRemove: (reference: PromptMentionReference) => void;
+  onPromptMentionSelect: (reference: PromptMentionReference) => void;
+  onOpenToolActivationDialog: () => void;
   onPermissionModeSelect: (mode: PermissionMode) => void;
   onPromptChange: (prompt: string) => void;
-  onProjectAdd: () => void;
+  onProjectAdd: (rootPath?: string) => void;
   onProjectClear: () => void;
   onProjectSelect: (project: domain.AssistantProject) => void;
   onReasoningEffortSelect: (reasoningEffort: string) => void;
@@ -34,6 +38,7 @@ export type PromptComposerProps = {
   pending: boolean;
   permissionMode: PermissionMode;
   prompt: string;
+  promptResourceReferences: PromptMentionReference[];
   project: domain.AssistantProject | null;
   projectPath: string;
   projects: domain.AssistantProject[];

@@ -1,3 +1,6 @@
+import { LoaderCircle, Sparkles } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -9,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   McpField,
   McpKeyValueRows,
@@ -26,10 +30,13 @@ export function McpServerDraftForm({
   draft,
   envRows,
   headerRows,
+  descriptionGenerationError,
+  descriptionGenerating = false,
   onArgRowsChange,
   onDraftChange,
   onEnvRowsChange,
   onHeaderRowsChange,
+  onGenerateDescription,
   onRootRowsChange,
   rootRows,
   showEnabledToggle = false,
@@ -39,10 +46,13 @@ export function McpServerDraftForm({
   draft: MCPServerConfig;
   envRows: KeyValueRow[];
   headerRows: KeyValueRow[];
+  descriptionGenerationError?: string;
+  descriptionGenerating?: boolean;
   onArgRowsChange: (rows: string[]) => void;
   onDraftChange: (draft: MCPServerConfig) => void;
   onEnvRowsChange: (rows: KeyValueRow[]) => void;
   onHeaderRowsChange: (rows: KeyValueRow[]) => void;
+  onGenerateDescription?: () => void;
   onRootRowsChange: (rows: string[]) => void;
   rootRows: string[];
   showEnabledToggle?: boolean;
@@ -64,6 +74,48 @@ export function McpServerDraftForm({
             value={draft.displayName ?? ""}
             onChange={(event) => onDraftChange({ ...draft, displayName: event.target.value })}
           />
+        </McpField>
+        <McpField
+          action={
+            onGenerateDescription ? (
+              <Button
+                disabled={descriptionGenerating}
+                onClick={onGenerateDescription}
+                size="sm"
+                title="读取该 MCP 当前已发现的全部工具，并使用辅助模型生成描述"
+                type="button"
+                variant="outline"
+              >
+                {descriptionGenerating ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Sparkles />
+                )}
+                {descriptionGenerating ? "生成中" : "AI 生成"}
+              </Button>
+            ) : undefined
+          }
+          label="功能描述"
+        >
+          <div className="grid gap-1.5">
+            <Textarea
+              className="min-h-20 resize-y"
+              maxLength={500}
+              placeholder="例如：查询、创建和更新 Linear 中的 issue、项目与团队信息"
+              value={draft.description ?? ""}
+              onChange={(event) =>
+                onDraftChange({ ...draft, description: event.target.value })
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              可选；用于辅助模型理解整个 MCP 的能力。没有描述可留空，请勿填写密钥或连接信息。
+            </p>
+            {descriptionGenerationError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {descriptionGenerationError}
+              </p>
+            ) : null}
+          </div>
         </McpField>
         <McpField label="服务器类型">
           {transportEditable ? (
@@ -121,11 +173,24 @@ export function McpServerDraftForm({
           </McpField>
           <McpField label="认证方式">
             <Select
-              value={draft.authType ?? "none"}
+              value={
+                draft.authType === "bearer" && draft.bearerAuthMode === "env"
+                  ? "bearer_env"
+                  : (draft.authType ?? "none")
+              }
               onValueChange={(authType) =>
                 onDraftChange({
                   ...draft,
-                  authType: authType as MCPServerConfig["authType"],
+                  authType:
+                    authType === "bearer_env"
+                      ? "bearer"
+                      : (authType as MCPServerConfig["authType"]),
+                  bearerAuthMode:
+                    authType === "bearer_env" ? "env" : "direct",
+                  bearerToken:
+                    authType === "bearer" ? draft.bearerToken : "",
+                  bearerTokenEnv:
+                    authType === "bearer_env" ? draft.bearerTokenEnv : "",
                 })
               }
             >
@@ -135,13 +200,38 @@ export function McpServerDraftForm({
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="none">No auth</SelectItem>
-                  <SelectItem value="bearer">Bearer env</SelectItem>
+                  <SelectItem value="bearer">直接输入 Bearer Token</SelectItem>
+                  <SelectItem value="bearer_env">Bearer 环境变量</SelectItem>
                   <SelectItem value="oauth">OAuth bearer env</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
           </McpField>
-          {draft.authType === "bearer" || draft.authType === "oauth" ? (
+          {draft.authType === "bearer" && draft.bearerAuthMode !== "env" ? (
+            <McpField label="Bearer Token">
+              <div className="grid gap-1.5">
+                <Input
+                  autoComplete="new-password"
+                  placeholder={
+                    draft.bearerTokenRef
+                      ? "已安全保存；留空保持不变"
+                      : "输入 Bearer Token"
+                  }
+                  spellCheck={false}
+                  type="password"
+                  value={draft.bearerToken ?? ""}
+                  onChange={(event) =>
+                    onDraftChange({ ...draft, bearerToken: event.target.value })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Token 仅在保存时发送给本地 Core，之后不会回显。
+                </p>
+              </div>
+            </McpField>
+          ) : null}
+          {(draft.authType === "bearer" && draft.bearerAuthMode === "env") ||
+          draft.authType === "oauth" ? (
             <McpField label="Token 环境变量">
               <Input
                 placeholder={transportEditable ? "MCP_TOKEN" : undefined}

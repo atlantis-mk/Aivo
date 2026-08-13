@@ -94,9 +94,56 @@ func (m *MCPManager) Save(ctx context.Context, input domain.SaveMCPServerInput) 
 	if server.Name == "" {
 		server.Name = server.ID
 	}
+	server.Description = strings.TrimSpace(server.Description)
+	existing, existingErr := m.store.GetMCPServer(ctx, server.ID)
+	hadExisting := existingErr == nil
+	if len(server.Description) > 500 {
+		return domain.MCPServerConfig{}, errors.New("mcp functional description must be at most 500 bytes")
+	}
+	previousBearerRef := ""
+	if hadExisting && existing.AuthType == domain.MCPAuthBearer {
+		previousBearerRef = strings.TrimSpace(existing.BearerTokenRef)
+	}
+
+	rawBearerToken := strings.TrimSpace(input.BearerToken)
+	writtenBearerRef := ""
+	previousBearerValue := ""
+	if server.AuthType == domain.MCPAuthBearer {
+		switch {
+		case rawBearerToken != "":
+			writtenBearerRef = mcpSecretRef(server, "access-token")
+			if m.secrets == nil {
+				return domain.MCPServerConfig{}, errors.New("mcp bearer credential store is unavailable")
+			}
+			previousBearerValue, _ = m.secrets.Get(ctx, writtenBearerRef)
+			if err := m.secrets.Put(ctx, writtenBearerRef, rawBearerToken); err != nil {
+				return domain.MCPServerConfig{}, err
+			}
+			server.BearerTokenRef = writtenBearerRef
+			server.BearerTokenEnv = ""
+		case strings.TrimSpace(server.BearerTokenEnv) != "":
+			server.BearerTokenRef = ""
+		case previousBearerRef != "":
+			server.BearerTokenRef = previousBearerRef
+		default:
+			return domain.MCPServerConfig{}, errors.New("bearer authentication requires a token value or environment variable")
+		}
+	} else {
+		server.BearerTokenRef = ""
+	}
 	saved, err := m.store.SaveMCPServer(ctx, server)
 	if err != nil {
+		m.restoreMCPBearerSecret(ctx, writtenBearerRef, previousBearerValue)
 		return domain.MCPServerConfig{}, err
+	}
+	if previousBearerRef != "" && previousBearerRef != saved.BearerTokenRef {
+		if err := m.secrets.Delete(ctx, previousBearerRef); err != nil {
+			if hadExisting {
+				_, _ = m.store.SaveMCPServer(ctx, existing)
+			}
+			m.restoreMCPBearerSecret(ctx, writtenBearerRef, previousBearerValue)
+			return domain.MCPServerConfig{}, err
+		}
 	}
 	if saved.Enabled {
 		probe, probeErr := m.Probe(ctx, domain.MCPProbeInput{ServerID: saved.ID})
@@ -111,6 +158,17 @@ func (m *MCPManager) Save(ctx context.Context, input domain.SaveMCPServerInput) 
 		saved, _ = m.store.SetMCPServerEnabled(ctx, saved.ID, true, domain.MCPServerStatusReady, "")
 	}
 	return saved, nil
+}
+
+func (m *MCPManager) restoreMCPBearerSecret(ctx context.Context, ref string, previousValue string) {
+	if m == nil || m.secrets == nil || strings.TrimSpace(ref) == "" {
+		return
+	}
+	if previousValue == "" {
+		_ = m.secrets.Delete(ctx, ref)
+		return
+	}
+	_ = m.secrets.Put(ctx, ref, previousValue)
 }
 
 func (m *MCPManager) SetEnabled(ctx context.Context, input domain.SetMCPServerEnabledInput) (domain.MCPServerConfig, error) {
@@ -285,7 +343,7 @@ func (m *MCPManager) OAuthStatus(ctx context.Context, input domain.MCPOAuthStatu
 }
 
 func (m *MCPManager) authorizedServer(ctx context.Context, server domain.MCPServerConfig) (domain.MCPServerConfig, error) {
-	server, err := resolveMCPOAuthSecrets(ctx, m.secrets, server)
+	server, err := resolveMCPAuthSecrets(ctx, m.secrets, server)
 	if err != nil {
 		return domain.MCPServerConfig{}, err
 	}

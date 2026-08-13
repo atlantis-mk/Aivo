@@ -7,7 +7,6 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown, File, X } from "lucide-react";
 
-import { EnvironmentSummaryPanel } from "@/components/app-top-bar";
 import { Button } from "@/components/ui/button";
 import { TodoFloatingStatus } from "@/features/projects/project-todo-floating-status";
 import { cn } from "@/lib/utils";
@@ -88,30 +87,9 @@ export function ProjectComposerDropOverlay({
     >
       <div className="flex items-center gap-2 rounded-full bg-card px-4 py-2 shadow-sm">
         <File className="size-4 text-primary" />
-        <span>拖放文件或图片以添加到输入框</span>
+        <span>拖放文件或文件夹以添加到输入框</span>
       </div>
     </div>
-  );
-}
-
-export function ProjectEnvironmentSummaryAside({
-  canDockPinnedSummary,
-  onOpenTools,
-}: {
-  canDockPinnedSummary: boolean;
-  onOpenTools: () => void;
-}) {
-  return (
-    <aside
-      className={cn(
-        "absolute right-4 top-9 z-20 sm:right-6",
-        canDockPinnedSummary && "z-10",
-      )}
-    >
-      <EnvironmentSummaryPanel
-        onOpenTools={onOpenTools}
-      />
-    </aside>
   );
 }
 

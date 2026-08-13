@@ -108,8 +108,8 @@ func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionConte
 }
 
 func validateToolResolveSelection(candidates []domain.ToolCatalogEntry, names []string, limit int) []domain.ToolCatalogEntry {
-	if limit <= 0 || limit > 20 {
-		limit = 8
+	if limit <= 0 || limit > hostExpandedToolLimit {
+		limit = hostToolSelectionLimit
 	}
 	byName := map[string]domain.ToolCatalogEntry{}
 	for _, entry := range candidates {

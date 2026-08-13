@@ -75,7 +75,7 @@ func (t *MCPRuntimeTool) Execute(ctx context.Context, args json.RawMessage, _ do
 	if t.manager != nil {
 		server, err = t.manager.authorizedServer(ctx, server)
 	} else {
-		server, err = resolveMCPOAuthSecrets(ctx, t.secrets, server)
+		server, err = resolveMCPAuthSecrets(ctx, t.secrets, server)
 	}
 	if err != nil {
 		return toolFailure("", t.spec.Name, "mcp_auth_failed", sanitizeMCPError(err.Error()))

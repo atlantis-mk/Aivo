@@ -70,6 +70,7 @@ top_p: 0.8
 toolsets:
   - safe
   - git
+subagents: [review, explore]
 options:
   reasoning_effort: high
 ---
@@ -93,7 +94,7 @@ Audit $ARGUMENTS and report findings.`)
 	if agent.DisplayName != "Release Manager" || agent.Mode != "all" || agent.Model == nil || agent.Model.ProviderID != "openai" || agent.Model.ModelID != "gpt-5" {
 		t.Fatalf("agent = %#v", agent)
 	}
-	if agent.TopP == nil || *agent.TopP != 0.8 || agent.Temperature == nil || *agent.Temperature != 0.25 || len(agent.Toolsets) != 2 || agent.Options["reasoning_effort"] != "high" {
+	if agent.TopP == nil || *agent.TopP != 0.8 || agent.Temperature == nil || *agent.Temperature != 0.25 || len(agent.Toolsets) != 2 || len(agent.Subagents) != 2 || agent.Subagents[0] != "review" || agent.Options["reasoning_effort"] != "high" {
 		t.Fatalf("agent generation/tool settings = %#v", agent)
 	}
 	command := result.Config.Commands["quality/audit"]
@@ -101,7 +102,7 @@ Audit $ARGUMENTS and report findings.`)
 		t.Fatalf("command = %#v", command)
 	}
 	definition, err := NewAgentCatalogWithRuntime(result.Config).Get("release/manager")
-	if err != nil || definition.Mode != "all" || definition.TopP == nil || definition.Options["reasoning_effort"] != "high" {
+	if err != nil || definition.Mode != "all" || definition.TopP == nil || len(definition.Subagents) != 2 || definition.Options["reasoning_effort"] != "high" {
 		t.Fatalf("catalog definition = %#v err = %v", definition, err)
 	}
 }

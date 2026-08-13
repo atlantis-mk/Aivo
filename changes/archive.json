@@ -147,6 +147,55 @@
         "changes/CHG-2026-024-platform-extension-storage/change.md": "sha256:1c02f0fc89186ecc1d0857b52bfcec96bb097eac636db7b243bf25b6093c2248",
         "changes/CHG-2026-024-platform-extension-storage/change.yaml": "sha256:84daff13e177c78f292579cf90de462104c27789e410bb253c4ce9ff7ffd42a7"
       }
+    },
+    {
+      "work_id": "CHG-2026-027-dynamic-agent-modes",
+      "status": "Verified",
+      "archived_at": "2026-08-07T05:01:58.992Z",
+      "files": {
+        "changes/CHG-2026-027-dynamic-agent-modes/change.md": "sha256:7de2d1c3ea072ab324491b534f1cf88cc9266292953a753833d032a38c4db4d0",
+        "changes/CHG-2026-027-dynamic-agent-modes/change.yaml": "sha256:f744aff6f11f85898db875a6006a2126d8e75e35f7e7af88995609158048b88d",
+        "changes/CHG-2026-027-dynamic-agent-modes/evidence/agent-mode-editor-narrow-scrolled.png": "sha256:452a47b1c1c80274a56af471634a2213dd45d259e22a0806d7b6cd11ce308074",
+        "changes/CHG-2026-027-dynamic-agent-modes/evidence/agent-mode-editor-narrow.png": "sha256:102fd349dafa56f12c228d1a7f3b00588963ff39bbd32dc1621686ab74812879",
+        "changes/CHG-2026-027-dynamic-agent-modes/evidence/agent-modes-narrow.png": "sha256:0c7252f389ff8c35955a7d663276b57acb20f4d5a50bd8e1a7a84408d4bfc0b8",
+        "changes/CHG-2026-027-dynamic-agent-modes/evidence/agent-modes-wide.png": "sha256:452a3705cb87ae60572afbec404da1b4123362a85728347e2b89b70355799a82"
+      }
+    },
+    {
+      "work_id": "CHG-2026-028-remove-agent-mode-toolsets",
+      "status": "Verified",
+      "archived_at": "2026-08-07T05:16:59.553Z",
+      "files": {
+        "changes/CHG-2026-028-remove-agent-mode-toolsets/change.md": "sha256:7b8b683af702a97f4fae9d9eb5f3866ba5f38fc704ade773cc97ebeb005cea2b",
+        "changes/CHG-2026-028-remove-agent-mode-toolsets/change.yaml": "sha256:7c5a438c0b128690bea85b70ec0a269edca18a1df1256fc03b43c7a9ae7a75e9"
+      }
+    },
+    {
+      "work_id": "CHG-2026-029-agent-mode-subagent-associations",
+      "status": "Verified",
+      "archived_at": "2026-08-07T05:54:46.395Z",
+      "files": {
+        "changes/CHG-2026-029-agent-mode-subagent-associations/change.md": "sha256:3dac48747bfbf22eb1a982e988ebaff848e54f330870d53375fbf70a7140f76b",
+        "changes/CHG-2026-029-agent-mode-subagent-associations/change.yaml": "sha256:052ab1efe7b690ded7cee79d7d61e43b00358c1db06966e1e575d2268f5868f6"
+      }
+    },
+    {
+      "work_id": "CHG-2026-030-replaceable-session-tool-selection",
+      "status": "Verified",
+      "archived_at": "2026-08-10T03:36:12.331Z",
+      "files": {
+        "changes/CHG-2026-030-replaceable-session-tool-selection/change.md": "sha256:f412527c9acb691073ac584c70bf97b31aa42cb198dd5ddf7be555b8b1545182",
+        "changes/CHG-2026-030-replaceable-session-tool-selection/change.yaml": "sha256:160f24f1f62b0ceae0b3fc55365c352de9a7af075177e4f3a6221c3c9237e2a6"
+      }
+    },
+    {
+      "work_id": "CHG-2026-031-remove-agent-mcp-source-list-tool",
+      "status": "Verified",
+      "archived_at": "2026-08-10T04:01:05.755Z",
+      "files": {
+        "changes/CHG-2026-031-remove-agent-mcp-source-list-tool/change.md": "sha256:e5c16ab54f47a7bf24e60fd3196ea7f73a8ff637439315ed06062d31dbe0966a",
+        "changes/CHG-2026-031-remove-agent-mcp-source-list-tool/change.yaml": "sha256:e659795b606722a6c05c8bd1ea3be3e0c122177235e50a29c86ef0bad433c409"
+      }
     }
   ]
 }

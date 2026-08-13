@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import {
+  filterAgentModes,
   filterExtensions,
   filterServers,
   filterSkillCandidates,
@@ -10,6 +11,7 @@ import {
   mergeToolCatalogEntries,
 } from "@/features/projects/extension-settings-model";
 import type {
+  AgentModeDefinition,
   ExtensionInstall,
   MCPServerListItem,
   SkillEntry,
@@ -18,6 +20,7 @@ import type {
 } from "@/services/aivo";
 
 export function useExtensionSettingsDerivedState({
+  agentModes,
   extensions,
   query,
   servers,
@@ -26,6 +29,7 @@ export function useExtensionSettingsDerivedState({
   tools,
   workspaceRoot,
 }: {
+  agentModes: AgentModeDefinition[];
   extensions: ExtensionInstall[];
   query: string;
   servers: MCPServerListItem[];
@@ -56,6 +60,10 @@ export function useExtensionSettingsDerivedState({
           ]),
     [servers, tools, workspaceRoot],
   );
+  const visibleAgentModes = useMemo(
+    () => filterAgentModes(agentModes, query),
+    [agentModes, query],
+  );
   const visibleExtensions = useMemo(
     () => filterExtensions(extensions, query),
     [extensions, query],
@@ -82,6 +90,7 @@ export function useExtensionSettingsDerivedState({
   );
 
   return {
+    visibleAgentModes,
     visibleExtensions,
     visibleAllTools,
     visibleServers,

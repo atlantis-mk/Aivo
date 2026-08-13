@@ -71,18 +71,28 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
 
 export function ProviderChoiceGrid({
   activeProviderId,
+  fluid = false,
   onProviderClick,
 }: {
   activeProviderId?: string;
+  fluid?: boolean;
   onProviderClick: (provider: ProviderChoice) => void;
 }) {
   return (
-    <div className="grid w-full max-w-[640px] grid-cols-1 gap-aivo-3 sm:grid-cols-6">
+    <div
+      className={cn(
+        "grid w-full gap-aivo-3",
+        fluid
+          ? "grid-cols-[repeat(auto-fit,minmax(min(10rem,100%),1fr))]"
+          : "max-w-[640px] grid-cols-1 sm:grid-cols-6",
+      )}
+    >
       {providerChoices.map((provider, index) => (
         <ProviderChoiceCard
           key={provider.id}
           active={activeProviderId === provider.id}
           centered={index === 3}
+          fluid={fluid}
           onClick={() => onProviderClick(provider)}
           provider={provider}
         />
@@ -164,11 +174,13 @@ export function OtherProviderPickerDialog({
 function ProviderChoiceCard({
   active,
   centered,
+  fluid,
   onClick,
   provider,
 }: {
   active: boolean;
   centered: boolean;
+  fluid: boolean;
   onClick: () => void;
   provider: ProviderChoice;
 }) {
@@ -176,9 +188,10 @@ function ProviderChoiceCard({
     <button
       aria-pressed={active}
       className={cn(
-        "aivo-type-body flex min-h-aivo-control-lg min-w-0 items-center justify-center gap-aivo-2 rounded-lg border px-aivo-4 py-aivo-2 font-medium transition-colors sm:col-span-2",
+        "aivo-type-body flex min-h-aivo-control-lg min-w-0 items-center justify-center gap-aivo-2 rounded-lg border px-aivo-4 py-aivo-2 font-medium transition-colors",
         "hover:bg-muted/60 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
-        centered && "sm:col-start-2",
+        !fluid && "sm:col-span-2",
+        centered && !fluid && "sm:col-start-2",
         active
           ? "border-foreground bg-muted text-foreground"
           : "border-border bg-background text-foreground",

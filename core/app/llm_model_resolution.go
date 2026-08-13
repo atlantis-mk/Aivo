@@ -194,8 +194,8 @@ func sanitizeLLMAttachments(attachments []domain.MessageAttachment) []domain.Mes
 	out := make([]domain.MessageAttachment, 0, len(attachments))
 	for _, attachment := range attachments {
 		data := strings.TrimSpace(attachment.Data)
-		text := strings.TrimSpace(attachment.Text)
-		if data == "" && text == "" {
+		text := attachment.Text
+		if data == "" && strings.TrimSpace(text) == "" {
 			continue
 		}
 		name := strings.TrimSpace(attachment.Name)

@@ -1,16 +1,32 @@
 package domain
 
 type SubmitSessionMessageRequest struct {
-	SessionID       string              `json:"sessionId"`
-	Text            string              `json:"text"`
-	Attachments     []MessageAttachment `json:"attachments,omitempty"`
-	Delivery        string              `json:"delivery,omitempty"`
-	Model           *ModelRef           `json:"model,omitempty"`
-	AgentMode       string              `json:"agentMode,omitempty"`
-	Toolsets        []string            `json:"toolsets,omitempty"`
-	PermissionScope string              `json:"permissionScope,omitempty"`
-	ReasoningEffort string              `json:"reasoningEffort,omitempty"`
-	ServiceTier     string              `json:"serviceTier,omitempty"`
+	SessionID          string                     `json:"sessionId"`
+	Text               string                     `json:"text"`
+	Attachments        []MessageAttachment        `json:"attachments,omitempty"`
+	ResourceReferences []SessionResourceReference `json:"resourceReferences,omitempty"`
+	Delivery           string                     `json:"delivery,omitempty"`
+	Model              *ModelRef                  `json:"model,omitempty"`
+	AgentMode          string                     `json:"agentMode,omitempty"`
+	Toolsets           []string                   `json:"toolsets,omitempty"`
+	PermissionScope    string                     `json:"permissionScope,omitempty"`
+	ReasoningEffort    string                     `json:"reasoningEffort,omitempty"`
+	ServiceTier        string                     `json:"serviceTier,omitempty"`
+}
+
+const (
+	SessionResourceProject   = "project"
+	SessionResourceSkill     = "skill"
+	SessionResourceTool      = "tool"
+	SessionResourceExtension = "extension"
+	SessionResourceMCP       = "mcp"
+)
+
+type SessionResourceReference struct {
+	Kind     string `json:"kind"`
+	ID       string `json:"id"`
+	RootPath string `json:"rootPath,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 type PreparedSessionTurn struct {

@@ -29,12 +29,12 @@ type ToolResolveDecision struct {
 
 type ToolResolveFunc func(context.Context, ToolResolveRequest) (ToolResolveDecision, error)
 
-type ToolActivateFunc func(context.Context, string, string) error
+type ToolReplaceFunc func(context.Context, string, []string) error
 
 type ToolResolveTool struct {
 	registry *Registry
 	resolve  ToolResolveFunc
-	activate ToolActivateFunc
+	replace  ToolReplaceFunc
 }
 type ToolSearchTool struct{ registry *Registry }
 type ToolListTool struct{ registry *Registry }
@@ -47,8 +47,8 @@ type ToolCallTool struct {
 	runtime  func() *ToolRuntime
 }
 
-func NewToolResolveTool(registry *Registry, resolve ToolResolveFunc, activate ToolActivateFunc) *ToolResolveTool {
-	return &ToolResolveTool{registry: registry, resolve: resolve, activate: activate}
+func NewToolResolveTool(registry *Registry, resolve ToolResolveFunc, replace ToolReplaceFunc) *ToolResolveTool {
+	return &ToolResolveTool{registry: registry, resolve: resolve, replace: replace}
 }
 func NewToolSearchTool(registry *Registry) *ToolSearchTool {
 	return &ToolSearchTool{registry: registry}
@@ -91,6 +91,9 @@ func (t *ToolResolveTool) Execute(ctx context.Context, args json.RawMessage, exe
 	}
 	candidates := toolResolveCandidates(t.registry, execCtx, input.Source, input.Category, input.RiskLevel)
 	if len(candidates) == 0 {
+		if !required {
+			return t.replaceWithNoAutomaticTools(ctx, execCtx, "no allowed deferred tools match the requested filters")
+		}
 		return toolResolveNoAvailable(execCtx.ToolCallID, input.Intent, required, "no allowed deferred tools match the requested filters")
 	}
 	resolver := t.resolve
@@ -105,26 +108,42 @@ func (t *ToolResolveTool) Execute(ctx context.Context, args json.RawMessage, exe
 	if err != nil {
 		return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_resolve_failed", err.Error())
 	}
-	selected := validateToolResolveSelection(candidates, decision.Names, input.MaxTools)
+	selected := validateToolResolveSelection(candidates, decision.Names, hostExpandedToolLimit)
 	if len(selected) == 0 {
+		if !required {
+			return t.replaceWithNoAutomaticTools(ctx, execCtx, decision.Reason)
+		}
 		return toolResolveNoAvailable(execCtx.ToolCallID, input.Intent, required, firstNonEmpty(decision.Reason, "no candidate tool satisfied the requested capability"))
 	}
 	items := make([]map[string]any, 0, len(selected))
+	names := make([]string, 0, len(selected))
 	for _, entry := range selected {
-		if t.activate != nil {
-			if err := t.activate(ctx, execCtx.SessionID, entry.Name); err != nil {
-				return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_activation_failed", err.Error())
-			}
-		}
+		names = append(names, entry.Name)
 		items = append(items, toolCatalogListItem(entry))
 	}
+	if t.replace != nil {
+		if err := t.replace(ctx, execCtx.SessionID, names); err != nil {
+			return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_activation_failed", err.Error())
+		}
+	}
 	structured := map[string]any{
-		"status":          "activated",
+		"status":          "replaced",
 		"tools":           items,
 		"count":           len(items),
 		"reason":          strings.TrimSpace(decision.Reason),
 		"appliesNextStep": true,
 	}
+	raw, _ := json.MarshalIndent(structured, "", "  ")
+	return domain.ToolResult{Name: ToolResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
+}
+
+func (t *ToolResolveTool) replaceWithNoAutomaticTools(ctx context.Context, execCtx domain.ToolExecutionContext, reason string) domain.ToolResult {
+	if t.replace != nil {
+		if err := t.replace(ctx, execCtx.SessionID, nil); err != nil {
+			return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_activation_failed", err.Error())
+		}
+	}
+	structured := map[string]any{"status": "replaced", "tools": []map[string]any{}, "count": 0, "reason": strings.TrimSpace(reason), "appliesNextStep": true}
 	raw, _ := json.MarshalIndent(structured, "", "  ")
 	return domain.ToolResult{Name: ToolResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
 }

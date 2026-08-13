@@ -41,6 +41,7 @@ Unknown fields, invalid values, symlinked files, files larger than 1 MiB, and pr
       "temperature": 0.2,
 	  "topP": 0.9,
 	  "mode": "all",
+	  "subagents": ["review", "explore"],
 	  "variant": "high",
 	  "options": { "reasoning_effort": "high" },
       "maxSteps": 12,
@@ -102,7 +103,7 @@ Review the requested change and report findings first.
 
 - Project rules are loaded from global and repository `AGENTS.md` or `CLAUDE.md` files. Nested files apply only when a target file is below their directory. Configured instruction paths support local Globs, `~/` paths, absolute paths, and explicit HTTP(S) URLs; reads are bounded and remote requests time out.
 - Type `/review README.md security` in the composer to invoke a configured command. The catalog also includes built-in `init`/`review`, enabled Skills, and MCP Prompts. Commands marked `subtask` run in a forked child session and return the result to the parent.
-- Configured agents appear in the project Agent picker. Model, temperature, top-p, provider options, variant, maximum steps, toolsets, permission scope, primary/subagent mode, disabled state, and default Agent are applied per project. Delegate-only batches execute concurrently up to `maxParallelChildren`, retain result order, and propagate cancellation.
+- Configured agents appear in the project Agent picker. Model, temperature, top-p, provider options, variant, maximum steps, toolsets, permission scope, primary/subagent mode, bounded `subagents` associations, disabled state, and default Agent are applied per project. A primary-capable mode receives the delegation tool only for its valid effective associations; the model decides when to call them. Delegate-only batches execute concurrently up to `maxParallelChildren`, retain result order, and propagate cancellation.
 - Provider extensions appear only in their project model picker. Same-named extensions in concurrent projects use isolated registries. `credentialRef` is an environment-variable name, never a credential value. Command providers receive one bounded JSON request on stdin and return one `ChatResponse` JSON object on stdout; Aivo does not invoke a shell.
 - `RefreshProviderEcosystemCatalog` explicitly refreshes the models.dev-compatible provider/model directory into an atomic offline cache. Native transports remain native; supported OpenAI-compatible entries are added dynamically. Set `AIVO_MODELS_URL` to change the source and `AIVO_MODELS_CACHE` to change the cache file.
 - Built-in LSP definitions cover more than 30 common languages/frameworks, including Deno, Vue, Svelte, Astro, Elixir, Zig, Swift, Kotlin, Dart, OCaml, Terraform, Typst, Haskell, and Julia. Servers start at the nearest matching monorepo root; project definitions can add, override, disable, and revision-restart them.

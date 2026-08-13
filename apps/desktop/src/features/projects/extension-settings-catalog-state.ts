@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 
+import type { CatalogState } from "@/lib/provider-catalog";
 import {
+  getProviderCatalog,
+  getProviderCatalogForProject,
+  listAgentModes,
   listExtensionInstalls,
   listMCPServers,
   listSkills,
   listToolCatalog,
+  type AgentModeDefinition,
   type ExtensionInstall,
   type MCPServerListItem,
   type SkillEntry,
@@ -20,18 +25,23 @@ export function useExtensionSettingsCatalogState({
   workspaceRoot?: string;
 }) {
   const [extensions, setExtensions] = useState<ExtensionInstall[]>([]);
+  const [agentModes, setAgentModes] = useState<AgentModeDefinition[]>([]);
   const [servers, setServers] = useState<MCPServerListItem[]>([]);
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [skillCandidates, setSkillCandidates] = useState<
     SkillImportCandidate[]
   >([]);
+  const [providerCatalog, setProviderCatalog] = useState<CatalogState | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError("");
+    setProviderCatalog(null);
     const results = await Promise.allSettled([
       listExtensionInstalls(),
       listMCPServers(true, true),
@@ -41,6 +51,10 @@ export function useExtensionSettingsCatalogState({
         includeDisabled: true,
         includeIgnored: true,
       }),
+      listAgentModes(false),
+      workspaceRoot
+        ? getProviderCatalogForProject(workspaceRoot)
+        : getProviderCatalog(),
     ] as const);
 
     if (results[0].status === "fulfilled") {
@@ -56,18 +70,24 @@ export function useExtensionSettingsCatalogState({
       setSkills(results[3].value.entries ?? []);
       setSkillCandidates(results[3].value.candidates ?? []);
     }
+    if (results[4].status === "fulfilled") {
+      setAgentModes(results[4].value);
+    }
+    if (results[5].status === "fulfilled") {
+      setProviderCatalog(results[5].value);
+    }
 
     const failures = results
       .map((result, index) => {
         if (result.status === "fulfilled") return "";
-        const label =
-          index === 0
-            ? "Extensions"
-            : index === 1
-              ? "MCP"
-              : index === 2
-                ? "Tools"
-                : "Skills";
+        const label = [
+          "Extensions",
+          "MCP",
+          "Tools",
+          "Skills",
+          "Agent modes",
+          "Provider catalog",
+        ][index];
         const reason = result.reason;
         return `${label}: ${reason instanceof Error ? reason.message : String(reason)}`;
       })
@@ -83,9 +103,11 @@ export function useExtensionSettingsCatalogState({
   }, [active, reload]);
 
   return {
+    agentModes,
     error,
     extensions,
     loading,
+    providerCatalog,
     reload,
     servers,
     setError,

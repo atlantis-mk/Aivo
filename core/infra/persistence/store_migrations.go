@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,7 +18,7 @@ import (
 	"aivo/core/domain"
 )
 
-const latestSchemaVersion = 4
+const latestSchemaVersion = 8
 
 func (s *Store) migrate(ctx context.Context) error {
 	version, hasVersionTable, err := s.currentSchemaVersion(ctx)
@@ -36,6 +37,12 @@ func (s *Store) migrate(ctx context.Context) error {
 		}
 		if !s.db.WithContext(ctx).Migrator().HasColumn(&extensionInstallRow{}, "install_mode") {
 			return errors.New("database schema version 4 is missing extension_installs.install_mode")
+		}
+		if !s.db.WithContext(ctx).Migrator().HasTable(&globalToolPreferenceRow{}) {
+			return errors.New("database schema version 5 is missing global_tool_preferences")
+		}
+		if !s.db.WithContext(ctx).Migrator().HasTable(&agentModeDefinitionRow{}) {
+			return errors.New("database schema version 6 is missing agent_mode_definitions")
 		}
 		return nil
 	}
@@ -58,15 +65,48 @@ func (s *Store) migrate(ctx context.Context) error {
 		if err := migrateProviderAuth(ctx, tx); err != nil {
 			return err
 		}
-		if err := tx.AutoMigrate(&turnRow{}, &sessionEventRow{}, &toolCallRow{}, &sessionExecutionStateRow{}, &pendingSessionInputRow{}, &permissionRequestRow{}, &questionRequestRow{}, &permissionRuleRow{}, &sessionSummaryRow{}, &sessionCheckpointRow{}, &codingContextRow{}, &gitWorktreeRow{}, &agentRunRow{}, &todoItemRow{}, &scheduledJobRow{}, &pluginInstallRow{}, &pluginDiagnosticRow{}, &mcpServerRow{}, &mcpToolRow{}, &mcpPromptRow{}, &mcpResourceRow{}, &skillRow{}, &skillSourceRow{}, &skillImportCandidateRow{}, &toolRegistrationRow{}, &extensionInstallRow{}); err != nil {
+		if err := tx.AutoMigrate(&turnRow{}, &sessionEventRow{}, &toolCallRow{}, &sessionExecutionStateRow{}, &pendingSessionInputRow{}, &permissionRequestRow{}, &questionRequestRow{}, &permissionRuleRow{}, &sessionSummaryRow{}, &sessionCheckpointRow{}, &codingContextRow{}, &gitWorktreeRow{}, &agentRunRow{}, &todoItemRow{}, &scheduledJobRow{}, &pluginInstallRow{}, &pluginDiagnosticRow{}, &mcpServerRow{}, &mcpToolRow{}, &mcpPromptRow{}, &mcpResourceRow{}, &skillRow{}, &skillSourceRow{}, &skillImportCandidateRow{}, &toolRegistrationRow{}, &extensionInstallRow{}, &globalToolPreferenceRow{}, &agentModeDefinitionRow{}); err != nil {
 			return err
 		}
 		if err := migrateLegacyMessages(ctx, tx); err != nil {
 			return err
 		}
+		if version < 7 {
+			if err := migrateAgentModeToolsets(ctx, tx); err != nil {
+				return err
+			}
+		}
 		now := domain.NowString(time.Now())
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaVersionRow{Version: latestSchemaVersion, AppliedAt: now}).Error
 	})
+}
+
+func migrateAgentModeToolsets(ctx context.Context, tx *gorm.DB) error {
+	if !tx.WithContext(ctx).Migrator().HasTable(&agentModeDefinitionRow{}) {
+		return nil
+	}
+	var rows []agentModeDefinitionRow
+	if err := tx.WithContext(ctx).Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		var definition map[string]any
+		if err := json.Unmarshal([]byte(row.Definition), &definition); err != nil {
+			return fmt.Errorf("decode agent mode %s for schema v7: %w", row.ID, err)
+		}
+		if _, exists := definition["toolsets"]; !exists {
+			continue
+		}
+		delete(definition, "toolsets")
+		raw, err := json.Marshal(definition)
+		if err != nil {
+			return fmt.Errorf("encode agent mode %s for schema v7: %w", row.ID, err)
+		}
+		if err := tx.WithContext(ctx).Model(&agentModeDefinitionRow{}).Where("id = ?", row.ID).Update("definition", string(raw)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) currentSchemaVersion(ctx context.Context) (int, bool, error) {

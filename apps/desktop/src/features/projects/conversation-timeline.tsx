@@ -11,7 +11,6 @@ import type { AgentRun } from "@/services/aivo";
 export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   agentRuns = [],
   contentRef,
-  dockPinnedSummary,
   onDeleteAssistantMessage,
   onDeleteTurn,
   onEditUserMessage,
@@ -24,7 +23,6 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
 }: {
   agentRuns?: AgentRun[];
   contentRef: RefObject<HTMLDivElement | null>;
-  dockPinnedSummary: boolean;
   onDeleteAssistantMessage?: (turn: ConversationTurn) => void;
   onDeleteTurn?: (turn: ConversationTurn) => void;
   onEditUserMessage?: (turn: ConversationTurn) => void;
@@ -61,7 +59,6 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
         revealFromHistory
           ? "animate-in fade-in duration-200 [&_.animate-in]:animate-none"
           : "animate-in fade-in slide-in-from-bottom-3 duration-500",
-        dockPinnedSummary && "min-[1050px]:-translate-x-40",
       )}
       ref={contentRef}
     >

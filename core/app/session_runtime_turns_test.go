@@ -51,6 +51,34 @@ func TestSubmitMessageUsesDeterministicFallbackWithoutProvider(t *testing.T) {
 	}
 }
 
+func TestSubmitSessionMessageRejectsUnreadableAttachmentBeforePersistence(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{
+		SessionID: session.ID,
+		Text:      "inspect this",
+		Attachments: []domain.MessageAttachment{{
+			Name: "broken.pdf", MIMEType: "application/pdf", Kind: "file", Data: "not-base64",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid base64 attachment data") {
+		t.Fatalf("error = %v, want invalid attachment refusal", err)
+	}
+	events, listErr := service.ListEvents(ctx, session.ID, true, 20)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events = %#v, want no persisted event", events)
+	}
+}
+
 func TestUpdateAndDeleteSessionEventAffectVisibleContext(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
@@ -417,5 +445,44 @@ func TestReplaySessionToolCallCreatesFreshToolCall(t *testing.T) {
 	}
 	if !sessionEventContains(events, domain.EventTypeSystemNote, "Tool call replay succeeded", original.ID) {
 		t.Fatalf("events after replay = %#v, want replay audit event", events)
+	}
+}
+
+func TestReplaySessionToolCallDoesNotTreatGlobalVisibilityAsRevocation(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	root := t.TempDir()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetPermissionMode(ctx, domain.PermissionModeInput{SessionID: session.ID, Mode: domain.PermissionModeFullAccess}); err != nil {
+		t.Fatal(err)
+	}
+	original, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{
+		ID:        "call_globally_disabled",
+		SessionID: session.ID,
+		Name:      "bash",
+		Arguments: map[string]any{"command": "touch replay-must-not-exist"},
+		Status:    domain.ToolCallStatusFailed,
+		Error:     "previous run failed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetGlobalToolEnabled(ctx, domain.GlobalToolEnabledInput{Name: "bash", Enabled: false, WorkspaceRoot: root}); err != nil {
+		t.Fatal(err)
+	}
+
+	replayed, err := service.ReplaySessionToolCall(ctx, domain.ReplaySessionToolCallRequest{SessionID: session.ID, ToolCallID: original.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Status != domain.ToolCallStatusSuccess {
+		t.Fatalf("replayed call = %#v, want explicit replay to remain available", replayed)
+	}
+	if _, err := os.Stat(filepath.Join(root, "replay-must-not-exist")); err != nil {
+		t.Fatalf("explicit replay did not execute the globally hidden tool: %v", err)
 	}
 }

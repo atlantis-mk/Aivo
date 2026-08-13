@@ -28,7 +28,7 @@ func newAgentRuntimeTools(service *Service) []domain.Tool {
 	return []domain.Tool{
 		serviceTool{spec: jsonToolSpec("agent_mode_list", "List available agent modes.", "agent.read", "agent", "safe", "admin"), handler: service.agentModeListTool},
 		serviceTool{spec: jsonToolSpec("agent_mode_set", "Set the current session agent mode.", "agent.write", "agent", "admin"), handler: service.agentModeSetTool},
-		serviceTool{spec: jsonToolSpec("agent_delegate_task", "Delegate a bounded task to a child agent session.", "agent.delegate", "agent", "coding", "personal"), handler: service.agentDelegateTaskTool},
+		serviceTool{spec: jsonToolSpec("agent_delegate_task", "Delegate a bounded task to a child agent session.", "agent.delegate", "agent", "safe", "coding", "personal"), handler: service.agentDelegateTaskTool},
 		serviceTool{spec: jsonToolSpec("agent_run_list", "List subagent run records for the current session.", "agent.read", "agent", "safe", "personal"), handler: service.agentRunListTool},
 		serviceTool{spec: jsonToolSpec("agent_run_cancel", "Cancel a subagent run record.", "agent.write", "agent", "personal"), handler: service.agentRunCancelTool},
 		serviceTool{spec: updatePlanToolSpec(), handler: service.updatePlanTool},
@@ -163,7 +163,18 @@ func (s *Service) delegateTaskToolNamed(ctx context.Context, args json.RawMessag
 	if err != nil {
 		return errorToolResult(toolName, err)
 	}
-	modeDefinition, err := NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(parent.ProjectPath).Config).Get(mode)
+	catalog, err := s.agentCatalogForProject(ctx, parent.ProjectPath)
+	if err != nil {
+		return errorToolResult(toolName, err)
+	}
+	parentMode, err := catalog.Get(firstNonEmpty(execCtx.AgentMode, parent.AgentMode))
+	if err != nil {
+		return errorToolResult(toolName, err)
+	}
+	if !agentModeAllowsSubagent(parentMode, mode) {
+		return errorToolResult(toolName, errors.New("agent mode "+parentMode.ID+" is not associated with subagent "+mode))
+	}
+	modeDefinition, err := catalog.Get(mode)
 	if err != nil {
 		return errorToolResult(toolName, err)
 	}
@@ -173,7 +184,7 @@ func (s *Service) delegateTaskToolNamed(ctx context.Context, args json.RawMessag
 	// Built-in agents deliberately describe the full production toolset. Tests and
 	// reduced embeddings may expose only a subset, so availability validation is
 	// reserved for user-defined agents whose contract must be checked strictly.
-	if modeDefinition.Revision != "" {
+	if modeDefinition.Revision != "" && !modeDefinition.BuiltIn {
 		if err := s.validateAgentToolsets(parent.ProjectPath, modeDefinition); err != nil {
 			return errorToolResult(toolName, err)
 		}
@@ -222,6 +233,15 @@ func (s *Service) delegateTaskToolNamed(ctx context.Context, args json.RawMessag
 		return structuredToolResult(toolName, run, runErr)
 	}
 	return structuredToolResult(toolName, run, nil)
+}
+
+func agentModeAllowsSubagent(parent domain.AgentModeDefinition, child string) bool {
+	for _, candidate := range parent.Subagents {
+		if candidate == child {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) emitDelegateTaskToolCallUpdate(execCtx domain.ToolExecutionContext, run domain.AgentRun, toolName string) {

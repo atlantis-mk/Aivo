@@ -1,6 +1,6 @@
 # ADR-0002: Use four Agent primitives with external isolation and language-neutral extensions
 
-- Status: Accepted
+- Status: Superseded in part by `ADR-0016`
 - Date: 2026-08-03
 - Related Work: `CHG-2026-007-minimal-agent-tool-primitives`
 - Closes OPEN: none
@@ -21,7 +21,7 @@ The replacement must retain high-frequency deterministic file operations, genera
 - Core correctness controls MUST retain schema validation, bounded context/results, cancellation, process ownership, per-file mutation serialization, exact edit semantics, atomic writes, safe logs, renderer privilege separation, and Host-owned credentials.
 - Extensions MUST use a versioned language-neutral Manifest and Protocol supporting Go built-ins, arbitrary supervised executables, local services, external services, and static resources.
 - Extension discovery and trust MUST be separate from enablement, readiness, activation, prompt exposure, authorization, and execution. Models MUST NOT install or trust executable extensions.
-- The auxiliary model selector MUST become a Host pre-call activation service over sanitized eligible catalog summaries. The default primary model MUST NOT receive discovery bridge tools.
+- Superseded by `ADR-0016`: auxiliary selection initializes a conversation automatic set, and the default primary model receives only the bounded `tool_resolve` Host control for intentional replacement; other discovery bridge tools remain hidden.
 - Each primary model request MUST use a frozen Tool Snapshot containing exact registration and schema identities.
 - Every executable tool MUST have one canonical ASCII identifier matching `^[A-Za-z0-9_-]+$` with a 64-byte maximum before registration. Manifest and registry boundaries MUST reject invalid names, generated MCP adapter names MUST follow the same rule while retaining their upstream names separately, and Provider adapters MUST NOT encode, decode, escape, or alias tool identities.
 - Complex extension presentation SHOULD use an isolated Web Service view through Host-owned surfaces and proxying. Extension Web content MUST NOT receive Node integration, privileged preload APIs, ambient credentials, or unrestricted privileged navigation.

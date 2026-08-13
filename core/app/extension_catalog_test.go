@@ -80,7 +80,7 @@ func TestToolAssemblyCanExplicitlyActivateMatchedTools(t *testing.T) {
 	}
 }
 
-func TestPreCallActivationSeparatesPinnedModeAndAutoPolicies(t *testing.T) {
+func TestPreCallActivationSeparatesManualAutomaticAndManualOnlyPolicies(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -102,18 +102,18 @@ func TestPreCallActivationSeparatesPinnedModeAndAutoPolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 	activated, candidates := service.preCallToolCandidates(ctx, session.ID, "turn-1", registry, registry.Specs())
-	if activated["example_manual"] != "pinned" || activated["example_default"] != "mode" {
-		t.Fatalf("activated = %#v, want pinned manual and mode default", activated)
+	if activated["example_manual"] != "manual" {
+		t.Fatalf("activated = %#v, want only the manual conversation tool", activated)
 	}
-	if activated["example_auto"] != "" {
-		t.Fatalf("activated = %#v, auto tool must not activate without a resolver match", activated)
+	if activated["example_auto"] != "" || activated["example_default"] != "" {
+		t.Fatalf("activated = %#v, automatic candidates must not activate without a resolver match", activated)
 	}
-	if len(candidates) != 1 || candidates[0].Name != "example_auto" {
-		t.Fatalf("candidates = %#v, want only the auto tool", candidates)
+	if len(candidates) != 2 || candidates[0].Name != "example_auto" || candidates[1].Name != "example_default" {
+		t.Fatalf("candidates = %#v, want auto and legacy-default tools to require selection", candidates)
 	}
 	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activated)
-	if len(assembly.Specs) != 2 || len(assembly.Snapshot.Tools) != 2 {
-		t.Fatalf("assembly = %#v, want exactly the pinned and mode tools", assembly)
+	if len(assembly.Specs) != 1 || len(assembly.Snapshot.Tools) != 1 || assembly.Specs[0].Name != "example_manual" {
+		t.Fatalf("assembly = %#v, want exactly the manual tool before automatic selection", assembly)
 	}
 }
 
@@ -132,13 +132,25 @@ func TestListToolCatalogWithoutWorkspaceHasNoLegacyExecutors(t *testing.T) {
 			t.Fatalf("global catalog missing builtin project extension tool %q; entries = %#v", name, entries)
 		}
 	}
-	for _, name := range []string{toolRegistrationListName, toolRegistrationMCPName} {
-		if !names[name] {
-			t.Fatalf("global catalog missing builtin tool registration extension tool %q; entries = %#v", name, entries)
-		}
+	if !names[toolRegistrationMCPName] {
+		t.Fatalf("global catalog missing builtin tool registration extension tool %q; entries = %#v", toolRegistrationMCPName, entries)
 	}
-	if len(names) != 5 {
+	if names["aivo_tools_list_mcp"] {
+		t.Fatalf("global catalog still exposes removed MCP source-list tool; entries = %#v", entries)
+	}
+	if len(names) != 4 {
 		t.Fatalf("global catalog exposes tools other than the builtin Host extensions; entries = %#v", entries)
+	}
+}
+
+func TestToolRegistryReservesHostSelectionControlName(t *testing.T) {
+	registry := NewRegistry()
+	tool := phase6EchoTool{spec: domain.ToolSpec{Name: ToolResolveName, InputSchema: map[string]any{"type": "object"}, Toolsets: []string{"coding"}}}
+	if err := registry.RegisterScoped(tool, domain.ToolSourceExtension, "malicious", "v1"); err == nil {
+		t.Fatal("extension registered the Host-owned tool_resolve name")
+	}
+	if err := registry.RegisterScoped(NewToolResolveTool(registry, nil, nil), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
+		t.Fatalf("Host control registration failed: %v", err)
 	}
 }
 
@@ -210,12 +222,13 @@ func TestListToolCatalogWithWorkspaceContainsCoreAndCachedEnabledExtensions(t *t
 			t.Fatalf("workspace catalog missing builtin project extension tool %q; entries = %#v", name, entries)
 		}
 	}
-	for _, name := range []string{toolRegistrationListName, toolRegistrationMCPName} {
-		if !names[name] {
-			t.Fatalf("workspace catalog missing builtin tool registration extension tool %q; entries = %#v", name, entries)
-		}
+	if !names[toolRegistrationMCPName] {
+		t.Fatalf("workspace catalog missing builtin tool registration extension tool %q; entries = %#v", toolRegistrationMCPName, entries)
 	}
-	if len(names) != 13 || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
+	if names["aivo_tools_list_mcp"] {
+		t.Fatalf("workspace catalog still exposes removed MCP source-list tool; entries = %#v", entries)
+	}
+	if len(names) != 12 || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
 		t.Fatalf("workspace catalog does not contain four core tools plus builtin Host extensions and MCP adapter contributions; entries = %#v", entries)
 	}
 }

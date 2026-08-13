@@ -245,6 +245,36 @@ func TestChatCompletionsRequestBodyStreams(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsRequestBodyRendersTextAndFileAttachments(t *testing.T) {
+	body := chatCompletionsRequestBody("openai/gpt-5", []llmChatMessage{{
+		Role: "user",
+		Text: "inspect these",
+		Attachments: []domain.MessageAttachment{
+			{Name: "notes.md", MIMEType: "text/markdown", Kind: "file", Text: "# Notes\n\nKeep this exact."},
+			{Name: "brief.pdf", MIMEType: "application/pdf", Kind: "file", Data: "cGRm"},
+		},
+	}}, nil)
+
+	messages, _ := body["messages"].([]map[string]any)
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v, want one message", body["messages"])
+	}
+	content, _ := messages[0]["content"].([]map[string]any)
+	if len(content) != 3 {
+		t.Fatalf("content = %#v, want prompt plus text and file attachments", messages[0]["content"])
+	}
+	if content[1]["type"] != "text" || content[1]["text"] != "notes.md\n# Notes\n\nKeep this exact." {
+		t.Fatalf("text attachment = %#v", content[1])
+	}
+	if content[2]["type"] != "file" {
+		t.Fatalf("file attachment = %#v", content[2])
+	}
+	file, _ := content[2]["file"].(map[string]string)
+	if file["filename"] != "brief.pdf" || file["file_data"] != "data:application/pdf;base64,cGRm" {
+		t.Fatalf("file data = %#v", content[2]["file"])
+	}
+}
+
 func TestAnthropicRequestBodyStreams(t *testing.T) {
 	body := anthropicRequestBody("claude-sonnet-4-5", []llmChatMessage{{Role: "user", Text: "hello"}}, nil, "")
 

@@ -55,12 +55,10 @@ export function useConversationScrollProgression({
   animateToBottom,
   composerHeight,
   hasTurns,
-  isPinnedSummaryOpen,
   lastTurnStateKey,
   previousTurnCountRef,
   scrollToBottom,
   setShowScrollToBottomButton,
-  shouldShiftPinnedSummaryLayout,
   snapNextScrollRef,
   startForceScrollToBottom,
   stickToBottomRef,
@@ -69,12 +67,10 @@ export function useConversationScrollProgression({
   animateToBottom: () => void;
   composerHeight: number;
   hasTurns: boolean;
-  isPinnedSummaryOpen: boolean;
   lastTurnStateKey: string;
   previousTurnCountRef: MutableRef<number>;
   scrollToBottom: (behavior?: ScrollBehavior) => void;
   setShowScrollToBottomButton: Dispatch<SetStateAction<boolean>>;
-  shouldShiftPinnedSummaryLayout: boolean;
   snapNextScrollRef: MutableRef<boolean>;
   startForceScrollToBottom: () => void;
   stickToBottomRef: MutableRef<boolean>;
@@ -112,12 +108,10 @@ export function useConversationScrollProgression({
     animateToBottom,
     composerHeight,
     hasTurns,
-    isPinnedSummaryOpen,
     lastTurnStateKey,
     previousTurnCountRef,
     scrollToBottom,
     setShowScrollToBottomButton,
-    shouldShiftPinnedSummaryLayout,
     snapNextScrollRef,
     startForceScrollToBottom,
     stickToBottomRef,

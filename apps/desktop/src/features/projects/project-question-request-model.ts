@@ -12,7 +12,6 @@ export type QuestionRequestPanelProps = {
   customAnswerIndex: number;
   customAnswers: string[];
   customInputRef: RefObject<HTMLInputElement | null>;
-  dockPinnedSummary: boolean;
   isBusy: boolean;
   onActiveAnswerIndexChange: (index: number) => void;
   onCustomAnswerChange: (index: number, value: string) => void;

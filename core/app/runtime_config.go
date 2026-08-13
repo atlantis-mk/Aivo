@@ -257,7 +257,7 @@ func agentDefinitionFromMarkdown(values map[string]string, content string, prima
 	definition := domain.AgentRuntimeDefinition{
 		DisplayName: values["name"], Description: values["description"], Prompt: strings.TrimSpace(content),
 		Toolsets: parseRuntimeStringList(values["toolsets"]), PermissionScope: firstNonEmpty(values["permissionScope"], values["permission_scope"]),
-		Mode: values["mode"], Variant: values["variant"], Hidden: parseRuntimeBool(values["hidden"]),
+		Mode: values["mode"], Subagents: parseRuntimeStringList(values["subagents"]), Variant: values["variant"], Hidden: parseRuntimeBool(values["hidden"]),
 		Disabled: parseRuntimeBool(firstNonEmpty(values["disabled"], values["disable"])),
 	}
 	if primary {
@@ -357,6 +357,21 @@ func validateRuntimeConfig(path string, cfg domain.RuntimeConfig) []domain.Runti
 		}
 		if agent.Mode != "" && agent.Mode != "primary" && agent.Mode != "subagent" && agent.Mode != "all" {
 			messages = append(messages, "agent mode must be primary, subagent, or all")
+		}
+		if len(agent.Subagents) > 16 {
+			messages = append(messages, "agent subagents must not exceed 16 entries")
+		}
+		seenSubagents := map[string]bool{}
+		for _, subagent := range agent.Subagents {
+			normalized, err := domain.NormalizeAgentMode(subagent)
+			if err != nil || normalized == name || seenSubagents[normalized] {
+				messages = append(messages, "agent subagents must contain unique valid non-self identifiers")
+				break
+			}
+			seenSubagents[normalized] = true
+		}
+		if agent.Mode == "subagent" && len(agent.Subagents) > 0 {
+			messages = append(messages, "subagent-only agents cannot associate subagents")
 		}
 	}
 	if cfg.DefaultAgent != "" {

@@ -1,0 +1,45 @@
+id: "CHG-2026-029-agent-mode-subagent-associations"
+title: "Associate primary Agent modes with callable subagents"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-AGENT-001"
+  - "REQ-SESSION-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-AGENT-001"
+  - "AT-SESSION-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0015"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-AGENT-001 Dynamic Agent mode management"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+  - "docs/runtime-configuration.md"
+related_changes:
+  - "CHG-2026-027-dynamic-agent-modes"
+  - "CHG-2026-028-remove-agent-mode-toolsets"
+affected_surfaces:
+  - "Extensions and MCP Agent-mode editor"
+  - "Core Agent-mode catalog and delegation runtime"
+  - "SQLite Agent-mode definition persistence"
+affected_formats:
+  - "SQLite schema v8 agent_mode_definitions payload contract"
+  - "typed local Core Agent-mode management DTOs"
+  - "project runtime Agent definition"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Adds a Core-enforced per-mode allowlist for model-initiated child Agent delegation without granting new tool capabilities"
+migration: "SQLite schema v7 to v8 creates a verified v7 backup and recognizes bounded subagent association IDs in managed Agent-mode payloads"
+supersedes: []

@@ -21,13 +21,7 @@ export type AppTopBarProps = {
   onBranch?: () => void;
   onAddScheduledTask?: () => void;
   onOpenInNewWindow?: () => void;
-  isPinnedSummaryOpen?: boolean;
-  onTogglePinnedSummary?: () => void;
   onModelSelect?: () => void;
-  onAddContext?: () => void;
-  onSelectLocalEnvironment?: () => void;
-  onSelectBranch?: () => void;
-  onCommitOrPush?: () => void;
   onOpenLayoutPanel?: () => void;
 };
 

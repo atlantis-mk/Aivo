@@ -98,8 +98,8 @@ func responsesMessageItem(role string, text string, attachments []domain.Message
 func responsesAttachmentPart(attachment domain.MessageAttachment) map[string]string {
 	data := strings.TrimSpace(attachment.Data)
 	if data == "" {
-		text := strings.TrimSpace(attachment.Text)
-		if text == "" {
+		text := attachment.Text
+		if strings.TrimSpace(text) == "" {
 			return nil
 		}
 		return map[string]string{"type": "input_text", "text": attachment.Name + "\n" + text}

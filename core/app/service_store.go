@@ -19,6 +19,12 @@ type Store interface {
 	scheduledJobStore
 }
 
+type agentModeDefinitionStore interface {
+	ListAgentModeDefinitions(context.Context) ([]domain.AgentModeDefinition, error)
+	SaveAgentModeDefinition(context.Context, domain.AgentModeDefinition) error
+	DeleteAgentModeDefinition(context.Context, string, bool) error
+}
+
 type extensionInstallStore interface {
 	ManagedExtensionRoot() (string, error)
 	LegacyManagedExtensionRoot() (string, error)

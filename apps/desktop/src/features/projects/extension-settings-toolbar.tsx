@@ -18,6 +18,7 @@ import { addButtonLabel } from "@/features/projects/extension-settings-model";
 import type { ExtensionSettingsSection } from "@/features/projects/extension-settings-model";
 
 export function ExtensionSettingsToolbar({
+  agentModeCount,
   extensionCount,
   loading,
   onAdd,
@@ -29,6 +30,7 @@ export function ExtensionSettingsToolbar({
   skillCount,
   toolCount,
 }: {
+  agentModeCount: number;
   extensionCount: number;
   loading: boolean;
   onAdd: () => void;
@@ -50,6 +52,9 @@ export function ExtensionSettingsToolbar({
         <TabsTrigger value="mcp">
           MCP <span>{serverCount}</span>
         </TabsTrigger>
+        <TabsTrigger value="agents">
+          Agent 模式 <span>{agentModeCount}</span>
+        </TabsTrigger>
         <TabsTrigger value="skills">
           技能 <span>{skillCount}</span>
         </TabsTrigger>
@@ -64,9 +69,9 @@ export function ExtensionSettingsToolbar({
             <Search />
           </InputGroupAddon>
           <InputGroupInput
-            aria-label="搜索扩展、MCP、技能和工具"
+            aria-label="搜索扩展、MCP、Agent 模式、技能和工具"
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索扩展、MCP、技能和工具"
+            placeholder="搜索扩展、MCP、Agent 模式、技能和工具"
             value={query}
           />
         </InputGroup>

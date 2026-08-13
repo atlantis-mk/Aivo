@@ -137,6 +137,13 @@ func (api *API) callExtensionRPC(ctx context.Context, method string, args []json
 		}
 		result, err := api.service.SetMCPServerEnabled(ctx, input)
 		return result, true, err
+	case "GenerateMCPDescription":
+		input, err := arg[domain.MCPDescriptionGenerateInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.GenerateMCPDescription(ctx, input)
+		return result, true, err
 	case "ProbeMCPServer":
 		input, err := arg[domain.MCPProbeInput](args, 0)
 		if err != nil {
@@ -227,6 +234,13 @@ func (api *API) callExtensionRPC(ctx context.Context, method string, args []json
 			return nil, true, err
 		}
 		result, err := api.service.SetSessionActiveTools(ctx, input)
+		return result, true, err
+	case "SetGlobalToolEnabled":
+		input, err := arg[domain.GlobalToolEnabledInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.SetGlobalToolEnabled(ctx, input)
 		return result, true, err
 	default:
 		return nil, false, nil

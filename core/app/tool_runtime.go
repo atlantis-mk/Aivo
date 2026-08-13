@@ -54,6 +54,9 @@ func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatTo
 	if name == "" {
 		return r.finish(call, start, toolFailure(call.ID, name, "invalid_tool_call", "tool name is required"), false)
 	}
+	if execCtx.ToolSnapshot != nil && !toolSnapshotContains(execCtx.ToolSnapshot, name) {
+		return r.finish(call, start, toolFailure(call.ID, name, "tool_not_advertised", fmt.Sprintf("tool %s is not available in this turn", name)), false)
+	}
 	expected := execCtx.ExpectedRegistrations[name]
 	tool, identity, ok := r.Registry.GetRegisteredForSnapshot(name, expected.RegistrationID)
 	if !ok {
@@ -160,6 +163,18 @@ func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatTo
 	}
 	truncated := r.retainAndBoundResult(call, execCtx, &result, maxOutput)
 	return r.finish(call, start, result, truncated)
+}
+
+func toolSnapshotContains(snapshot *domain.ToolSnapshot, name string) bool {
+	if snapshot == nil {
+		return true
+	}
+	for _, entry := range snapshot.Tools {
+		if entry.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ToolRuntime) executeToolAttempt(ctx context.Context, call domain.ChatToolCall, tool domain.Tool, name string, timeout time.Duration, execCtx domain.ToolExecutionContext) domain.ToolResult {

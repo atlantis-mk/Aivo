@@ -17,14 +17,13 @@ export function useProjectWorkspaceUiActions({
   openConversationById,
   retryConversationTurn,
   selectSidebarConversation,
-  setPinnedSummaryOpen,
   setExtensionSettingsDrawerOpen,
   setToolActivationDialogOpen,
   startNewConversation,
   startNewProjectConversation,
 }: {
   activeParentSessionId: string;
-  addComposerProject: () => Promise<void>;
+  addComposerProject: (rootPath?: string) => Promise<void>;
   applyToolActivityFileState: (
     tab: ToolActivityFileTab,
     targetState: "before" | "after",
@@ -38,7 +37,6 @@ export function useProjectWorkspaceUiActions({
   openConversationById: (sessionId: string) => Promise<void>;
   retryConversationTurn: (turn: ConversationTurn) => Promise<void>;
   selectSidebarConversation: (session: domain.Session) => Promise<void>;
-  setPinnedSummaryOpen: Dispatch<SetStateAction<boolean>>;
   setExtensionSettingsDrawerOpen: Dispatch<SetStateAction<boolean>>;
   setToolActivationDialogOpen: Dispatch<SetStateAction<boolean>>;
   startNewConversation: () => void;
@@ -65,24 +63,20 @@ export function useProjectWorkspaceUiActions({
     [navigateToProjectChat, selectSidebarConversation],
   );
 
-  const togglePinnedSummary = useCallback(() => {
-    setPinnedSummaryOpen((current) => !current);
-  }, [setPinnedSummaryOpen]);
+  const openExtensionSettingsDrawer = useCallback(() => {
+    setExtensionSettingsDrawerOpen(true);
+  }, [setExtensionSettingsDrawerOpen]);
 
   const openToolActivationDialog = useCallback(() => {
     setToolActivationDialogOpen(true);
   }, [setToolActivationDialogOpen]);
 
-  const openExtensionSettingsDrawer = useCallback(() => {
-    setExtensionSettingsDrawerOpen(true);
-  }, [setExtensionSettingsDrawerOpen]);
-
   const openParentSession = useCallback(() => {
     void openConversationById(activeParentSessionId);
   }, [activeParentSessionId, openConversationById]);
 
-  const addProjectToComposer = useCallback(() => {
-    void addComposerProject();
+  const addProjectToComposer = useCallback((rootPath?: string) => {
+    void addComposerProject(rootPath);
   }, [addComposerProject]);
 
   const applyToolActivityFileStateFromSidebar = useCallback(
@@ -119,6 +113,5 @@ export function useProjectWorkspaceUiActions({
     selectChatConversation,
     startChatConversation,
     startProjectChatConversation,
-    togglePinnedSummary,
   };
 }

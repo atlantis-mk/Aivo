@@ -33,6 +33,10 @@ export function connectProvider(input: domain.ProviderConnectInput) {
   return invoke<domain.CatalogState>("ConnectProvider", input);
 }
 
+export function deleteProvider(providerId: string) {
+  return invoke<domain.CatalogState>("DeleteProvider", providerId);
+}
+
 export type CompleteInitializationInput = {
   initialWorkspacePath: string;
   provider?: domain.ProviderConfig;

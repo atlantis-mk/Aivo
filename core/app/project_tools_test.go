@@ -45,10 +45,10 @@ func TestBuiltinProjectExtensionPreservesFourCorePrimitives(t *testing.T) {
 		if !ok {
 			t.Fatalf("builtin project tool %q was not registered", name)
 		}
-		if entry.Source != domain.ToolSourceExtension || entry.SourceID != projectExtensionID || entry.ActivationPolicy != "default" || entry.ImplementationHash == "" {
+		if entry.Source != domain.ToolSourceExtension || entry.SourceID != projectExtensionID || entry.ActivationPolicy != "auto" || entry.ImplementationHash == "" {
 			t.Fatalf("builtin project tool identity = %#v", entry)
 		}
-		activation[name] = "modeDefault"
+		activation[name] = "automatic"
 	}
 	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activation)
 	for _, name := range []string{projectQueryToolName, projectAddToolName, projectAssociateToolName} {
@@ -398,7 +398,7 @@ func TestAgentLoopReloadsWorkspaceAfterProjectAssociation(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if len(body.Tools) == 0 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"reason\":\"default project tools are sufficient\"}"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[\"aivo_projects_associate\"],\"reason\":\"the task asks to bind this session to a project\"}"}}]}`))
 			return
 		}
 		primaryRequests++

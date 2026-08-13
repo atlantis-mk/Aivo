@@ -17,7 +17,6 @@ type ProjectConversationViewportHandlers = {
 export function ProjectConversationViewport({
   agentRuns,
   contentRef,
-  dockPinnedSummary,
   handlers,
   hasTurns,
   onOpenToolActivity,
@@ -29,7 +28,6 @@ export function ProjectConversationViewport({
 }: {
   agentRuns: AgentRun[];
   contentRef: RefObject<HTMLDivElement | null>;
-  dockPinnedSummary: boolean;
   handlers: ProjectConversationViewportHandlers;
   hasTurns: boolean;
   onOpenToolActivity?: (activity: ToolCallActivity) => void;
@@ -48,7 +46,6 @@ export function ProjectConversationViewport({
           <SubmittedPromptContent
             agentRuns={agentRuns}
             contentRef={contentRef}
-            dockPinnedSummary={dockPinnedSummary}
             onOpenSession={handlers.onOpenSession}
             onOpenToolActivity={onOpenToolActivity}
             onDeleteAssistantMessage={handlers.onDeleteAssistantMessage}

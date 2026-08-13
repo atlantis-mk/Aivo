@@ -42,6 +42,8 @@ type MCPServerConfig struct {
 	Headers               map[string]string `json:"headers,omitempty"`
 	AuthType              string            `json:"authType,omitempty"`
 	BearerTokenEnv        string            `json:"bearerTokenEnv,omitempty"`
+	BearerTokenRef        string            `json:"bearerTokenRef,omitempty"`
+	BearerToken           string            `json:"-"`
 	OAuthIssuerURL        string            `json:"oauthIssuerUrl,omitempty"`
 	OAuthClientID         string            `json:"oauthClientId,omitempty"`
 	OAuthScopes           []string          `json:"oauthScopes,omitempty"`
@@ -113,12 +115,21 @@ type MCPServerListItem struct {
 }
 
 type SaveMCPServerInput struct {
-	Server MCPServerConfig `json:"server"`
+	Server      MCPServerConfig `json:"server"`
+	BearerToken string          `json:"bearerToken,omitempty"`
 }
 
 type SetMCPServerEnabledInput struct {
 	ServerID string `json:"serverId"`
 	Enabled  bool   `json:"enabled"`
+}
+
+type MCPDescriptionGenerateInput struct {
+	ServerID string `json:"serverId"`
+}
+
+type MCPDescriptionGenerateResult struct {
+	Description string `json:"description"`
 }
 
 type MCPProbeInput struct {

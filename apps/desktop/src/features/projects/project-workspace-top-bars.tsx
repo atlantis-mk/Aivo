@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import {
   Add01Icon,
   HistoryIcon,
-  LayoutGridIcon,
   Plug01Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
@@ -12,7 +11,6 @@ import {
   Archive,
   Ellipsis,
   FileText,
-  LayoutGrid,
   Pin,
 } from "lucide-react";
 
@@ -40,32 +38,26 @@ export function ProjectTopBar({
   hasConversation,
   historyContent,
   isConversationPinned,
-  isLayoutPanelOpen,
   onNewPage,
   onOpenExtensions,
   onArchiveConversation,
-  onToggleLayoutPanel,
   onTogglePinnedConversation,
   pageTitle,
   repositoryPath,
   sessionId,
 }: {
-  canShowTerminalPanel: boolean;
   conversationTitle: string;
   hasConversation: boolean;
   historyContent: ReactNode;
   isConversationPinned: boolean;
-  isLayoutPanelOpen?: boolean;
   onNewPage: () => void;
   onOpenExtensions: () => void;
   onArchiveConversation: () => void;
-  onToggleLayoutPanel?: () => void;
   onTogglePinnedConversation: () => void;
   pageIcon?: React.ReactNode;
   pageTitle?: string;
   repositoryPath?: string;
   sessionId?: string;
-  showTerminalButton?: boolean;
 }) {
   const isMac = window.aivo?.platform === "darwin";
   const projectLabel = repositoryPath
@@ -121,13 +113,6 @@ export function ProjectTopBar({
       >
         <ProjectTopBarIconButton aria-label="打开扩展" onClick={onOpenExtensions}>
           <HugeiconsIcon icon={Plug01Icon} strokeWidth={1.8} />
-        </ProjectTopBarIconButton>
-        <ProjectTopBarIconButton
-          aria-label="切换系统环境"
-          aria-pressed={isLayoutPanelOpen}
-          onClick={onToggleLayoutPanel}
-        >
-          <HugeiconsIcon icon={LayoutGridIcon} strokeWidth={1.8} />
         </ProjectTopBarIconButton>
         <ProjectTopBarIconButton asChild aria-label="打开设置">
           <Link to="/settings">
@@ -202,37 +187,23 @@ function ProjectHistoryPopover({ children }: { children: ReactNode }) {
 export function ProjectMainTopBar({
   conversationTitle,
   hasConversation,
-  isLayoutPanelOpen,
-  onToggleLayoutPanel,
   pageIcon,
   pageTitle,
   repositoryPath,
-  rightOpen,
   sessionId,
-  showTerminalButton,
 }: {
   conversationTitle: string;
   hasConversation: boolean;
-  isLayoutPanelOpen?: boolean;
-  onToggleLayoutPanel?: () => void;
   pageIcon?: React.ReactNode;
   pageTitle?: string;
   repositoryPath?: string;
-  rightOpen?: boolean;
   sessionId?: string;
-  showTerminalButton?: boolean;
 }) {
   const title = pageTitle || (hasConversation ? conversationTitle : "");
-  const floatingActionsInset = showTerminalButton ? 76 : 40;
-  const layoutActionRight = rightOpen ? 0 : floatingActionsInset;
-  const actionsInset = `${layoutActionRight + 44}px`;
 
   return (
     <div className="pointer-events-auto relative flex h-full min-w-0 flex-1 border-b border-border/60 bg-background/80 text-foreground shadow-sm shadow-background/30 backdrop-blur-xl supports-[backdrop-filter]:bg-background/65">
-      <div
-        className="flex min-w-0 flex-1 items-center gap-2 ps-3"
-        style={{ paddingRight: actionsInset }}
-      >
+      <div className="flex min-w-0 flex-1 items-center gap-2 ps-3">
         {title ? (
           <>
             <div className="flex min-w-0 items-center gap-2" data-app-drag>
@@ -259,37 +230,6 @@ export function ProjectMainTopBar({
         ) : null}
         <div className="h-full min-w-0 flex-1" data-app-drag />
       </div>
-      <ProjectMainTopBarActions
-        isLayoutPanelOpen={isLayoutPanelOpen}
-        onToggleLayoutPanel={onToggleLayoutPanel}
-        right={layoutActionRight}
-      />
-    </div>
-  );
-}
-
-function ProjectMainTopBarActions({
-  isLayoutPanelOpen,
-  onToggleLayoutPanel,
-  right,
-}: {
-  isLayoutPanelOpen?: boolean;
-  onToggleLayoutPanel?: () => void;
-  right: number;
-}) {
-  return (
-    <div
-      className="pointer-events-auto absolute right-0 top-0 z-[60] flex h-9 shrink-0 items-center justify-end gap-2 pe-3 text-foreground"
-      data-app-no-drag
-      style={{ right }}
-    >
-      <ProjectTopBarIconButton
-        aria-label="切换系统环境"
-        aria-pressed={isLayoutPanelOpen}
-        onClick={onToggleLayoutPanel}
-      >
-        <LayoutGrid />
-      </ProjectTopBarIconButton>
     </div>
   );
 }

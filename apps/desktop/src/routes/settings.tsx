@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { Link, createFileRoute } from '@tanstack/react-router'
+import { AiCloud01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowLeft } from 'lucide-react'
 import {
   Sidebar,
@@ -15,6 +17,7 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+import { ProviderSettingsScreen } from '@/features/providers/provider-settings-screen'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsRoute,
@@ -44,6 +47,16 @@ function SettingsRoute() {
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    aria-current="page"
+                    className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+                    isActive
+                  >
+                    <HugeiconsIcon icon={AiCloud01Icon} strokeWidth={1.8} />
+                    <span>模型提供商</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -51,7 +64,9 @@ function SettingsRoute() {
       </Sidebar>
       <SidebarInset className="h-full min-h-0 min-w-0 overflow-hidden">
         <div className="h-9 shrink-0 bg-background" data-app-drag />
-        <main className="min-h-0 flex-1 bg-background" />
+        <main className="min-h-0 flex-1 bg-background">
+          <ProviderSettingsScreen />
+        </main>
       </SidebarInset>
     </SidebarProvider>
   )

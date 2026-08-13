@@ -41,7 +41,7 @@ export function McpServerSettingsDialog({
   });
 
   return (
-    <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-3xl">
+    <DialogContent className="flex h-[min(760px,85vh)] flex-col overflow-hidden sm:max-w-3xl">
       <DialogHeader>
         <DialogTitle>
           {settings.server.displayName || settings.server.name || settings.server.id}
@@ -50,17 +50,20 @@ export function McpServerSettingsDialog({
           如需切换 MCP 服务器类型，请先卸载当前配置。
         </DialogDescription>
       </DialogHeader>
-      <ScrollArea className="min-h-0 flex-1 pr-3">
+      <ScrollArea className="h-0 min-h-0 flex-1 overflow-hidden pr-3">
         <div className="grid gap-4">
           <McpServerDraftForm
             argRows={settings.argRows}
             draft={settings.draft}
+            descriptionGenerationError={settings.descriptionGenerationError}
+            descriptionGenerating={settings.generatingDescription}
             envRows={settings.envRows}
             headerRows={settings.headerRows}
             onArgRowsChange={settings.setArgRows}
             onDraftChange={settings.setDraft}
             onEnvRowsChange={settings.setEnvRows}
             onHeaderRowsChange={settings.setHeaderRows}
+            onGenerateDescription={() => void settings.generateDescription()}
             onRootRowsChange={settings.setRootRows}
             rootRows={settings.rootRows}
           />
@@ -128,7 +131,11 @@ export function McpServerSettingsDialog({
           </Button>
         </DialogClose>
         <Button
-          disabled={settings.saving || !canSaveMcpDraft(settings.draft)}
+          disabled={
+            settings.saving ||
+            settings.generatingDescription ||
+            !canSaveMcpDraft(settings.draft)
+          }
           onClick={() => void settings.saveSettings()}
           type="button"
         >

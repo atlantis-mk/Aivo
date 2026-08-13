@@ -27,6 +27,27 @@ func (api *API) callAgentRPC(ctx context.Context, method string, args []json.Raw
 		}
 		result, err := api.service.ListAgentModesForProject(ctx, projectPath, includeHidden)
 		return result, true, err
+	case "GetAgentMode":
+		id, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.GetAgentMode(ctx, id)
+		return result, true, err
+	case "SaveAgentMode":
+		input, err := arg[domain.AgentModeDefinition](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.SaveAgentMode(ctx, input)
+		return result, true, err
+	case "DeleteAgentMode":
+		input, err := arg[domain.DeleteAgentModeInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		err = api.service.DeleteAgentMode(ctx, input.ID)
+		return nil, true, err
 	case "SetSessionAgentMode":
 		input, err := arg[domain.SetSessionAgentModeInput](args, 0)
 		if err != nil {

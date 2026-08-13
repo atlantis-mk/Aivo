@@ -18,9 +18,7 @@ export type ProjectWorkspaceScreenViewProps = {
     ComponentProps<typeof ProjectWorkspaceTopBar>,
     | "historyContent"
     | "isConversationPinned"
-    | "isPinnedSummaryOpen"
     | "onArchiveConversation"
-    | "onTogglePinnedSummary"
     | "onTogglePinnedConversation"
     | "repositoryPath"
     | "sessionId"
@@ -49,13 +47,11 @@ export function ProjectWorkspaceScreenView({
             isConversationPinned={leftSidebar.pinnedConversationIds.includes(
               leftSidebar.activeConversationId,
             )}
-            isPinnedSummaryOpen={mainTopBar.isPinnedSummaryOpen}
             onArchiveConversation={() =>
               leftSidebar.onArchiveConversation(
                 leftSidebar.activeConversationId,
               )
             }
-            onTogglePinnedSummary={mainTopBar.onTogglePinnedSummary}
             onTogglePinnedConversation={() =>
               leftSidebar.onTogglePinnedConversation(
                 leftSidebar.activeConversationId,

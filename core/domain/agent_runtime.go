@@ -41,7 +41,7 @@ type AgentModeDefinition struct {
 	DisplayName          string         `json:"displayName"`
 	Description          string         `json:"description"`
 	Prompt               string         `json:"prompt"`
-	Toolsets             []string       `json:"toolsets"`
+	Toolsets             []string       `json:"-"`
 	DefaultPermissions   []string       `json:"defaultPermissions,omitempty"`
 	FileWriteAccess      bool           `json:"fileWriteAccess"`
 	CommandAccess        bool           `json:"commandAccess"`
@@ -54,9 +54,17 @@ type AgentModeDefinition struct {
 	MaxSteps             int            `json:"maxSteps,omitempty"`
 	PermissionScope      string         `json:"permissionScope,omitempty"`
 	Mode                 string         `json:"mode,omitempty"`
+	Subagents            []string       `json:"subagents,omitempty"`
 	Variant              string         `json:"variant,omitempty"`
 	Options              map[string]any `json:"options,omitempty"`
 	Revision             string         `json:"revision,omitempty"`
+	Source               string         `json:"source,omitempty"`
+	BuiltIn              bool           `json:"builtIn,omitempty"`
+	Overridden           bool           `json:"overridden,omitempty"`
+}
+
+type DeleteAgentModeInput struct {
+	ID string `json:"id"`
 }
 
 type SetSessionAgentModeInput struct {

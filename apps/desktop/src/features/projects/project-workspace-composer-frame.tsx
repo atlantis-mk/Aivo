@@ -1,7 +1,8 @@
 import type { RefObject } from "react";
 
-import type { ComposerAttachment } from "@/features/projects/project-composer-attachments";
+import type { ComposerAttachment, ComposerAttachmentInput } from "@/features/projects/project-composer-attachments";
 import type { ModelOption } from "@/features/projects/project-model-options";
+import type { PromptMentionReference } from "@/features/projects/project-prompt-mention-model";
 import { ProjectComposerFloatingControls } from "@/features/projects/project-workspace-chat-overlays";
 import { PromptComposer } from "@/features/projects/project-prompt-composer";
 import { SubagentSessionActionBar } from "@/features/projects/project-workspace-top-bars";
@@ -23,7 +24,6 @@ export function ProjectWorkspaceComposerFrame({
   allModelOptions,
   attachments,
   composerFrameRef,
-  isPinnedSummaryOpen,
   isSubagentSession,
   isVisibleTodoPlanComplete,
   modelId,
@@ -37,11 +37,14 @@ export function ProjectWorkspaceComposerFrame({
   onHeightChange,
   onHideCompletedTodoPlan,
   onModelSelect,
+  onOpenToolActivationDialog,
   onPermissionModeSelect,
   onProjectAdd,
   onProjectClear,
   onProjectSelect,
   onPromptChange,
+  onPromptMentionRemove,
+  onPromptMentionSelect,
   onReasoningEffortSelect,
   onRemoveAttachment,
   onScrollToBottom,
@@ -50,12 +53,12 @@ export function ProjectWorkspaceComposerFrame({
   pending,
   permissionMode,
   prompt,
+  promptResourceReferences,
   project,
   projectPath,
   projects,
   reasoningEffort,
   serviceTier,
-  shouldShiftPinnedSummaryLayout,
   shouldShowTodoFloatingStatus,
   showConversationLayout,
   showProjectPicker,
@@ -69,13 +72,12 @@ export function ProjectWorkspaceComposerFrame({
   allModelOptions: ModelOption[];
   attachments: ComposerAttachment[];
   composerFrameRef: RefObject<HTMLDivElement | null>;
-  isPinnedSummaryOpen: boolean;
   isSubagentSession: boolean;
   isVisibleTodoPlanComplete: boolean;
   modelId: string;
   modelLabel: string;
   modelOptions: ModelInfo[];
-  onAddAttachments: (files: FileList | null) => void;
+  onAddAttachments: (files: ComposerAttachmentInput) => void;
   onAgentModeSelect: (mode: AgentModeId) => void;
   onBackToParentSession: () => void;
   onCancelSubagentRun?: () => void;
@@ -83,11 +85,14 @@ export function ProjectWorkspaceComposerFrame({
   onHeightChange: (height: number) => void;
   onHideCompletedTodoPlan: () => void;
   onModelSelect: (option: ModelOption) => void;
+  onOpenToolActivationDialog: () => void;
   onPermissionModeSelect: (mode: PermissionMode) => void;
-  onProjectAdd: () => void;
+  onProjectAdd: (rootPath?: string) => void;
   onProjectClear: () => void;
   onProjectSelect: (project: domain.AssistantProject) => void;
   onPromptChange: (prompt: string) => void;
+  onPromptMentionRemove: (reference: PromptMentionReference) => void;
+  onPromptMentionSelect: (reference: PromptMentionReference) => void;
   onReasoningEffortSelect: (reasoningEffort: string) => void;
   onRemoveAttachment: (id: string) => void;
   onScrollToBottom: () => void;
@@ -96,12 +101,12 @@ export function ProjectWorkspaceComposerFrame({
   pending: boolean;
   permissionMode: PermissionMode;
   prompt: string;
+  promptResourceReferences: PromptMentionReference[];
   project: domain.AssistantProject | null;
   projectPath: string;
   projects: domain.AssistantProject[];
   reasoningEffort: string;
   serviceTier: string;
-  shouldShiftPinnedSummaryLayout: boolean;
   shouldShowTodoFloatingStatus: boolean;
   showConversationLayout: boolean;
   showProjectPicker: boolean;
@@ -113,15 +118,11 @@ export function ProjectWorkspaceComposerFrame({
     <div
       ref={composerFrameRef}
       className={cn(
-        "absolute left-1/2 z-30 w-[calc(100%-2rem)] max-w-[720px] -translate-x-1/2 sm:w-[calc(100%-48px)]",
+        "absolute left-1/2 z-30 w-[calc(100%-2rem)] max-w-[680px] -translate-x-1/2 sm:w-[calc(100%-48px)]",
         showConversationLayout
           ? "bottom-[var(--conversation-composer-bottom)] will-change-[bottom,transform] sm:bottom-[var(--conversation-composer-bottom-sm)]"
           : "bottom-[var(--conversation-composer-bottom)] will-change-[bottom,transform] sm:bottom-[var(--conversation-composer-bottom-sm)]",
         "transition-[bottom,transform,margin] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-        showConversationLayout &&
-          isPinnedSummaryOpen &&
-          shouldShiftPinnedSummaryLayout &&
-          "min-[1050px]:-ml-40",
       )}
     >
       {showConversationLayout ? (
@@ -145,15 +146,19 @@ export function ProjectWorkspaceComposerFrame({
         <PromptComposer
           onHeightChange={onHeightChange}
           onPromptChange={onPromptChange}
+          onPromptMentionRemove={onPromptMentionRemove}
+          onPromptMentionSelect={onPromptMentionSelect}
           onSubmit={onSubmit}
           pending={pending}
           prompt={prompt}
+          promptResourceReferences={promptResourceReferences}
           modelId={modelId}
           modelLabel={modelLabel}
           modelOptions={modelOptions}
           allModelOptions={allModelOptions}
           onAddAttachments={onAddAttachments}
           onModelSelect={onModelSelect}
+          onOpenToolActivationDialog={onOpenToolActivationDialog}
           onAgentModeSelect={onAgentModeSelect}
           onExtraHeightChange={onExtraHeightChange}
           onPermissionModeSelect={onPermissionModeSelect}

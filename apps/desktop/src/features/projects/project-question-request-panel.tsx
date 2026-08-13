@@ -5,7 +5,6 @@ import {
   QuestionRequestPanelFooter,
   QuestionRequestPanelHeader,
 } from "@/features/projects/project-question-request-panel-sections";
-import { cn } from "@/lib/utils";
 
 export function QuestionRequestPanel({
   activeIndex,
@@ -13,7 +12,6 @@ export function QuestionRequestPanel({
   customAnswerIndex,
   customAnswers,
   customInputRef,
-  dockPinnedSummary,
   isBusy,
   onActiveAnswerIndexChange,
   onCustomAnswerChange,
@@ -29,10 +27,7 @@ export function QuestionRequestPanel({
 }: QuestionRequestPanelProps) {
   return (
     <div
-      className={cn(
-        "absolute bottom-4 left-1/2 z-30 w-[calc(100%-2rem)] max-w-[960px] -translate-x-1/2 transition-[margin,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:bottom-6 sm:w-[calc(100%-48px)]",
-        dockPinnedSummary && "min-[1050px]:-ml-40",
-      )}
+      className="absolute bottom-4 left-1/2 z-30 w-[calc(100%-2rem)] max-w-[960px] -translate-x-1/2 transition-[margin,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:bottom-6 sm:w-[calc(100%-48px)]"
       data-assistant-hover-ignore="true"
     >
       <Card className="gap-2 py-2 [--card-spacing:--spacing(2.5)]" size="sm">

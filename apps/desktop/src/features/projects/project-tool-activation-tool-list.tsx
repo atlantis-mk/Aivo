@@ -111,6 +111,7 @@ export function ToolActivationToolList({
 function toolGroupIcon(group: ToolCatalogGroup) {
   switch (group.section) {
     case "extensions":
+    case "mcp":
       return Plug;
     default:
       return Wrench;

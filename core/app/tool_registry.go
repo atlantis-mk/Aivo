@@ -74,6 +74,9 @@ func (r *Registry) RegisterScoped(tool domain.Tool, source string, sourceID stri
 	if isReservedCoreToolName(name) && source != domain.ToolSourceBuiltin {
 		return fmt.Errorf("tool %q is reserved by the core execution environment", name)
 	}
+	if isBridgeToolName(name) && source != domain.ToolSourceBridge {
+		return fmt.Errorf("tool %q is reserved by the Host control plane", name)
+	}
 	if existing := r.tools[name]; len(existing) > 0 {
 		current := existing[len(existing)-1]
 		if current.source != source || current.sourceID != sourceID || source == domain.ToolSourceBuiltin {
@@ -119,6 +122,9 @@ func (r *Registry) RegisterScopedBatch(tools []domain.Tool, source, sourceID, ve
 		seen[name] = true
 		if isReservedCoreToolName(name) && source != domain.ToolSourceBuiltin {
 			return fmt.Errorf("tool %q is reserved by the core execution environment", name)
+		}
+		if isBridgeToolName(name) && source != domain.ToolSourceBridge {
+			return fmt.Errorf("tool %q is reserved by the Host control plane", name)
 		}
 		if existing := r.tools[name]; len(existing) > 0 {
 			current := existing[len(existing)-1]
@@ -248,7 +254,7 @@ func (r *Registry) CatalogEntries() []domain.ToolCatalogEntry {
 		spec := reg.tool.Spec()
 		out = append(out, domain.ToolCatalogEntry{
 			Name: spec.Name, Description: spec.Description, InputSchema: spec.InputSchema,
-			Namespace: spec.Namespace, Capability: spec.Capability, RiskLevel: spec.RiskLevel,
+			Namespace: spec.Namespace, NamespaceDescription: spec.NamespaceDescription, Capability: spec.Capability, RiskLevel: spec.RiskLevel,
 			Category: spec.Category, Toolsets: spec.Toolsets, Source: reg.source, SourceID: reg.sourceID,
 			RegistrationID: reg.registrationID, SchemaHash: reg.schemaHash, Version: reg.version, ImplementationHash: reg.implementationHash, Enabled: reg.enabled, ActivationPolicy: spec.ActivationPolicy,
 		})

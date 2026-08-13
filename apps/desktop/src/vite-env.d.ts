@@ -12,6 +12,29 @@ interface Window {
     invoke<T>(method: string, ...args: unknown[]): Promise<T>;
     selectProjectDirectory(): Promise<string>;
     selectExtensionDirectory(): Promise<string>;
+    selectComposerFileOrDirectory(): Promise<
+      | null
+      | { kind: "directory"; path: string }
+      | {
+          kind: "file";
+          name: string;
+          mimeType: string;
+          size: number;
+          data: string;
+        }
+    >;
+    inspectDroppedComposerResources(files: File[]): Promise<
+      Array<
+        | { kind: "directory"; path: string }
+        | {
+            kind: "file";
+            name: string;
+            mimeType: string;
+            size: number;
+            data: string;
+          }
+      >
+    >;
     openExternal(target: string): Promise<void>;
     openPath(target: string): Promise<void>;
     focusWindow(): Promise<void>;

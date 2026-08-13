@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -50,6 +51,24 @@ func resolveMCPOAuthSecrets(ctx context.Context, secrets SecretStore, server dom
 		server.OAuthRefreshToken = value
 	}
 	return server, nil
+}
+
+func resolveMCPAuthSecrets(ctx context.Context, secrets SecretStore, server domain.MCPServerConfig) (domain.MCPServerConfig, error) {
+	if server.AuthType == domain.MCPAuthBearer && strings.TrimSpace(server.BearerTokenRef) != "" {
+		if secrets == nil {
+			return domain.MCPServerConfig{}, errors.New("mcp bearer credential store is unavailable")
+		}
+		value, err := secrets.Get(ctx, server.BearerTokenRef)
+		if err != nil {
+			return domain.MCPServerConfig{}, err
+		}
+		if strings.TrimSpace(value) == "" {
+			return domain.MCPServerConfig{}, errors.New("mcp bearer credential is unavailable")
+		}
+		server.BearerToken = value
+		return server, nil
+	}
+	return resolveMCPOAuthSecrets(ctx, secrets, server)
 }
 
 func mcpSecretRef(server domain.MCPServerConfig, kind string) string {

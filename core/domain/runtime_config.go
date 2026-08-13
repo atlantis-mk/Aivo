@@ -46,6 +46,7 @@ type AgentRuntimeDefinition struct {
 	Toolsets        []string       `json:"toolsets,omitempty"`
 	PermissionScope string         `json:"permissionScope,omitempty"`
 	Mode            string         `json:"mode,omitempty"`
+	Subagents       []string       `json:"subagents,omitempty"`
 	Variant         string         `json:"variant,omitempty"`
 	Options         map[string]any `json:"options,omitempty"`
 	Hidden          bool           `json:"hidden,omitempty"`

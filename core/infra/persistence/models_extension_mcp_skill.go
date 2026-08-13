@@ -161,3 +161,21 @@ type toolRegistrationRow struct {
 }
 
 func (toolRegistrationRow) TableName() string { return "tool_registrations" }
+
+type globalToolPreferenceRow struct {
+	Name        string `gorm:"primaryKey;column:name"`
+	Enabled     int    `gorm:"column:enabled;not null;default:0"`
+	TimeCreated string `gorm:"column:time_created;not null"`
+	TimeUpdated string `gorm:"column:time_updated;not null"`
+}
+
+func (globalToolPreferenceRow) TableName() string { return "global_tool_preferences" }
+
+type agentModeDefinitionRow struct {
+	ID          string `gorm:"primaryKey;column:id"`
+	Definition  string `gorm:"column:definition;not null"`
+	TimeCreated string `gorm:"column:time_created;not null"`
+	TimeUpdated string `gorm:"column:time_updated;not null"`
+}
+
+func (agentModeDefinitionRow) TableName() string { return "agent_mode_definitions" }

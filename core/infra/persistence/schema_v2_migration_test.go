@@ -251,6 +251,295 @@ func TestSchemaV3MigrationRefusesInvalidBackupBeforeInstallModeMutation(t *testi
 	}
 }
 
+func TestSchemaV4MigrationCreatesBackupAndGlobalToolPreferences(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV4Fixture(t, dbPath)
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.db.Migrator().HasTable(&globalToolPreferenceRow{}) {
+		t.Fatal("schema v5 global_tool_preferences table is missing")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := migrationBackupPath(dbPath, 4)
+	if err := verifySQLiteBackup(backupPath); err != nil {
+		t.Fatalf("v4 backup is not recoverable: %v", err)
+	}
+	before, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	after, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) || before.Size() != after.Size() {
+		t.Fatal("idempotent reopen rewrote the v4 backup")
+	}
+}
+
+func TestSchemaV4MigrationRefusesInvalidBackupBeforeGlobalToolPreferenceMutation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV4Fixture(t, dbPath)
+	backupPath := migrationBackupPath(dbPath, 4)
+	if err := os.WriteFile(backupPath, []byte("invalid backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "verify schema v4 migration backup") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='global_tool_preferences'").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("schema mutated despite invalid v4 backup")
+	}
+}
+
+func TestSchemaV5MigrationCreatesBackupAndAgentModeDefinitions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV5Fixture(t, dbPath)
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.db.Migrator().HasTable(&agentModeDefinitionRow{}) {
+		t.Fatal("schema v6 agent_mode_definitions table is missing")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := migrationBackupPath(dbPath, 5)
+	if err := verifySQLiteBackup(backupPath); err != nil {
+		t.Fatalf("v5 backup is not recoverable: %v", err)
+	}
+	before, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	after, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) || before.Size() != after.Size() {
+		t.Fatal("idempotent reopen rewrote the v5 backup")
+	}
+}
+
+func TestSchemaV5MigrationRefusesInvalidBackupBeforeAgentModeMutation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV5Fixture(t, dbPath)
+	backupPath := migrationBackupPath(dbPath, 5)
+	if err := os.WriteFile(backupPath, []byte("invalid backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "verify schema v5 migration backup") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_mode_definitions'").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("schema mutated despite invalid v5 backup")
+	}
+}
+
+func TestSchemaV6MigrationCreatesBackupAndRemovesAgentModeToolsets(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV6Fixture(t, dbPath)
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var definition string
+	if err := store.db.Model(&agentModeDefinitionRow{}).Where("id = ?", "research").Pluck("definition", &definition).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(definition, "toolsets") {
+		t.Fatalf("schema v7 retained toolsets: %s", definition)
+	}
+	backupPath := migrationBackupPath(dbPath, 6)
+	if err := verifySQLiteBackup(backupPath); err != nil {
+		t.Fatalf("v6 backup is not recoverable: %v", err)
+	}
+	backup, err := sql.Open("sqlite", backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backup.Close()
+	if err := backup.QueryRow("SELECT definition FROM agent_mode_definitions WHERE id = ?", "research").Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, "toolsets") {
+		t.Fatalf("v6 backup did not preserve removed data: %s", definition)
+	}
+}
+
+func TestSchemaV6MigrationRefusesInvalidBackupBeforeToolsetCleanup(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV6Fixture(t, dbPath)
+	backupPath := migrationBackupPath(dbPath, 6)
+	if err := os.WriteFile(backupPath, []byte("invalid backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "verify schema v6 migration backup") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var definition string
+	if err := db.QueryRow("SELECT definition FROM agent_mode_definitions WHERE id = ?", "research").Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, "toolsets") {
+		t.Fatalf("schema mutated despite invalid v6 backup: %s", definition)
+	}
+}
+
+func TestSchemaV6MigrationRollsBackMalformedAgentModeCleanup(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV6Fixture(t, dbPath)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE agent_mode_definitions SET definition = ? WHERE id = ?", "{invalid", "research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "decode agent mode research for schema v7") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err = sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var version int
+	if err := db.QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 6 {
+		t.Fatalf("schema version = %d after failed cleanup, want 6", version)
+	}
+}
+
+func TestSchemaV7MigrationCreatesBackupAndPreservesAgentModePayloads(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV7Fixture(t, dbPath)
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var version int
+	if err := store.db.Model(&schemaVersionRow{}).Select("MAX(version)").Scan(&version).Error; err != nil {
+		t.Fatal(err)
+	}
+	if version != 8 {
+		t.Fatalf("schema version = %d, want 8", version)
+	}
+	var definition string
+	if err := store.db.Model(&agentModeDefinitionRow{}).Where("id = ?", "research").Pluck("definition", &definition).Error; err != nil {
+		t.Fatal(err)
+	}
+	const expected = `{"id":"research","displayName":"Research","description":"Read-only research","prompt":"Investigate carefully.","permissionScope":"read_only","mode":"all"}`
+	if definition != expected {
+		t.Fatalf("schema v8 rewrote compatible payload: %s", definition)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := migrationBackupPath(dbPath, 7)
+	if err := verifySQLiteBackup(backupPath); err != nil {
+		t.Fatalf("v7 backup is not recoverable: %v", err)
+	}
+	before, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	after, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) || before.Size() != after.Size() {
+		t.Fatal("idempotent reopen rewrote the v7 backup")
+	}
+}
+
+func TestSchemaV7MigrationRefusesInvalidBackupBeforeVersionMutation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV7Fixture(t, dbPath)
+	backupPath := migrationBackupPath(dbPath, 7)
+	if err := os.WriteFile(backupPath, []byte("invalid backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "verify schema v7 migration backup") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var version int
+	if err := db.QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 7 {
+		t.Fatalf("schema version = %d after invalid backup, want 7", version)
+	}
+}
+
 func writeSchemaV1ConfigFixture(t *testing.T, path string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", path)
@@ -327,6 +616,113 @@ INSERT INTO extension_installs(
   '/synthetic/legacy', '/synthetic/legacy/aivo.extension.json',
   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   0, 'stopped', '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+);
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchemaV4Fixture(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO schema_version(version, applied_at) VALUES (4, '2026-01-01T00:00:00Z');
+CREATE TABLE extension_installs (
+  id TEXT PRIMARY KEY,
+  manifest TEXT NOT NULL,
+  root_path TEXT NOT NULL UNIQUE,
+  manifest_path TEXT NOT NULL,
+  integrity TEXT NOT NULL,
+  install_mode TEXT NOT NULL DEFAULT 'linked',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error TEXT,
+  time_created TEXT NOT NULL,
+  time_updated TEXT NOT NULL
+);
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchemaV5Fixture(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO schema_version(version, applied_at) VALUES (5, '2026-01-01T00:00:00Z');
+CREATE TABLE global_tool_preferences (
+  name TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  time_created TEXT NOT NULL,
+  time_updated TEXT NOT NULL
+);
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchemaV6Fixture(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO schema_version(version, applied_at) VALUES (6, '2026-01-01T00:00:00Z');
+CREATE TABLE agent_mode_definitions (
+  id TEXT PRIMARY KEY,
+  definition TEXT NOT NULL,
+  time_created TEXT NOT NULL,
+  time_updated TEXT NOT NULL
+);
+INSERT INTO agent_mode_definitions(id, definition, time_created, time_updated) VALUES (
+  'research',
+  '{"id":"research","displayName":"Research","description":"Read-only research","prompt":"Investigate carefully.","toolsets":["safe","web"],"permissionScope":"read_only","mode":"all"}',
+  '2026-01-01T00:00:00Z',
+  '2026-01-01T00:00:00Z'
+);
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchemaV7Fixture(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO schema_version(version, applied_at) VALUES (7, '2026-01-01T00:00:00Z');
+CREATE TABLE agent_mode_definitions (
+  id TEXT PRIMARY KEY,
+  definition TEXT NOT NULL,
+  time_created TEXT NOT NULL,
+  time_updated TEXT NOT NULL
+);
+INSERT INTO agent_mode_definitions(id, definition, time_created, time_updated) VALUES (
+  'research',
+  '{"id":"research","displayName":"Research","description":"Read-only research","prompt":"Investigate carefully.","permissionScope":"read_only","mode":"all"}',
+  '2026-01-01T00:00:00Z',
+  '2026-01-01T00:00:00Z'
 );
 `)
 	if err != nil {

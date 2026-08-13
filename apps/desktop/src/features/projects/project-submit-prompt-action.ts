@@ -14,6 +14,10 @@ import {
   type ComposerAttachment,
 } from "@/features/projects/project-composer-attachments";
 import { providerSupportsServiceTier } from "@/features/projects/project-model-options";
+import {
+  activePromptMentionReferences,
+  type PromptMentionReference,
+} from "@/features/projects/project-prompt-mention-model";
 import { consumePendingToolActivation } from "@/features/projects/project-tool-activation-scope";
 import { hasAppBridge } from "@/lib/app-config";
 import type { ModelInfo } from "@/lib/provider-catalog";
@@ -47,6 +51,7 @@ export function useProjectSubmitPromptAction({
   pendingStopRequestedRef,
   permissionModeRef,
   prompt,
+  promptResourceReferences,
   reasoningEffort,
   refreshPendingPermissionRequests,
   selectedProjectPath,
@@ -56,6 +61,7 @@ export function useProjectSubmitPromptAction({
   setComposerAttachments,
   setConversationRunning,
   setPrompt,
+  setPromptResourceReferences,
   setPendingActiveToolNames,
   setSessions,
   setTurns,
@@ -76,6 +82,7 @@ export function useProjectSubmitPromptAction({
   pendingStopRequestedRef: { current: boolean };
   permissionModeRef: { current: PermissionMode };
   prompt: string;
+  promptResourceReferences: PromptMentionReference[];
   reasoningEffort: string;
   refreshPendingPermissionRequests: (sessionId?: string) => Promise<void>;
   selectedProjectPath: string;
@@ -85,6 +92,7 @@ export function useProjectSubmitPromptAction({
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setConversationRunning: (sessionId: string, running: boolean) => void;
   setPrompt: Dispatch<SetStateAction<string>>;
+  setPromptResourceReferences: Dispatch<SetStateAction<PromptMentionReference[]>>;
   setPendingActiveToolNames: Dispatch<SetStateAction<string[]>>;
   setSessions: Dispatch<SetStateAction<domain.Session[]>>;
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
@@ -95,6 +103,13 @@ export function useProjectSubmitPromptAction({
       return;
     }
     const activeModel = modelOptions.find((model) => model.id === activeModelId);
+    const submittedResourceReferences = activePromptMentionReferences(
+      promptResourceReferences,
+    );
+    const submittedProjectPath =
+      submittedResourceReferences.find(
+        (reference) => reference.kind === "project",
+      )?.rootPath || selectedProjectPath;
     const unsupportedAttachment = composerAttachments.find(
       (attachment) =>
         !modelSupportsAttachment(
@@ -102,6 +117,7 @@ export function useProjectSubmitPromptAction({
           activeModel,
           attachment.kind,
           attachment.mimeType,
+          attachment.name,
         ),
     );
     if (unsupportedAttachment) {
@@ -138,6 +154,7 @@ export function useProjectSubmitPromptAction({
       },
     ]);
     setPrompt("");
+    setPromptResourceReferences([]);
     setComposerAttachments([]);
     if (!hasAppBridge()) {
       setTurns((currentTurns) =>
@@ -164,14 +181,14 @@ export function useProjectSubmitPromptAction({
         const session = await createSession({
           type: "coding",
           source: "desktop",
-          projectPath: selectedProjectPath,
+          projectPath: submittedProjectPath,
           model: activeModelRef,
           agentMode,
         } as domain.CreateSessionRequest & { agentMode?: AgentModeId });
         sessionId = session.id;
         activeSessionIdRef.current = session.id;
         setActiveSessionId(session.id);
-        setCodingWorkspaceRoot(selectedProjectPath);
+        setCodingWorkspaceRoot(submittedProjectPath);
         const pendingActivation = consumePendingToolActivation(
           pendingActiveToolNames,
         );
@@ -190,7 +207,7 @@ export function useProjectSubmitPromptAction({
       const commandMatch = nextPrompt.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
       if (commandMatch) {
         const [, commandName, argumentLine = ""] = commandMatch;
-        const catalog = await listCommandCatalog(selectedProjectPath);
+        const catalog = await listCommandCatalog(submittedProjectPath);
         const command = catalog.find(
           (entry) => entry.name === commandName || entry.id === commandName,
         );
@@ -204,7 +221,7 @@ export function useProjectSubmitPromptAction({
         });
         const expanded = await invokeCommand({
           sessionId,
-          projectPath: selectedProjectPath,
+          projectPath: submittedProjectPath,
           commandId: command.id,
           arguments: args,
         });
@@ -247,8 +264,16 @@ export function useProjectSubmitPromptAction({
           mimeType: attachment.mimeType,
           kind: attachment.kind,
           data: attachment.data,
+          text: attachment.text,
           size: attachment.size,
         })),
+        resourceReferences: submittedResourceReferences.map(
+          ({ id, kind, rootPath }) => ({
+            id,
+            kind,
+            rootPath,
+          }),
+        ),
         model: providerModelRef,
         agentMode: providerAgentMode,
         reasoningEffort,
@@ -265,7 +290,13 @@ export function useProjectSubmitPromptAction({
           mimeType: string;
           kind: string;
           data: string;
+          text?: string;
           size: number;
+        }>;
+        resourceReferences?: Array<{
+          id: string;
+          kind: PromptMentionReference["kind"];
+          rootPath?: string;
         }>;
       });
       void refreshPendingPermissionRequests(sessionId);

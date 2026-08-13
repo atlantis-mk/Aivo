@@ -50,22 +50,31 @@ export function useProjectAgentRuntimeState({
   const activeRunningSubagentRun =
     activeSubagentRun?.status === "running" ? activeSubagentRun : undefined;
 
-  useEffect(() => {
+  const refreshAgentModes = useCallback(() => {
     if (!hasAppBridge()) return;
-    let cancelled = false;
     void listAgentModesForProject(activeWorkspaceRoot || "", false)
       .then((modes) => {
-        if (!cancelled) {
-          setAgentModes(
-            modes.filter((mode) => !mode.hidden && mode.mode !== "subagent"),
-          );
-        }
+        setAgentModes(
+          modes.filter((mode) => !mode.hidden && mode.mode !== "subagent"),
+        );
       })
       .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
   }, [activeWorkspaceRoot]);
+
+  useEffect(() => {
+    refreshAgentModes();
+  }, [refreshAgentModes]);
+
+  useEffect(() => {
+    const handleAgentModesChanged = () => refreshAgentModes();
+    window.addEventListener("aivo:agent-modes-changed", handleAgentModesChanged);
+    return () => {
+      window.removeEventListener(
+        "aivo:agent-modes-changed",
+        handleAgentModesChanged,
+      );
+    };
+  }, [refreshAgentModes]);
 
   useEffect(() => {
     const sessionMode =

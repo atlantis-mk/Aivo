@@ -14,10 +14,8 @@ import {
 } from "@/services/aivo";
 
 export function QuestionRequestDock({
-  dockPinnedSummary,
   request,
 }: {
-  dockPinnedSummary: boolean;
   request?: QuestionRequest;
 }) {
   const [answers, setAnswers] = useState<string[][]>(() =>
@@ -204,7 +202,6 @@ export function QuestionRequestDock({
       customAnswerIndex={customAnswerIndex}
       customAnswers={customAnswers}
       customInputRef={customInputRef}
-      dockPinnedSummary={dockPinnedSummary}
       isBusy={isBusy}
       onActiveAnswerIndexChange={setActiveAnswerIndex}
       onCustomAnswerChange={setCustomAnswer}

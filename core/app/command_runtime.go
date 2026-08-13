@@ -150,7 +150,11 @@ func (s *Service) executeCommandSubtask(ctx context.Context, input domain.Invoke
 		return domain.InvokeCommandResult{}, err
 	}
 	mode := firstNonEmpty(strings.TrimSpace(result.Agent), parent.AgentMode)
-	definition, err := NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(parent.ProjectPath).Config).Get(mode)
+	catalog, err := s.agentCatalogForProject(ctx, parent.ProjectPath)
+	if err != nil {
+		return domain.InvokeCommandResult{}, err
+	}
+	definition, err := catalog.Get(mode)
 	if err != nil || definition.ID == domain.AgentModeSummary || definition.ID == domain.AgentModeTitle || definition.ID == domain.AgentModeSchedulerWorker {
 		return domain.InvokeCommandResult{}, errors.New("command subtask agent is unavailable")
 	}

@@ -73,13 +73,17 @@ func (s *Store) SaveMCPServer(ctx context.Context, server domain.MCPServerConfig
 			server.Status = domain.MCPServerStatusDisabled
 		}
 	}
+	accessTokenRef := server.OAuthAccessTokenRef
+	if server.AuthType == domain.MCPAuthBearer {
+		accessTokenRef = server.BearerTokenRef
+	}
 	row := mcpServerRow{
 		ID: server.ID, Name: server.Name, DisplayName: server.DisplayName, Description: server.Description,
 		Transport: server.Transport, Command: server.Command, Args: encodeStrings(server.Args), CWD: server.CWD,
 		Env: encodeStringMap(redactSecretStringMap(server.Env)), URL: server.URL,
 		Headers: encodeStringMap(redactSecretStringMap(server.Headers)), AuthType: server.AuthType,
 		BearerTokenEnv: server.BearerTokenEnv, OAuthIssuerURL: server.OAuthIssuerURL, OAuthClientID: server.OAuthClientID,
-		OAuthScopes: encodeStrings(server.OAuthScopes), OAuthAccessTokenRef: server.OAuthAccessTokenRef,
+		OAuthScopes: encodeStrings(server.OAuthScopes), OAuthAccessTokenRef: accessTokenRef,
 		OAuthRefreshTokenRef: server.OAuthRefreshTokenRef, OAuthExpiresAt: server.OAuthExpiresAt,
 		Roots: encodeStrings(server.Roots), TimeoutSeconds: server.TimeoutSeconds,
 		ConnectTimeoutSeconds: server.ConnectTimeoutSeconds, Enabled: boolInt(server.Enabled),
@@ -256,7 +260,14 @@ func mcpDiagnosticFromRow(row pluginDiagnosticRow) domain.MCPDiagnostic {
 }
 
 func mcpServerFromRow(row mcpServerRow) domain.MCPServerConfig {
-	return domain.MCPServerConfig{ID: row.ID, Name: row.Name, DisplayName: row.DisplayName, Description: row.Description, Transport: row.Transport, Command: row.Command, Args: decodeStrings(row.Args), CWD: row.CWD, Env: decodeStringMap(row.Env), URL: row.URL, Headers: decodeStringMap(row.Headers), AuthType: normalizeMCPAuthType(row.AuthType), BearerTokenEnv: row.BearerTokenEnv, OAuthIssuerURL: row.OAuthIssuerURL, OAuthClientID: row.OAuthClientID, OAuthScopes: decodeStrings(row.OAuthScopes), OAuthAccessTokenRef: row.OAuthAccessTokenRef, OAuthRefreshTokenRef: row.OAuthRefreshTokenRef, OAuthExpiresAt: row.OAuthExpiresAt, Roots: decodeStrings(row.Roots), TimeoutSeconds: row.TimeoutSeconds, ConnectTimeoutSeconds: row.ConnectTimeoutSeconds, Enabled: row.Enabled != 0, Status: row.Status, Error: row.Error, TimeCreated: row.TimeCreated, TimeUpdated: row.TimeUpdated}
+	authType := normalizeMCPAuthType(row.AuthType)
+	server := domain.MCPServerConfig{ID: row.ID, Name: row.Name, DisplayName: row.DisplayName, Description: row.Description, Transport: row.Transport, Command: row.Command, Args: decodeStrings(row.Args), CWD: row.CWD, Env: decodeStringMap(row.Env), URL: row.URL, Headers: decodeStringMap(row.Headers), AuthType: authType, BearerTokenEnv: row.BearerTokenEnv, OAuthIssuerURL: row.OAuthIssuerURL, OAuthClientID: row.OAuthClientID, OAuthScopes: decodeStrings(row.OAuthScopes), OAuthRefreshTokenRef: row.OAuthRefreshTokenRef, OAuthExpiresAt: row.OAuthExpiresAt, Roots: decodeStrings(row.Roots), TimeoutSeconds: row.TimeoutSeconds, ConnectTimeoutSeconds: row.ConnectTimeoutSeconds, Enabled: row.Enabled != 0, Status: row.Status, Error: row.Error, TimeCreated: row.TimeCreated, TimeUpdated: row.TimeUpdated}
+	if authType == domain.MCPAuthBearer {
+		server.BearerTokenRef = row.OAuthAccessTokenRef
+	} else {
+		server.OAuthAccessTokenRef = row.OAuthAccessTokenRef
+	}
+	return server
 }
 
 func normalizeMCPAuthType(value string) string {

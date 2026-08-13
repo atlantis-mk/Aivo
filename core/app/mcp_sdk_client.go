@@ -142,9 +142,13 @@ func applyMCPRequestAuth(req *http.Request, server domain.MCPServerConfig) error
 	}
 	switch authType {
 	case domain.MCPAuthBearer:
+		if token := strings.TrimSpace(server.BearerToken); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+			return nil
+		}
 		envName := strings.TrimSpace(server.BearerTokenEnv)
 		if envName == "" {
-			return fmt.Errorf("mcp %s auth requires bearerTokenEnv", authType)
+			return fmt.Errorf("mcp %s auth requires a configured token or bearerTokenEnv", authType)
 		}
 		token := strings.TrimSpace(os.Getenv(envName))
 		if token == "" {

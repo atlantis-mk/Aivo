@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Plus, X } from "lucide-react";
+import { FolderOpen, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,8 +38,8 @@ export function ProjectPicker({
     <Popover onOpenChange={setOpen} open={open}>
       <div className="group/project-picker relative inline-flex">
         <PopoverTrigger asChild>
-          <Button type="button" variant="ghost">
-            <FileText
+          <Button className="rounded-full" type="button" variant="ghost">
+            <FolderOpen
               className={cn(
                 "transition-opacity",
                 hasCurrentProject && "group-hover/project-picker:opacity-0",
@@ -65,7 +65,7 @@ export function ProjectPicker({
           </button>
         ) : null}
       </div>
-      <PopoverContent align="start">
+      <PopoverContent align="start" side="top">
         <Command>
           <div className="flex items-center gap-1 [&>[data-slot=command-input-wrapper]]:min-w-0 [&>[data-slot=command-input-wrapper]]:flex-1">
             <CommandInput placeholder="搜索项目" />
@@ -98,7 +98,7 @@ export function ProjectPicker({
                     }}
                     value={`${item.name} ${item.rootPath}`}
                   >
-                    <FileText />
+                    <FolderOpen />
                     <span className="min-w-0 flex-1 truncate">
                       {item.name || projectNameFromPath(item.rootPath)}
                     </span>

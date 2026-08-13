@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
+  applyGeneratedMcpDescription,
   compactStrings,
   mapToRows,
   mcpServerToDraft,
@@ -9,7 +10,11 @@ import {
   rowsToMap,
   type KeyValueRow,
 } from "@/features/projects/extension-settings-model";
-import { saveMCPServer, type MCPServerConfig } from "@/services/aivo";
+import {
+  generateMCPDescription,
+  saveMCPServer,
+  type MCPServerConfig,
+} from "@/services/aivo";
 
 export function useMcpServerDraftState({
   onClose,
@@ -24,6 +29,10 @@ export function useMcpServerDraftState({
 }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+  const [descriptionGenerationError, setDescriptionGenerationError] =
+    useState("");
+  const descriptionGenerationRequest = useRef(0);
   const [draft, setDraft] = useState<MCPServerConfig>(() =>
     mcpServerToDraft(server),
   );
@@ -41,6 +50,8 @@ export function useMcpServerDraftState({
   );
 
   useEffect(() => {
+    descriptionGenerationRequest.current += 1;
+    setGeneratingDescription(false);
     if (!open) return;
     setDraft(mcpServerToDraft(server));
     setArgRows(nonEmptyStrings(server.args));
@@ -48,7 +59,31 @@ export function useMcpServerDraftState({
     setHeaderRows(mapToRows(server.headers));
     setRootRows(nonEmptyStrings(server.roots));
     setSaveError("");
+    setDescriptionGenerationError("");
   }, [server, open]);
+
+  async function generateDescription() {
+    const request = descriptionGenerationRequest.current + 1;
+    descriptionGenerationRequest.current = request;
+    setGeneratingDescription(true);
+    setDescriptionGenerationError("");
+    try {
+      const result = await generateMCPDescription(server.id);
+      if (descriptionGenerationRequest.current !== request) return;
+      setDraft((current) =>
+        applyGeneratedMcpDescription(current, result.description),
+      );
+    } catch (err) {
+      if (descriptionGenerationRequest.current !== request) return;
+      setDescriptionGenerationError(
+        err instanceof Error ? err.message : String(err),
+      );
+    } finally {
+      if (descriptionGenerationRequest.current === request) {
+        setGeneratingDescription(false);
+      }
+    }
+  }
 
   async function saveSettings() {
     setSaving(true);
@@ -75,9 +110,12 @@ export function useMcpServerDraftState({
   return {
     argRows,
     draft,
+    descriptionGenerationError,
     envRows,
     headerRows,
     rootRows,
+    generateDescription,
+    generatingDescription,
     saveError,
     saving,
     saveSettings,

@@ -443,6 +443,74 @@ func TestSubmitSessionMessageBuildsModelVisibleContext(t *testing.T) {
 	}
 }
 
+func TestSubmitSessionMessageSendsTextAttachmentToProvider(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	requests := make(chan []struct {
+		Role    string `json:"role"`
+		Content any    `json:"content"`
+	}, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content any    `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		requests <- body.Messages
+		w.Header().Set("Content-Type", "application/json")
+		for _, message := range body.Messages {
+			content, _ := message.Content.(string)
+			if message.Role == domain.EventRoleSystem && contains(content, "Host tool-group selector") {
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+				return
+			}
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"attachment ok"}}]}`))
+	}))
+	defer server.Close()
+	if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{
+		Type: domain.SessionTypeCoding, Source: domain.SessionSourceDesktop, ProjectPath: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileText := "\n  package main\n\nfunc main() {}  \n"
+	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{
+		SessionID: session.ID,
+		Text:      "inspect the attached source",
+		Attachments: []domain.MessageAttachment{{
+			Name: "main.go", MIMEType: "text/plain", Kind: "file", Text: fileText, Size: int64(len([]byte(fileText))),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for len(requests) > 0 {
+		messages := <-requests
+		for _, message := range messages {
+			if message.Role != domain.EventRoleUser {
+				continue
+			}
+			parts, _ := message.Content.([]any)
+			for _, rawPart := range parts {
+				part, _ := rawPart.(map[string]any)
+				if part["type"] == "text" && part["text"] == "main.go\n"+fileText {
+					return
+				}
+			}
+		}
+	}
+	t.Fatal("provider messages did not contain the exact text attachment")
+}
+
 func TestAgentPromptBuilderSeparatesDefaultAndGlobalInjections(t *testing.T) {
 	prompt := buildAgentSystemPrompt(domain.AgentModeDefinition{
 		DisplayName: "Code",
@@ -454,11 +522,11 @@ func TestAgentPromptBuilderSeparatesDefaultAndGlobalInjections(t *testing.T) {
 	if !contains(prompt, `<default name="agent_mode">`) || !contains(prompt, "Default mode behavior.") {
 		t.Fatalf("prompt missing default mode injection: %q", prompt)
 	}
-	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "Host may inject canonical summaries for relevant Skills") {
+	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "stable bounded automatic tool set") {
 		t.Fatalf("prompt missing global tool protocol injection: %q", prompt)
 	}
-	if contains(prompt, "call the skill tool") || contains(prompt, "call tool_resolve") {
-		t.Fatalf("agent prompt references removed discovery tools: %q", prompt)
+	if contains(prompt, "call the skill tool") || !contains(prompt, "call tool_resolve") {
+		t.Fatalf("agent prompt is missing the replaceable selection control: %q", prompt)
 	}
 	if contains(prompt, "<aivo_context>") || contains(prompt, "You are Aivo") {
 		t.Fatalf("agent prompt included runtime or removed fixed prompt: %q", prompt)

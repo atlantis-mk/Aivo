@@ -42,6 +42,7 @@ type PreviewPendingAuth = BrowserAuthSessionInfo & {
 type PreviewAppConfig = domain.AppConfig & {
   initialWorkspacePath?: string;
   defaultInitialWorkspacePath?: string;
+  auxiliaryModel?: domain.ModelRef;
 };
 
 type PreviewState = {
@@ -312,6 +313,35 @@ export function deletePreviewProviderAccount(accountId: string) {
   state.auth = auth;
   writePreviewState(state);
   return buildPreviewCatalog(state);
+}
+
+export function deletePreviewProvider(providerId: string) {
+  const normalizedProviderId = providerId.trim();
+  const state = readPreviewState();
+  const config = normalizePreviewConfig(state.config);
+  const auth = state.auth ?? {};
+  delete auth[normalizedProviderId];
+  state.auth = auth;
+
+  if (config.provider?.id === normalizedProviderId) {
+    config.provider = undefined;
+  }
+  if (config.defaultModel?.providerId === normalizedProviderId) {
+    config.defaultModel = undefined;
+  }
+  if (config.auxiliaryModel?.providerId === normalizedProviderId) {
+    config.auxiliaryModel = undefined;
+  }
+  if (config.providers?.custom) {
+    delete config.providers.custom[normalizedProviderId];
+  }
+
+  state.config = config;
+  writePreviewState(state);
+  return {
+    catalog: buildPreviewCatalog(state),
+    config,
+  };
 }
 
 export async function startPreviewOpenAIBrowserAuth() {

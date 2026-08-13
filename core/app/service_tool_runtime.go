@@ -104,6 +104,9 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 			bashTool.SetPersistentCWDHooks(s.loadAgentShellCWD, s.saveAgentShellCWD)
 		}
 	}
+	if err := registry.RegisterScoped(NewToolResolveTool(registry, s.resolveSessionToolReplacement, s.replaceAutoSelectedTools), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
+		return nil, nil
+	}
 	if s.extensionSupervisor != nil {
 		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}
@@ -163,11 +166,7 @@ func logToolCalls(calls []domain.ChatToolCall) {
 }
 
 func (s *Service) recordToolResult(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall, result domain.ToolResult) error {
-	err := s.saveToolResult(ctx, sessionID, turnID, call, result)
-	if warmErr := s.rememberWarmDeferredTool(ctx, sessionID, call.Name); err == nil {
-		err = warmErr
-	}
-	return err
+	return s.saveToolResult(ctx, sessionID, turnID, call, result)
 }
 
 func (s *Service) recordToolResultWithMetadata(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall, result domain.ToolResult, metadata map[string]any) error {

@@ -143,14 +143,17 @@ func TestToolResolveActivatesDeferredToolsForNextStep(t *testing.T) {
 		}
 		return ToolResolveDecision{Names: []string{"extension_echo"}, Reason: "echo capability matched"}, nil
 	}
-	activate := func(_ context.Context, sessionID string, toolName string) error {
+	replace := func(_ context.Context, sessionID string, toolNames []string) error {
 		if sessionID != "session_1" {
 			t.Fatalf("sessionID = %q, want session_1", sessionID)
 		}
-		activated[toolName] = true
+		activated = map[string]bool{}
+		for _, toolName := range toolNames {
+			activated[toolName] = true
+		}
 		return nil
 	}
-	if err := registry.RegisterScoped(NewToolResolveTool(registry, resolver, activate), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
+	if err := registry.RegisterScoped(NewToolResolveTool(registry, resolver, replace), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
 		t.Fatal(err)
 	}
 	runtime := NewToolRuntime(registry, t.TempDir())

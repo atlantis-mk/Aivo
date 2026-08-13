@@ -1,24 +1,18 @@
 import { ShieldCheck } from "lucide-react";
 
 import { PermissionRequestCard } from "@/features/projects/project-permission-request-card";
-import { cn } from "@/lib/utils";
 import type { PermissionRequest } from "@/services/aivo";
 
 export function PermissionApprovalDock({
-  dockPinnedSummary,
   permissions,
 }: {
-  dockPinnedSummary: boolean;
   permissions: PermissionRequest[];
 }) {
   if (permissions.length === 0) return null;
 
   return (
     <div
-      className={cn(
-        "absolute bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-[760px] -translate-x-1/2 transition-[margin,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:bottom-6 sm:w-[calc(100%-48px)]",
-        dockPinnedSummary && "min-[1050px]:-ml-40",
-      )}
+      className="absolute bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-[760px] -translate-x-1/2 transition-[margin,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:bottom-6 sm:w-[calc(100%-48px)]"
       data-assistant-hover-ignore="true"
     >
       <div className="overflow-hidden rounded-2xl border border-border/80 bg-popover text-popover-foreground shadow-2xl shadow-foreground/15 ring-1 ring-foreground/5">

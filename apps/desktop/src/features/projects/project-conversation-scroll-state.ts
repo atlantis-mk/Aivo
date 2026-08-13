@@ -16,17 +16,13 @@ import {
 export function useProjectConversationScroll({
   composerHeight,
   hasTurns,
-  isPinnedSummaryOpen,
   lastTurnStateKey,
-  shouldShiftPinnedSummaryLayout,
   showConversationLayout,
   turnCount,
 }: {
   composerHeight: number;
   hasTurns: boolean;
-  isPinnedSummaryOpen: boolean;
   lastTurnStateKey: string;
-  shouldShiftPinnedSummaryLayout: boolean;
   showConversationLayout: boolean;
   turnCount: number;
 }) {
@@ -230,12 +226,10 @@ export function useProjectConversationScroll({
     animateToBottom,
     composerHeight,
     hasTurns,
-    isPinnedSummaryOpen,
     lastTurnStateKey,
     previousTurnCountRef,
     scrollToBottom,
     setShowScrollToBottomButton,
-    shouldShiftPinnedSummaryLayout,
     snapNextScrollRef,
     startForceScrollToBottom,
     stickToBottomRef,

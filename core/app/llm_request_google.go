@@ -77,7 +77,7 @@ func googleAttachmentParts(attachments []domain.MessageAttachment) []map[string]
 		}
 		data := strings.TrimSpace(attachment.Data)
 		if data == "" {
-			if text := strings.TrimSpace(attachment.Text); text != "" {
+			if text := attachment.Text; strings.TrimSpace(text) != "" {
 				parts = append(parts, map[string]any{"text": attachment.Name + "\n" + text})
 			}
 			continue

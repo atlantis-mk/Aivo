@@ -78,11 +78,12 @@ func TestMCPOAuthDiscoveryFindsResourceAndAuthorizationMetadata(t *testing.T) {
 	defer httpServer.Close()
 
 	server := domain.MCPServerConfig{
-		ID:        "oauth_discovery_mcp",
-		Name:      "oauth_discovery_mcp",
-		Transport: domain.MCPTransportStreamableHTTP,
-		URL:       httpServer.URL + "/mcp",
-		AuthType:  domain.MCPAuthOAuth,
+		ID:          "oauth_discovery_mcp",
+		Name:        "oauth_discovery_mcp",
+		Description: "Discover and authorize test MCP resources",
+		Transport:   domain.MCPTransportStreamableHTTP,
+		URL:         httpServer.URL + "/mcp",
+		AuthType:    domain.MCPAuthOAuth,
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
@@ -186,11 +187,12 @@ func TestMCPOAuthBrowserFlowStoresTokenAndUsesItForHTTPMCP(t *testing.T) {
 	defer httpServer.Close()
 
 	server := domain.MCPServerConfig{
-		ID:        "oauth_flow_mcp",
-		Name:      "oauth_flow_mcp",
-		Transport: domain.MCPTransportStreamableHTTP,
-		URL:       httpServer.URL + "/mcp",
-		AuthType:  domain.MCPAuthOAuth,
+		ID:          "oauth_flow_mcp",
+		Name:        "oauth_flow_mcp",
+		Description: "Exercise the OAuth browser flow for MCP",
+		Transport:   domain.MCPTransportStreamableHTTP,
+		URL:         httpServer.URL + "/mcp",
+		AuthType:    domain.MCPAuthOAuth,
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
@@ -300,6 +302,7 @@ func TestMCPOAuthRefreshesExpiredTokenBeforeHTTPMCPCall(t *testing.T) {
 	server := domain.MCPServerConfig{
 		ID:                    "oauth_refresh_mcp",
 		Name:                  "oauth_refresh_mcp",
+		Description:           "Refresh OAuth credentials for MCP calls",
 		Transport:             domain.MCPTransportStreamableHTTP,
 		URL:                   httpServer.URL + "/mcp",
 		AuthType:              domain.MCPAuthOAuth,
@@ -356,6 +359,7 @@ func TestMCPOAuthInsufficientScopeChallengePersistsRequestedScopes(t *testing.T)
 	server := domain.MCPServerConfig{
 		ID:             "oauth_scope_mcp",
 		Name:           "oauth_scope_mcp",
+		Description:    "Validate OAuth scopes for MCP calls",
 		Transport:      domain.MCPTransportStreamableHTTP,
 		URL:            httpServer.URL + "/mcp",
 		AuthType:       domain.MCPAuthOAuth,

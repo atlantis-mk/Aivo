@@ -295,7 +295,8 @@ func (s *ExtensionSupervisor) RegisterReadyTools(id string, registry *Registry) 
 	}
 	tools := make([]domain.Tool, 0, len(item.loaded.Manifest.Contributes.Tools))
 	for _, contribution := range item.loaded.Manifest.Contributes.Tools {
-		spec := domain.ToolSpec{Name: contribution.Name, Description: contribution.Description, InputSchema: domain.CloneRawMap(item.loaded.ToolSchemas[contribution.Name]), Capability: contribution.Capability, Category: "extension", Toolsets: []string{"coding", "extension"}, ActivationPolicy: firstNonEmpty(contribution.Activation, "auto"), ImplementationHash: item.loaded.Integrity}
+		groupDescription := strings.TrimSpace(item.loaded.Manifest.Description)
+		spec := domain.ToolSpec{Name: contribution.Name, Description: contribution.Description, InputSchema: domain.CloneRawMap(item.loaded.ToolSchemas[contribution.Name]), Namespace: generatedToolName("extension", id), NamespaceDescription: groupDescription, Capability: contribution.Capability, Category: "extension", Toolsets: []string{"coding", "extension"}, ActivationPolicy: firstNonEmpty(contribution.Activation, "auto"), ImplementationHash: item.loaded.Integrity}
 		tools = append(tools, &extensionTool{supervisor: s, extensionID: id, generation: item.loaded.Integrity, spec: spec})
 	}
 	return registry.RegisterScopedBatch(tools, domain.ToolSourceExtension, id, item.loaded.Manifest.Version)

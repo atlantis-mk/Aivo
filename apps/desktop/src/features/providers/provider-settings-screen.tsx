@@ -1,0 +1,379 @@
+import { useMemo, useState } from "react";
+import {
+  Add01Icon,
+  Alert02Icon,
+  Delete02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { toast } from "sonner";
+
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { ProviderIcon } from "@/features/providers/provider-icon";
+import {
+  configuredProviders,
+  providerConnectionMethodLabel,
+  providerModelLabel,
+  providerReadinessLabel,
+} from "@/features/providers/provider-settings-model";
+import type { ProviderChoice } from "@/features/providers/provider-types";
+import { ProviderConnectionDialogs } from "@/features/setup/provider-connection-dialogs";
+import { useSetupProviderActions } from "@/features/setup/setup-provider-actions";
+import {
+  otherProviderChoices,
+  providerChoices,
+} from "@/features/setup/setup-provider-options";
+import { useSetupProviderStepState } from "@/features/setup/setup-provider-step-state";
+import {
+  OtherProviderPickerDialog,
+  ProviderChoiceGrid,
+} from "@/features/setup/setup-step-components";
+import { hasAppBridge, useAppConfig } from "@/lib/app-config";
+import { deletePreviewProvider } from "@/lib/preview-state";
+import type { ProviderInfo } from "@/lib/provider-catalog";
+import { deleteProvider, getAppConfig } from "@/services/aivo";
+
+export function ProviderSettingsScreen() {
+  const {
+    catalog,
+    config,
+    error,
+    loading,
+    setCatalog,
+    setConfig,
+    setError,
+  } = useAppConfig();
+  const [saving, setSaving] = useState(false);
+  const [deletingProviderId, setDeletingProviderId] = useState("");
+  const [providerValidated, setProviderValidated] = useState(false);
+
+  const actions = useSetupProviderActions({
+    catalog,
+    config,
+    setCatalog,
+    setConfig,
+    setError,
+    setProviderValidated,
+    setSaving,
+  });
+  const connection = useSetupProviderStepState({
+    catalog,
+    onContinue: actions.completeProviderDialog,
+    onRefreshModels: actions.refreshProviderCatalog,
+    onResetValidation: () => setProviderValidated(false),
+    onValidate: actions.validateProvider,
+    providerValidated,
+    saving,
+  });
+  const providers = useMemo(
+    () =>
+      configuredProviders(
+        catalog?.providers ?? [],
+        catalog?.defaultModel?.providerId,
+      ),
+    [catalog],
+  );
+
+  async function removeProvider(provider: ProviderInfo) {
+    if (deletingProviderId) return;
+    setDeletingProviderId(provider.id);
+    setError("");
+    try {
+      if (hasAppBridge()) {
+        const nextCatalog = await deleteProvider(provider.id);
+        const nextConfig = await getAppConfig();
+        setCatalog(nextCatalog);
+        setConfig(nextConfig);
+      } else {
+        const next = deletePreviewProvider(provider.id);
+        setCatalog(next.catalog);
+        setConfig(next.config);
+      }
+      toast.success(`已删除 ${provider.name}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingProviderId("");
+    }
+  }
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-aivo-8 px-aivo-4 py-aivo-6 sm:px-aivo-8 sm:py-aivo-8">
+        <header className="flex flex-col gap-aivo-2">
+          <h1 className="aivo-type-title-1 font-semibold text-foreground">
+            模型提供商
+          </h1>
+          <p className="aivo-type-body max-w-2xl text-muted-foreground">
+            查看已经配置的 Provider，或使用与初始化相同的流程连接新的服务。
+          </p>
+        </header>
+
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>Provider 操作失败</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <section aria-labelledby="configured-providers-heading" className="flex flex-col gap-aivo-4">
+          <div className="flex items-end justify-between gap-aivo-3">
+            <div className="flex flex-col gap-aivo-1">
+              <h2
+                className="aivo-type-title-3 font-semibold text-foreground"
+                id="configured-providers-heading"
+              >
+                已配置
+              </h2>
+              <p className="aivo-type-footnote text-muted-foreground">
+                配置与凭据由本地 Core 管理。
+              </p>
+            </div>
+            {!loading ? (
+              <Badge variant="secondary">{providers.length} 个</Badge>
+            ) : null}
+          </div>
+
+          {loading ? (
+            <ProviderSettingsSkeleton />
+          ) : providers.length > 0 ? (
+            <div className="grid grid-cols-1 gap-aivo-3 lg:grid-cols-2">
+              {providers.map((provider) => (
+                <ProviderSettingsCard
+                  deleting={deletingProviderId === provider.id}
+                  disabled={Boolean(deletingProviderId) || saving}
+                  key={provider.id}
+                  onDelete={() => void removeProvider(provider)}
+                  provider={provider}
+                />
+              ))}
+            </div>
+          ) : (
+            <Empty className="border">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
+                </EmptyMedia>
+                <EmptyTitle>还没有配置 Provider</EmptyTitle>
+                <EmptyDescription>
+                  从下方选择一个服务并完成连接，它会立即出现在这里。
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent />
+            </Empty>
+          )}
+        </section>
+
+        <section aria-labelledby="add-provider-heading" className="flex flex-col gap-aivo-4 pb-aivo-6">
+          <div className="flex flex-col gap-aivo-1">
+            <h2
+              className="aivo-type-title-3 font-semibold text-foreground"
+              id="add-provider-heading"
+            >
+              添加 Provider
+            </h2>
+            <p className="aivo-type-footnote text-muted-foreground">
+              API Key 只在连接请求中临时使用，不会写入渲染器存储。
+            </p>
+          </div>
+          <ProviderChoiceGrid
+            activeProviderId={connection.activeProvider?.id}
+            fluid
+            onProviderClick={connection.openProvider}
+          />
+        </section>
+      </div>
+
+      <OtherProviderPickerDialog
+        onOpenChange={connection.setOtherProviderPickerOpen}
+        onSearchChange={connection.setOtherProviderSearch}
+        onSelect={connection.selectOtherProvider}
+        open={connection.otherProviderPickerOpen}
+        search={connection.otherProviderSearch}
+      />
+      <ProviderConnectionDialogs
+        activeProvider={connection.activeProvider}
+        apiKey={connection.apiKey}
+        authMode={connection.authMode}
+        authSuccessMessage={connection.authSuccessMessage}
+        callbackInput={connection.callbackInput}
+        customProviderForm={connection.customProviderForm}
+        error={error}
+        models={connection.activeProviderModels}
+        oauthReady={connection.oauthReady}
+        oauthStarted={connection.oauthStarted}
+        oauthStartResult={connection.oauthStartResult}
+        oauthStatus={connection.oauthStatus}
+        onApiKeyChange={connection.setApiKey}
+        onCallbackInputChange={connection.setCallbackInput}
+        onClose={connection.closeProvider}
+        onCustomProviderFormChange={connection.setCustomProviderForm}
+        onProviderDialogStepChange={connection.setProviderDialogStep}
+        onResetAuthMode={connection.resetAuthMode}
+        onSelectOpenAIAuthMode={connection.selectOpenAIAuthMode}
+        onSelectedModelIdChange={connection.setSelectedModelId}
+        onSubmit={connection.submitActiveProvider}
+        providerDialogStep={connection.providerDialogStep}
+        saving={saving}
+        selectedModelId={connection.activeProviderModelValue}
+        showModelSelect={connection.showModelSelect}
+        submitDisabled={connection.submitDisabled}
+      />
+    </div>
+  );
+}
+
+function ProviderSettingsCard({
+  deleting,
+  disabled,
+  onDelete,
+  provider,
+}: {
+  deleting: boolean;
+  disabled: boolean;
+  onDelete: () => void;
+  provider: ProviderInfo;
+}) {
+  const accountCount = provider.accounts?.length ?? 0;
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex min-w-0 items-center gap-aivo-3">
+          <ProviderIcon provider={providerChoiceFor(provider)} size="sm" />
+          <div className="min-w-0">
+            <CardTitle className="truncate">{provider.name}</CardTitle>
+            <CardDescription className="truncate">{provider.id}</CardDescription>
+          </div>
+        </div>
+        <CardAction>
+          <Badge variant={provider.readiness?.ready ? "default" : "outline"}>
+            {providerReadinessLabel(provider)}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-aivo-4 gap-y-aivo-2">
+          <dt className="text-muted-foreground">默认模型</dt>
+          <dd className="max-w-52 truncate text-right text-foreground">
+            {providerModelLabel(provider)}
+          </dd>
+          <dt className="text-muted-foreground">连接方式</dt>
+          <dd className="max-w-52 truncate text-right text-foreground">
+            {providerConnectionMethodLabel(provider)}
+          </dd>
+          <dt className="text-muted-foreground">账号</dt>
+          <dd className="text-right text-foreground">
+            {accountCount > 0 ? `${accountCount} 个` : "默认连接"}
+          </dd>
+        </dl>
+      </CardContent>
+      <CardFooter className="justify-end gap-aivo-2 border-t">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button disabled={disabled} variant="ghost">
+              {deleting ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <HugeiconsIcon
+                  data-icon="inline-start"
+                  icon={Delete02Icon}
+                  strokeWidth={2}
+                />
+              )}
+              删除
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogMedia>
+                <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} />
+              </AlertDialogMedia>
+              <AlertDialogTitle>删除“{provider.name}”？</AlertDialogTitle>
+              <AlertDialogDescription>
+                这会移除该 Provider 的配置、认证信息、模型缓存和健康状态。调用记录仍会保留用于本地审计。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={onDelete} variant="destructive">
+                删除 Provider
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardFooter>
+    </Card>
+  );
+}
+
+function ProviderSettingsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-aivo-3 lg:grid-cols-2">
+      {[0, 1].map((index) => (
+        <Card aria-hidden="true" key={index}>
+          <CardHeader>
+            <Skeleton className="h-5 w-36" />
+            <CardDescription>
+              <Skeleton className="h-4 w-24" />
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-aivo-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-4/5" />
+          </CardContent>
+          <CardFooter className="justify-end border-t">
+            <Skeleton className="h-8 w-24" />
+          </CardFooter>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function providerChoiceFor(provider: ProviderInfo): ProviderChoice {
+  return (
+    [...providerChoices, ...otherProviderChoices].find(
+      (candidate) => candidate.id === provider.id,
+    ) ?? {
+      id: provider.id,
+      name: provider.name,
+      custom: provider.custom,
+    }
+  );
+}

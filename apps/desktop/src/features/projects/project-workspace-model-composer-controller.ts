@@ -1,9 +1,14 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import type { LoadConversationTurnsOptions } from "@/features/projects/project-conversation-turn-loader";
 import { useProjectComposerAttachmentState } from "@/features/projects/project-composer-attachment-state";
 import { useProjectModelRuntimeState } from "@/features/projects/project-model-runtime-state";
+import {
+  addPromptMentionReference,
+  removePromptMentionReference,
+  type PromptMentionReference,
+} from "@/features/projects/project-prompt-mention-model";
 import { useProjectSubmitPromptAction } from "@/features/projects/project-submit-prompt-action";
 import { useProjectWorkspacePreferenceActions } from "@/features/projects/project-workspace-preference-actions";
 import type { CatalogState } from "@/lib/provider-catalog";
@@ -84,9 +89,23 @@ export function useProjectWorkspaceModelComposerController({
     config,
   });
   const permissionModeRef = useRef(permissionMode);
+  const [promptResourceReferences, setPromptResourceReferences] = useState<PromptMentionReference[]>([]);
   useEffect(() => {
     permissionModeRef.current = permissionMode;
   }, [permissionMode]);
+  useEffect(() => {
+    setPromptResourceReferences([]);
+  }, [activeSessionId]);
+  const selectPromptMention = useCallback((reference: PromptMentionReference) => {
+    setPromptResourceReferences((current) =>
+      addPromptMentionReference(current, reference)
+    );
+  }, []);
+  const removePromptMention = useCallback((reference: PromptMentionReference) => {
+    setPromptResourceReferences((current) =>
+      removePromptMentionReference(current, reference)
+    );
+  }, []);
   const {
     addFiles: addComposerAttachmentFiles,
     attachments: composerAttachments,
@@ -140,6 +159,7 @@ export function useProjectWorkspaceModelComposerController({
     pendingStopRequestedRef,
     permissionModeRef,
     prompt,
+    promptResourceReferences,
     reasoningEffort,
     refreshPendingPermissionRequests,
     selectedProjectPath,
@@ -149,6 +169,7 @@ export function useProjectWorkspaceModelComposerController({
     setComposerAttachments,
     setConversationRunning,
     setPrompt,
+    setPromptResourceReferences,
     setPendingActiveToolNames,
     setSessions,
     setTurns,
@@ -170,9 +191,12 @@ export function useProjectWorkspaceModelComposerController({
     permissionMode,
     reasoningEffort,
     removeComposerAttachment,
+    removePromptMention,
     selectAgentMode,
     selectModel,
     selectPermissionMode,
+    selectPromptMention,
+    promptResourceReferences,
     selectReasoningEffort,
     selectServiceTier,
     serviceTier,

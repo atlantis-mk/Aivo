@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"aivo/core/domain"
@@ -13,7 +14,7 @@ const (
 	promptInjectionScopeGlobal  promptInjectionScope = "global"
 )
 
-const agentToolProtocolPrompt = `Before each request, the Host may inject canonical summaries for relevant Skills, full instructions for the selected Skills needed to perform the task, extension context, and a bounded set of eligible extension tools alongside the four core primitives. Treat Skill summaries as availability metadata and injected instructions/context as task context. Use only tools actually present in the request. Do not invent or request hidden discovery tools. If the available tools cannot perform a required action, explain the concrete missing capability instead of claiming that no installed extension exists.`
+const agentToolProtocolPrompt = `The Host gives this conversation four core execution primitives, any manually enabled tools, and one stable bounded automatic tool set. Treat Skill summaries as availability metadata and injected instructions/context as task context. Use only tools actually present in the request. When the visible tools cannot perform a concrete action required by the current task, call tool_resolve once with a concise description of the missing capability; it replaces the complete automatic tool set for the next model step and does not change manual tools. Do not call it to list hidden tools, speculate about optional capabilities, or accumulate more tools.`
 
 type promptInjection struct {
 	Scope promptInjectionScope
@@ -22,7 +23,7 @@ type promptInjection struct {
 }
 
 func agentPromptInjections(modeDef domain.AgentModeDefinition) []promptInjection {
-	return []promptInjection{
+	injections := []promptInjection{
 		{
 			Scope: promptInjectionScopeDefault,
 			Name:  "agent_mode",
@@ -34,6 +35,19 @@ func agentPromptInjections(modeDef domain.AgentModeDefinition) []promptInjection
 			Text:  agentToolProtocolPrompt,
 		},
 	}
+	if len(modeDef.Subagents) > 0 {
+		quoted := make([]string, 0, len(modeDef.Subagents))
+		for _, subagent := range modeDef.Subagents {
+			quoted = append(quoted, fmt.Sprintf("`%s`", subagent))
+		}
+		injections = append(injections, promptInjection{
+			Scope: promptInjectionScopeDefault,
+			Name:  "associated_subagents",
+			Text: "Associated subagents available to this mode: " + strings.Join(quoted, ", ") +
+				". When the current task has a bounded independent part that benefits from one of these modes, you may call agent_delegate_task and then use its returned result. Decide based on the task; do not delegate routine work or fan out solely because associations exist. Never name an unlisted mode.",
+		})
+	}
+	return injections
 }
 
 func buildAgentSystemPrompt(modeDef domain.AgentModeDefinition) string {

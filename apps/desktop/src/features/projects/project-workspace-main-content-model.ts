@@ -4,8 +4,9 @@ import type {
 } from "react";
 
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
-import type { ComposerAttachment } from "@/features/projects/project-composer-attachments";
+import type { ComposerAttachment, ComposerAttachmentInput } from "@/features/projects/project-composer-attachments";
 import type { ModelOption } from "@/features/projects/project-model-options";
+import type { PromptMentionReference } from "@/features/projects/project-prompt-mention-model";
 import type { ProjectWorkspacePage } from "@/features/projects/project-workspace-derived-state";
 import type { ConversationTimelineHandlerRefs } from "@/features/projects/project-workspace-state-model";
 import type { ModelInfo } from "@/lib/provider-catalog";
@@ -29,7 +30,6 @@ export type ProjectWorkspaceMainContentProps = {
   agentRuns: AgentRun[];
   allModelOptions: ModelOption[];
   attachments: ComposerAttachment[];
-  canDockPinnedSummary: boolean;
   composerBottom: string;
   composerBottomSm: string;
   composerFrameRef: RefObject<HTMLDivElement | null>;
@@ -42,16 +42,14 @@ export type ProjectWorkspaceMainContentProps = {
   hasPendingTurn: boolean;
   hasTurns: boolean;
   isComposerDropActive: boolean;
-  isPinnedSummaryOpen: boolean;
   isRevealingHistoryConversation: boolean;
   isSubagentSession: boolean;
   isVisibleTodoPlanComplete: boolean;
-  mainRef: RefObject<HTMLDivElement | null>;
   messagesScrollRootRef: RefObject<HTMLDivElement | null>;
   modelId: string;
   modelLabel: string;
   modelOptions: ModelInfo[];
-  onAddAttachments: (files: FileList | null) => void;
+  onAddAttachments: (files: ComposerAttachmentInput) => void;
   onAgentModeSelect: (mode: AgentModeId) => void;
   onBackToParentSession: () => void;
   onCancelSubagentRun?: () => void;
@@ -65,10 +63,12 @@ export type ProjectWorkspaceMainContentProps = {
   onModelSelect: (option: ModelOption) => void;
   onOpenToolActivationDialog: () => void;
   onPermissionModeSelect: (mode: PermissionMode) => void;
-  onProjectAdd: () => void;
+  onProjectAdd: (rootPath?: string) => void;
   onProjectClear: () => void;
   onProjectSelect: (project: domain.AssistantProject) => void;
   onPromptChange: (prompt: string) => void;
+  onPromptMentionRemove: (reference: PromptMentionReference) => void;
+  onPromptMentionSelect: (reference: PromptMentionReference) => void;
   onReasoningEffortSelect: (reasoningEffort: string) => void;
   onRemoveAttachment: (id: string) => void;
   onScrollToBottom: () => void;
@@ -81,10 +81,9 @@ export type ProjectWorkspaceMainContentProps = {
   projectPath: string;
   projects: domain.AssistantProject[];
   prompt: string;
+  promptResourceReferences: PromptMentionReference[];
   reasoningEffort: string;
   serviceTier: string;
-  shouldShiftPinnedSummaryLayout: boolean;
-  shouldShowEnvironmentSummaryPanel: boolean;
   shouldShowTodoFloatingStatus: boolean;
   showConversationLayout: boolean;
   showProjectPicker: boolean;

@@ -1,52 +1,39 @@
 import type { RefObject } from "react";
-import { ArrowUp, Mic, Pause, Plus } from "lucide-react";
+import { ArrowUp, Mic, Pause, Plus, Wrench } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ModelSettingsMenu } from "@/features/projects/project-model-settings-menu";
-import { ProjectPicker } from "@/features/projects/project-picker-popover";
-import {
-  AgentModeMenu,
-  PermissionModeMenu,
-} from "@/features/projects/project-prompt-mode-menus";
+import { PermissionModeMenu } from "@/features/projects/project-prompt-mode-menus";
 import type { PromptComposerProps } from "@/features/projects/project-prompt-composer-types";
 
 type PromptComposerToolbarProps = Pick<
   PromptComposerProps,
-  | "agentMode"
-  | "agentModes"
   | "allModelOptions"
   | "modelId"
   | "modelLabel"
   | "modelOptions"
   | "onAddAttachments"
-  | "onAgentModeSelect"
   | "onModelSelect"
+  | "onOpenToolActivationDialog"
   | "onPermissionModeSelect"
-  | "onProjectAdd"
-  | "onProjectClear"
-  | "onProjectSelect"
   | "onReasoningEffortSelect"
   | "onServiceTierSelect"
   | "onSubmit"
   | "pending"
   | "permissionMode"
   | "prompt"
-  | "project"
   | "projectPath"
-  | "projects"
   | "reasoningEffort"
   | "serviceTier"
-  | "showProjectPicker"
   | "showServiceTier"
 > & {
   compact: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
   hasAttachments: boolean;
+  onSelectLocalResource: () => void;
 };
 
 export function PromptComposerToolbar({
-  agentMode,
-  agentModes,
   allModelOptions,
   compact,
   fileInputRef,
@@ -55,29 +42,24 @@ export function PromptComposerToolbar({
   modelLabel,
   modelOptions,
   onAddAttachments,
-  onAgentModeSelect,
   onModelSelect,
+  onOpenToolActivationDialog,
   onPermissionModeSelect,
-  onProjectAdd,
-  onProjectClear,
-  onProjectSelect,
   onReasoningEffortSelect,
+  onSelectLocalResource,
   onServiceTierSelect,
   onSubmit,
   pending,
   permissionMode,
   prompt,
-  project,
   projectPath,
-  projects,
   reasoningEffort,
   serviceTier,
-  showProjectPicker,
   showServiceTier,
 }: PromptComposerToolbarProps) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-2.5">
-      <div className="flex h-9 min-w-0 items-center gap-1.5 sm:gap-3">
+    <div className="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-2 sm:gap-2.5">
+      <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
         <input
           className="hidden"
           multiple
@@ -89,9 +71,9 @@ export function PromptComposerToolbar({
           type="file"
         />
         <Button
-          aria-label="添加文件"
+          aria-label="选择文件或文件夹"
           className="rounded-full"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={onSelectLocalResource}
           size="icon-sm"
           type="button"
           variant="ghost"
@@ -104,25 +86,21 @@ export function PromptComposerToolbar({
           mode={permissionMode}
           onModeSelect={onPermissionModeSelect}
         />
-        <AgentModeMenu
-          compact={compact}
-          mode={agentMode}
-          modes={agentModes}
-          onModeSelect={onAgentModeSelect}
-        />
-        {showProjectPicker ? (
-          <ProjectPicker
-            onAddProject={onProjectAdd}
-            onProjectClear={onProjectClear}
-            onProjectSelect={onProjectSelect}
-            project={project}
-            projectPath={projectPath}
-            projects={projects}
-          />
-        ) : null}
+
+        <Button
+          aria-label="选择本次工具"
+          className="rounded-full"
+          onClick={onOpenToolActivationDialog}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <Wrench data-icon="inline-start" />
+          <span>工具</span>
+        </Button>
       </div>
 
-      <div className="flex h-9 min-w-0 items-center gap-1.5 sm:gap-2.5">
+      <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
         <ModelSettingsMenu
           allModelOptions={allModelOptions}
           compact={compact}
@@ -153,7 +131,7 @@ export function PromptComposerToolbar({
           className="rounded-full"
           disabled={!pending && !prompt.trim() && !hasAttachments}
           onClick={onSubmit}
-          size="icon"
+          size="icon-lg"
           type="button"
           variant="default"
         >

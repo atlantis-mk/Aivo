@@ -12,7 +12,11 @@ func (s *Service) CreateRuntimeSession(ctx context.Context, input domain.CreateS
 	if input.Type == domain.SessionTypeCoding && strings.TrimSpace(input.AgentMode) == "" {
 		runtime := loadEffectiveRuntimeConfig(input.ProjectPath).Config
 		if strings.TrimSpace(runtime.DefaultAgent) != "" {
-			definition, err := NewAgentCatalogWithRuntime(runtime).Get(runtime.DefaultAgent)
+			catalog, catalogErr := s.agentCatalogForProject(ctx, input.ProjectPath)
+			if catalogErr != nil {
+				return domain.Session{}, catalogErr
+			}
+			definition, err := catalog.Get(runtime.DefaultAgent)
 			if err != nil || definition.Hidden || definition.Mode == "subagent" {
 				return domain.Session{}, errors.New("configured defaultAgent is unavailable as a primary agent")
 			}

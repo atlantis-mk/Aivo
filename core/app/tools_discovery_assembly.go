@@ -51,6 +51,10 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 	visible := make([]domain.ToolSpec, 0, len(specs))
 	deferredCount := 0
 	for _, spec := range specs {
+		if spec.Name == ToolResolveName {
+			visible = append(visible, spec)
+			continue
+		}
 		if isBridgeToolName(spec.Name) {
 			continue
 		}
@@ -79,8 +83,10 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 		activationSource := firstNonEmpty(activationSources[spec.Name], "currentTurn")
 		if isCoreVisibleToolSpec(spec) {
 			activationSource = "core"
+		} else if spec.Name == ToolResolveName {
+			activationSource = "control"
 		}
-		entries = append(entries, domain.ToolSnapshotEntry{Name: spec.Name, RegistrationID: identity.RegistrationID, SchemaHash: identity.SchemaHash, SourceID: identity.SourceID, SourceVersion: identity.Version, ActivationSource: activationSource})
+		entries = append(entries, domain.ToolSnapshotEntry{Name: spec.Name, RegistrationID: identity.RegistrationID, SchemaHash: toolSchemaHash(spec), SourceID: identity.SourceID, SourceVersion: identity.Version, ActivationSource: activationSource})
 	}
 	snapshotRaw, _ := json.Marshal(entries)
 	sum := sha256.Sum256(snapshotRaw)

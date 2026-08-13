@@ -119,7 +119,8 @@ func (s *Service) ReplaySessionToolCall(ctx context.Context, input domain.Replay
 	}
 	allowedToolsets := allowedToolsetsForRun(modeDef, domain.SubmitSessionMessageRequest{})
 	specs := visibleToolSpecsForMode(modeDef.ID, registry.SpecsForToolsets(allowedToolsets))
-	assembly := AssembleToolSpecs(registry, specs)
+	specs = configureAgentDelegateToolSpecs(modeDef, specs)
+	assembly := AssembleToolSpecsWithSources(registry, specs, map[string]string{replayCall.Name: "replay"})
 	result := runtime.ExecuteWithContext(ctx, replayCall, domain.ToolExecutionContext{
 		WorkspaceRoot:         workspaceRoot,
 		SessionID:             sessionID,
@@ -129,6 +130,7 @@ func (s *Service) ReplaySessionToolCall(ctx context.Context, input domain.Replay
 		AllowedToolsets:       allowedToolsets,
 		PermissionScope:       firstNonEmpty(input.PermissionScope, defaultPermissionScopeForMode(modeDef.ID)),
 		ExpectedRegistrations: assembly.ExpectedRegistrations,
+		ToolSnapshot:          &assembly.Snapshot,
 	})
 	if err := s.recordToolResultWithMetadata(ctx, sessionID, original.TurnID, replayCall, result, map[string]any{
 		"replayOfToolCallId": original.ID,

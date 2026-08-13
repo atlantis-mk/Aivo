@@ -7,15 +7,20 @@ import { Label } from "@/components/ui/label";
 import type { KeyValueRow } from "@/features/projects/extension-settings-model";
 
 export function McpField({
+  action,
   children,
   label,
 }: {
+  action?: ReactNode;
   children: ReactNode;
   label: string;
 }) {
   return (
     <div className="grid gap-2">
-      <Label>{label}</Label>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <Label>{label}</Label>
+        {action}
+      </div>
       {children}
     </div>
   );

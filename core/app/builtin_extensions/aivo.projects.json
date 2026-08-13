@@ -13,7 +13,7 @@
       {
         "name": "aivo_projects_query",
         "description": "Query or list Aivo projects and inspect the current session's project association. Use projectId for an exact visible project, or query/limit/cursor for bounded local search and pagination.",
-        "activation": "default",
+        "activation": "auto",
         "capability": "projects.read",
         "schema": {
           "type": "object",
@@ -29,7 +29,7 @@
       {
         "name": "aivo_projects_add",
         "description": "Register an existing absolute local directory as an Aivo project. This never creates a directory or clones a repository and does not associate the session automatically.",
-        "activation": "default",
+        "activation": "auto",
         "capability": "projects.write",
         "schema": {
           "type": "object",
@@ -43,7 +43,7 @@
       {
         "name": "aivo_projects_associate",
         "description": "Bind the current unscoped coding session to one exact project. The binding is permanent: it cannot be switched or detached. Use the projectId and rootPath returned by query or add.",
-        "activation": "default",
+        "activation": "auto",
         "capability": "projects.write",
         "schema": {
           "type": "object",

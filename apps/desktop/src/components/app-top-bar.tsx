@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,7 +5,6 @@ import {
   ChevronDown,
   FileText,
   LayoutGrid,
-  List,
   PanelLeft,
   PanelRight,
   SquarePen,
@@ -29,15 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-
-export { EnvironmentSummaryPanel } from "@/components/app-top-bar-environment-summary";
 
 const narrowTopBarGlassClass =
   "pointer-events-none absolute inset-y-0 right-0 max-[1800px]:border-b max-[1800px]:border-border/60 max-[1800px]:bg-background/75 max-[1800px]:shadow-sm max-[1800px]:shadow-background/30 max-[1800px]:backdrop-blur-xl max-[1800px]:supports-[backdrop-filter]:bg-background/60";
@@ -61,16 +50,12 @@ export function AppTopBar({
   onBranch,
   onAddScheduledTask,
   onOpenInNewWindow,
-  isPinnedSummaryOpen,
-  onTogglePinnedSummary,
   onModelSelect,
   onOpenLayoutPanel,
   onToggleTerminal,
   showTerminalButton = false,
 }: AppTopBarProps) {
-  const [internalPinnedSummaryOpen, setInternalPinnedSummaryOpen] = useState(false);
   const resolvedTitle = title?.trim() || "未命名会话";
-  const pinnedSummaryOpen = isPinnedSummaryOpen ?? internalPinnedSummaryOpen;
   const moreMenuGroups = createMoreMenuGroups({
     onAddScheduledTask,
     onArchiveConversation,
@@ -81,13 +66,6 @@ export function AppTopBar({
     onPinConversation,
     onRenameConversation,
   });
-
-  function handleTogglePinnedSummary() {
-    onTogglePinnedSummary?.();
-    if (isPinnedSummaryOpen === undefined) {
-      setInternalPinnedSummaryOpen((current) => !current);
-    }
-  }
 
   return (
     <header
@@ -157,12 +135,10 @@ export function AppTopBar({
         >
           {hasMessage ? (
             <TopRightControls
-              isPinnedSummaryOpen={pinnedSummaryOpen}
               onModelSelect={onModelSelect ?? onModeSwitch}
               onOpenLayoutPanel={onOpenLayoutPanel}
               onTogglePanel={onTogglePanel}
               onToggleTerminal={onToggleTerminal}
-              onTogglePinnedSummary={handleTogglePinnedSummary}
               showTerminalButton={showTerminalButton}
             />
           ) : (
@@ -236,8 +212,6 @@ export function AppTopBarMainSegment({
   onBranch,
   onAddScheduledTask,
   onOpenInNewWindow,
-  isPinnedSummaryOpen,
-  onTogglePinnedSummary,
   onModelSelect,
   onOpenLayoutPanel,
   onToggleTerminal,
@@ -246,9 +220,7 @@ export function AppTopBarMainSegment({
 }: AppTopBarProps & {
   showSidebarControls?: boolean;
 }) {
-  const [internalPinnedSummaryOpen, setInternalPinnedSummaryOpen] = useState(false);
   const resolvedTitle = title?.trim() || "未命名会话";
-  const pinnedSummaryOpen = isPinnedSummaryOpen ?? internalPinnedSummaryOpen;
   const moreMenuGroups = createMoreMenuGroups({
     onAddScheduledTask,
     onArchiveConversation,
@@ -259,13 +231,6 @@ export function AppTopBarMainSegment({
     onPinConversation,
     onRenameConversation,
   });
-
-  function handleTogglePinnedSummary() {
-    onTogglePinnedSummary?.();
-    if (isPinnedSummaryOpen === undefined) {
-      setInternalPinnedSummaryOpen((current) => !current);
-    }
-  }
 
   return (
     <header
@@ -325,12 +290,10 @@ export function AppTopBarMainSegment({
         >
           {hasMessage ? (
             <TopRightControls
-              isPinnedSummaryOpen={pinnedSummaryOpen}
               onModelSelect={onModelSelect ?? onModeSwitch}
               onOpenLayoutPanel={onOpenLayoutPanel}
               onTogglePanel={onTogglePanel}
               onToggleTerminal={onToggleTerminal}
-              onTogglePinnedSummary={handleTogglePinnedSummary}
               showTerminalButton={showTerminalButton}
             />
           ) : (
@@ -353,20 +316,16 @@ export function AppTopBarMainSegment({
 }
 
 function TopRightControls({
-  isPinnedSummaryOpen,
   onModelSelect,
   onOpenLayoutPanel,
   onTogglePanel,
   onToggleTerminal,
-  onTogglePinnedSummary,
   showTerminalButton,
 }: {
-  isPinnedSummaryOpen: boolean;
   onModelSelect?: () => void;
   onOpenLayoutPanel?: () => void;
   onTogglePanel?: () => void;
   onToggleTerminal?: () => void;
-  onTogglePinnedSummary?: () => void;
   showTerminalButton?: boolean;
 }) {
   return (
@@ -395,29 +354,6 @@ function TopRightControls({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              aria-label="切换置顶摘要"
-              className={cn(
-                "text-muted-foreground",
-                isPinnedSummaryOpen && "bg-accent text-accent-foreground",
-              )}
-              onClick={onTogglePinnedSummary}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <List />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={8}>
-            切换置顶摘要
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
 
       <TopBarIconButton aria-label="打开布局控制" onClick={onOpenLayoutPanel}>
         <LayoutGrid />

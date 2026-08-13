@@ -157,7 +157,7 @@ func (s *Service) ListToolCatalog(ctx context.Context, input domain.ToolCatalogI
 	}
 	entries := registry.CatalogEntries()
 	if input.Source == "" {
-		return entries, nil
+		return s.applyGlobalToolEligibility(ctx, entries)
 	}
 	filtered := make([]domain.ToolCatalogEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -165,7 +165,7 @@ func (s *Service) ListToolCatalog(ctx context.Context, input domain.ToolCatalogI
 			filtered = append(filtered, entry)
 		}
 	}
-	return filtered, nil
+	return s.applyGlobalToolEligibility(ctx, filtered)
 }
 
 func (s *Service) globalToolCatalogRegistry(ctx context.Context) *Registry {
@@ -205,7 +205,11 @@ func (s *Service) DescribeTool(ctx context.Context, input domain.ToolDescribeInp
 	}
 	for _, entry := range registry.CatalogEntries() {
 		if entry.Name == strings.TrimSpace(input.Name) {
-			return entry, nil
+			entries, eligibilityErr := s.applyGlobalToolEligibility(ctx, []domain.ToolCatalogEntry{entry})
+			if eligibilityErr != nil {
+				return domain.ToolCatalogEntry{}, eligibilityErr
+			}
+			return entries[0], nil
 		}
 	}
 	return domain.ToolCatalogEntry{}, errors.New("tool not found")

@@ -51,10 +51,18 @@ func (s *Service) runAssistantAgentLoop(
 		var toolSnapshot domain.ToolSnapshot
 		if registry != nil {
 			specs = visibleToolSpecsForMode(modeDef.ID, registry.SpecsForToolsets(allowedToolsets))
+			specs = configureAgentDelegateToolSpecs(modeDef, specs)
 			specs = filterEligibleToolSpecs(registry, specs, failedSources)
 		}
 		resolved := s.resolveHostPreCallResources(ctx, input.SessionID, turn.ID, input.Text, modeDef.ID, strings.TrimSpace(cc.ProjectPath), registry, specs)
+		explicitResourceContext := renderSessionResourceReferenceContext(input.ResourceReferences)
+		if explicitResourceContext != "" {
+			resolved.Context = strings.TrimSpace(explicitResourceContext + "\n\n" + resolved.Context)
+		}
 		if registry != nil {
+			if len(modeDef.Subagents) > 0 {
+				resolved.ToolActivations["agent_delegate_task"] = "modeAssociation"
+			}
 			for name := range s.disabledCoreTools(ctx, input.SessionID) {
 				resolved.ToolActivations[name] = "disabled"
 			}

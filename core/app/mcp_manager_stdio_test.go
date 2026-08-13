@@ -37,19 +37,45 @@ func TestMCPProbeDiscoversPromptsAndResources(t *testing.T) {
 	}
 }
 
+func TestMCPManagerAllowsBlankAndBoundsFunctionalDescription(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	base := domain.MCPServerConfig{
+		ID: "description_mcp", Name: "description_mcp", Transport: domain.MCPTransportStdio, Command: "npx",
+	}
+	saved, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: base})
+	if err != nil || saved.Description != "" {
+		t.Fatalf("blank description save = %#v, err = %v", saved, err)
+	}
+	base.Description = strings.Repeat("a", 501)
+	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: base}); err == nil || !strings.Contains(err.Error(), "at most 500 bytes") {
+		t.Fatalf("oversized description error = %v", err)
+	}
+	base.Description = "  Query and update Linear issues  "
+	saved, err = service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Description != "Query and update Linear issues" {
+		t.Fatalf("saved description = %q", saved.Description)
+	}
+}
+
 func TestMCPProbePersistsCapabilitiesForList(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
 	root := t.TempDir()
 	server := domain.MCPServerConfig{
-		ID:        "persist_mcp",
-		Name:      "persist_mcp",
-		Transport: domain.MCPTransportStdio,
-		Command:   os.Args[0],
-		Args:      []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
-		Roots:     []string{root},
-		AuthType:  domain.MCPAuthOAuth, BearerTokenEnv: "AIVO_MCP_TOKEN",
+		ID:          "persist_mcp",
+		Name:        "persist_mcp",
+		Description: "Persist discovered MCP capabilities",
+		Transport:   domain.MCPTransportStdio,
+		Command:     os.Args[0],
+		Args:        []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
+		Roots:       []string{root},
+		AuthType:    domain.MCPAuthOAuth, BearerTokenEnv: "AIVO_MCP_TOKEN",
 		OAuthIssuerURL: "https://auth.example.test", OAuthClientID: "aivo", OAuthScopes: []string{"mcp"},
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
@@ -83,11 +109,12 @@ func TestMCPPromptGetAndResourceRead(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	server := domain.MCPServerConfig{
-		ID:        "call_mcp",
-		Name:      "call_mcp",
-		Transport: domain.MCPTransportStdio,
-		Command:   os.Args[0],
-		Args:      []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
+		ID:          "call_mcp",
+		Name:        "call_mcp",
+		Description: "Read prompts and resources from the test MCP",
+		Transport:   domain.MCPTransportStdio,
+		Command:     os.Args[0],
+		Args:        []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
@@ -115,6 +142,7 @@ func TestMCPManagerReusesStdioConnectionForToolCalls(t *testing.T) {
 	server := domain.MCPServerConfig{
 		ID:             "long_lived_mcp",
 		Name:           "long_lived_mcp",
+		Description:    "Reuse the long-lived MCP test connection",
 		Transport:      domain.MCPTransportStdio,
 		Command:        os.Args[0],
 		Args:           []string{"-test.run=TestMCPLongLivedHelperProcess", "--", "mcp-long-lived-helper"},
@@ -149,13 +177,14 @@ func TestMCPManagerReconnectsAfterFailedToolCall(t *testing.T) {
 	ctx := context.Background()
 	marker := filepath.Join(t.TempDir(), "failed-once")
 	server := domain.MCPServerConfig{
-		ID:        "reconnect_mcp",
-		Name:      "reconnect_mcp",
-		Transport: domain.MCPTransportStdio,
-		Command:   os.Args[0],
-		Args:      []string{"-test.run=TestMCPReconnectHelperProcess", "--", "mcp-reconnect-helper"},
-		Env:       map[string]string{"AIVO_MCP_RECONNECT_FILE": marker},
-		Enabled:   true,
+		ID:          "reconnect_mcp",
+		Name:        "reconnect_mcp",
+		Description: "Reconnect the MCP test server after failure",
+		Transport:   domain.MCPTransportStdio,
+		Command:     os.Args[0],
+		Args:        []string{"-test.run=TestMCPReconnectHelperProcess", "--", "mcp-reconnect-helper"},
+		Env:         map[string]string{"AIVO_MCP_RECONNECT_FILE": marker},
+		Enabled:     true,
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
@@ -191,12 +220,13 @@ func TestMCPRegisterEnabledToolsIncludesResourceUtilities(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	server := domain.MCPServerConfig{
-		ID:        "resource_mcp",
-		Name:      "resource_mcp",
-		Transport: domain.MCPTransportStdio,
-		Command:   os.Args[0],
-		Args:      []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
-		Enabled:   true,
+		ID:          "resource_mcp",
+		Name:        "resource_mcp",
+		Description: "Expose resource utilities from the test MCP",
+		Transport:   domain.MCPTransportStdio,
+		Command:     os.Args[0],
+		Args:        []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
+		Enabled:     true,
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
@@ -228,12 +258,13 @@ func TestMCPManagerProbePersistsToolsListChangedRefresh(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	server := domain.MCPServerConfig{
-		ID:        "changed_manager_mcp",
-		Name:      "changed_manager_mcp",
-		Transport: domain.MCPTransportStdio,
-		Command:   os.Args[0],
-		Args:      []string{"-test.run=TestMCPToolsChangedHelperProcess", "--", "mcp-tools-changed-helper"},
-		Enabled:   true,
+		ID:          "changed_manager_mcp",
+		Name:        "changed_manager_mcp",
+		Description: "Refresh changed tools from the test MCP",
+		Transport:   domain.MCPTransportStdio,
+		Command:     os.Args[0],
+		Args:        []string{"-test.run=TestMCPToolsChangedHelperProcess", "--", "mcp-tools-changed-helper"},
+		Enabled:     true,
 	}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
@@ -288,7 +319,7 @@ func TestReadMCPServerLogReturnsBoundedTail(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
-	server := domain.MCPServerConfig{ID: "log/server", Name: "log/server", Transport: domain.MCPTransportStdio}
+	server := domain.MCPServerConfig{ID: "log/server", Name: "log/server", Description: "Read bounded MCP server logs", Transport: domain.MCPTransportStdio}
 	if _, err := service.SaveMCPServer(ctx, domain.SaveMCPServerInput{Server: server}); err != nil {
 		t.Fatal(err)
 	}

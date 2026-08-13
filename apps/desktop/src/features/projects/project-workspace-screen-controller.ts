@@ -8,7 +8,6 @@ import { useProjectConversationScroll } from "@/features/projects/project-conver
 import { useProjectConversationTurnActions } from "@/features/projects/project-conversation-turn-actions";
 import { useProjectConversationTurnLoader } from "@/features/projects/project-conversation-turn-loader";
 import { useProjectInteractionRequestState } from "@/features/projects/project-interaction-request-state";
-import { useProjectPinnedSummaryLayout } from "@/features/projects/project-pinned-summary-layout";
 import {
   getProjectConversationViewState,
   getProjectWorkspacePanelViewState,
@@ -31,7 +30,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   const {
     activeSessionId,
     isOpeningConversationFromEmpty,
-    isPinnedSummaryOpen,
     isRevealingHistoryConversation,
     prompt,
     extensionSettingsDrawerOpen,
@@ -40,7 +38,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     sessions,
     setActiveSessionId,
     setOpeningConversationFromEmpty,
-    setPinnedSummaryOpen,
     setExtensionSettingsDrawerOpen,
     setPrompt,
     setRecentProjects,
@@ -141,11 +138,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setHiddenTodoPlanKeyForSession,
   });
   const {
-    canDockPinnedSummary,
-    mainRef,
-    shouldShiftPinnedSummaryLayout,
-  } = useProjectPinnedSummaryLayout();
-  const {
     captureComposerTransitionStart,
     composerBottom,
     composerBottomSm,
@@ -170,9 +162,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   } = useProjectConversationScroll({
     composerHeight,
     hasTurns,
-    isPinnedSummaryOpen,
     lastTurnStateKey,
-    shouldShiftPinnedSummaryLayout,
     showConversationLayout,
     turnCount: turns.length,
   });
@@ -186,7 +176,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   const {
     applyToolActivityFileState,
     closedToolActivityItemIdsRef,
-    isRightSidebarOpen,
     mergeToolActivityFromCall,
     restoreToolActivitySessionState,
     saveCurrentToolActivitySessionState,
@@ -212,13 +201,10 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     setTurns,
   });
   const {
-    canUseTerminalPanel,
     hasPendingInteractionRequest,
     hasPendingPermissionRequest,
     hasPendingQuestionRequest,
-    shouldShowEnvironmentSummaryPanel,
   } = getProjectWorkspacePanelViewState({
-    isPinnedSummaryOpen,
     pendingPermissionRequests,
     pendingQuestionRequests,
   });
@@ -239,9 +225,12 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     permissionMode,
     reasoningEffort,
     removeComposerAttachment,
+    removePromptMention,
     selectAgentMode,
     selectModel,
     selectPermissionMode,
+    selectPromptMention,
+    promptResourceReferences,
     selectReasoningEffort,
     selectServiceTier,
     serviceTier,
@@ -367,7 +356,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     selectChatConversation,
     startChatConversation,
     startProjectChatConversation,
-    togglePinnedSummary,
   } = useProjectWorkspaceUiActions({
     activeParentSessionId,
     addComposerProject,
@@ -379,7 +367,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     openConversationById,
     retryConversationTurn,
     selectSidebarConversation,
-    setPinnedSummaryOpen,
     setExtensionSettingsDrawerOpen,
     setToolActivationDialogOpen,
     startNewConversation,
@@ -416,7 +403,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     },
     topBar: {
       activeProjectPage,
-      canShowTerminalPanel: canUseTerminalPanel,
       conversationTitle,
       hasConversation: Boolean(activeSessionId),
       onNewPage: startChatConversation,
@@ -426,9 +412,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       activeProjectPage,
       conversationTitle,
       hasConversation: Boolean(activeSessionId),
-      isPinnedSummaryOpen,
-      isRightSidebarOpen,
-      onTogglePinnedSummary: togglePinnedSummary,
       repositoryPath: composerProjectPath,
       sessionId: activeSessionId,
     },
@@ -443,7 +426,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       agentRuns,
       allModelOptions,
       attachments: composerAttachments,
-      canDockPinnedSummary,
       composerBottom,
       composerBottomSm,
       composerFrameRef,
@@ -456,11 +438,9 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       hasPendingTurn,
       hasTurns,
       isComposerDropActive,
-      isPinnedSummaryOpen,
       isRevealingHistoryConversation,
       isSubagentSession,
       isVisibleTodoPlanComplete,
-      mainRef,
       messagesScrollRootRef,
       modelId: activeModelId,
       modelOptions,
@@ -471,7 +451,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       onDragEnter: handleComposerDragEnter,
       onDragLeave: handleComposerDragLeave,
       onDragOver: handleComposerDragOver,
-      onDrop: handleComposerDrop,
+      onDrop: (event) => handleComposerDrop(event, addProjectToComposer),
       onExtraHeightChange: setComposerExtraHeight,
       onHeightChange: handleComposerHeightChange,
       onHideCompletedTodoPlan: hideCompletedTodoPlan,
@@ -482,6 +462,8 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       onProjectClear: clearComposerProject,
       onProjectSelect: selectComposerProject,
       onPromptChange: setPrompt,
+      onPromptMentionRemove: removePromptMention,
+      onPromptMentionSelect: selectPromptMention,
       onReasoningEffortSelect: selectReasoningEffort,
       onRemoveAttachment: removeComposerAttachment,
       onScrollToBottom: handleScrollToBottomButtonClick,
@@ -494,10 +476,9 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       projectPath: composerProjectPath,
       projects: recentProjects,
       prompt,
+      promptResourceReferences,
       reasoningEffort,
       serviceTier,
-      shouldShiftPinnedSummaryLayout,
-      shouldShowEnvironmentSummaryPanel,
       shouldShowTodoFloatingStatus,
       showConversationLayout,
       showScrollToBottomButton,

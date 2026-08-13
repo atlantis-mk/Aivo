@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   normalizeMcpDraft,
@@ -7,14 +7,16 @@ import {
 import { useExtensionSettingsCatalogState } from "@/features/projects/extension-settings-catalog-state";
 import { useExtensionSettingsDerivedState } from "@/features/projects/extension-settings-derived-state";
 import {
+  deleteAgentMode,
   deleteManagedSkill,
   ignoreSkillCandidatesByName,
   importSkill,
   probeMCPServer,
+  saveAgentMode,
   saveMCPServer,
   setSkillEnabled,
-  getSessionActiveTools,
-  setSessionActiveTools,
+  setGlobalToolEnabled,
+  type AgentModeDefinition,
   type MCPServerConfig,
   type SkillEntry,
   type SkillImportCandidate,
@@ -22,25 +24,22 @@ import {
 
 export function useExtensionSettingsState({
   active,
-  sessionId,
   workspaceRoot,
 }: {
   active: boolean;
-  sessionId?: string;
   workspaceRoot?: string;
 }) {
   const catalog = useExtensionSettingsCatalogState({ active, workspaceRoot });
-  const setCatalogError = catalog.setError;
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<ExtensionSettingsSection>("extensions");
+  const [agentModeEditorOpen, setAgentModeEditorOpen] = useState(false);
+  const [editingAgentMode, setEditingAgentMode] = useState<
+    AgentModeDefinition | undefined
+  >();
   const [addOpen, setAddOpen] = useState(false);
   const [extensionInstallOpen, setExtensionInstallOpen] = useState(false);
-  const [activeToolNames, setActiveToolNames] = useState<string[]>([]);
-  const activeToolSet = useMemo(
-    () => new Set(activeToolNames),
-    [activeToolNames],
-  );
   const {
+    visibleAgentModes,
     visibleExtensions,
     visibleAllTools,
     visibleServers,
@@ -48,6 +47,7 @@ export function useExtensionSettingsState({
     visibleSkills,
     visibleTools,
   } = useExtensionSettingsDerivedState({
+    agentModes: catalog.agentModes,
     extensions: catalog.extensions,
     query,
     servers: catalog.servers,
@@ -56,30 +56,13 @@ export function useExtensionSettingsState({
     tools: catalog.tools,
     workspaceRoot,
   });
-
-  useEffect(() => {
-    if (!active || !sessionId) {
-      setActiveToolNames([]);
-      return;
-    }
-    let cancelled = false;
-    void getSessionActiveTools(sessionId)
-      .then((result) => {
-        if (!cancelled) {
-          setActiveToolNames([
-            ...new Set([...result.toolNames, ...result.coreToolNames]),
-          ]);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setCatalogError(err instanceof Error ? err.message : String(err));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [active, sessionId, setCatalogError]);
+  const activeToolSet = useMemo(
+    () =>
+      new Set(
+        visibleTools.filter((tool) => tool.enabled).map((tool) => tool.name),
+      ),
+    [visibleTools],
+  );
 
   async function addMcpServer(server: MCPServerConfig) {
     await addMcpServers([server], true);
@@ -189,29 +172,53 @@ export function useExtensionSettingsState({
   }
 
   async function toggleTool(toolName: string, enabled: boolean) {
-    if (!sessionId) return;
-    const next = new Set(activeToolNames);
-    if (enabled) {
-      next.add(toolName);
-    } else {
-      next.delete(toolName);
-    }
-    const toolNames = [...next].toSorted();
-    setActiveToolNames(toolNames);
+    catalog.setLoading(true);
+    catalog.setError("");
     try {
-      const saved = await setSessionActiveTools(sessionId, toolNames);
-      setActiveToolNames([
-        ...new Set([...saved.toolNames, ...saved.coreToolNames]),
-      ]);
+      await setGlobalToolEnabled(toolName, enabled, workspaceRoot ?? "");
+      await catalog.reload();
     } catch (err) {
       catalog.setError(err instanceof Error ? err.message : String(err));
-      const current = await getSessionActiveTools(sessionId).catch(() => null);
-      if (current) {
-        setActiveToolNames([
-          ...new Set([...current.toolNames, ...current.coreToolNames]),
-        ]);
-      }
+    } finally {
+      catalog.setLoading(false);
     }
+  }
+
+  async function saveManagedAgentMode(definition: AgentModeDefinition) {
+    catalog.setLoading(true);
+    catalog.setError("");
+    try {
+      await saveAgentMode(definition);
+      await catalog.reload();
+      setAgentModeEditorOpen(false);
+      setEditingAgentMode(undefined);
+    } catch (err) {
+      catalog.setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      catalog.setLoading(false);
+    }
+  }
+
+  async function deleteManagedAgentMode(mode: AgentModeDefinition) {
+    catalog.setLoading(true);
+    catalog.setError("");
+    try {
+      await deleteAgentMode(mode.id);
+      await catalog.reload();
+      setAgentModeEditorOpen(false);
+      setEditingAgentMode(undefined);
+    } catch (err) {
+      catalog.setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      catalog.setLoading(false);
+    }
+  }
+
+  function editAgentMode(mode: AgentModeDefinition) {
+    setEditingAgentMode(mode);
+    setAgentModeEditorOpen(true);
   }
 
   function openAddDialog() {
@@ -223,15 +230,25 @@ export function useExtensionSettingsState({
       void catalog.reload();
       return;
     }
+    if (section === "agents") {
+      setEditingAgentMode(undefined);
+      setAgentModeEditorOpen(true);
+      return;
+    }
     setAddOpen(true);
   }
 
   return {
+    agentModeEditorOpen,
+    agentModes: catalog.agentModes,
     addMcpServer,
     addMcpServers,
     addOpen,
     activeToolSet,
+    deleteManagedAgentMode,
     deleteSkill,
+    editAgentMode,
+    editingAgentMode,
     error: catalog.error,
     extensionInstallOpen,
     extensions: catalog.extensions,
@@ -239,17 +256,21 @@ export function useExtensionSettingsState({
     importSkillCandidate,
     loading: catalog.loading,
     openAddDialog,
+    providerCatalog: catalog.providerCatalog,
     query,
     reload: catalog.reload,
+    saveManagedAgentMode,
     section,
     servers: catalog.servers,
     setAddOpen,
+    setAgentModeEditorOpen,
     setExtensionInstallOpen,
     setQuery,
     setSection,
     skills: catalog.skills,
     toggleSkillEnabled,
     toggleTool,
+    visibleAgentModes,
     visibleAllTools,
     visibleExtensions,
     visibleServers,

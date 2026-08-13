@@ -155,7 +155,7 @@ export function useToolActivationDialogState({
             activeSkills.skillIds,
           );
           setTools(catalogTools);
-          setSkills(skillList.entries ?? []);
+          setSkills((skillList.entries ?? []).filter((skill) => skill.enabled));
           setSkillCandidates(skillList.candidates ?? []);
           setActiveToolNames(normalizedActiveTools);
           setSavedToolNames(normalizedActiveTools);

@@ -5,11 +5,13 @@ export function emptyMcpServer(): MCPServerConfig {
   return {
     id: "",
     name: "",
+    description: "",
     transport: "stdio",
     command: "",
     args: [],
     roots: [],
     authType: "none",
+    bearerAuthMode: "direct",
     enabled: false,
   };
 }
@@ -23,7 +25,15 @@ export function mcpServerToDraft(server: MCPServerConfig): MCPServerConfig {
     headers: server.headers ?? {},
     roots: server.roots ?? [],
     authType: server.authType ?? "none",
+    bearerAuthMode: server.bearerTokenEnv?.trim() ? "env" : "direct",
   };
+}
+
+export function applyGeneratedMcpDescription(
+  draft: MCPServerConfig,
+  description: string,
+): MCPServerConfig {
+  return { ...draft, description };
 }
 
 export function normalizeMcpDraft(draft: MCPServerConfig): MCPServerConfig {
@@ -37,8 +47,21 @@ export function normalizeMcpDraft(draft: MCPServerConfig): MCPServerConfig {
     authType: draft.transport === "stdio" ? "none" : httpAuthType,
     bearerTokenEnv:
       draft.transport !== "stdio" &&
-      (httpAuthType === "bearer" || httpAuthType === "oauth")
+      (httpAuthType === "oauth" ||
+        (httpAuthType === "bearer" && draft.bearerAuthMode === "env"))
         ? draft.bearerTokenEnv
+        : "",
+    bearerTokenRef:
+      draft.transport !== "stdio" &&
+      httpAuthType === "bearer" &&
+      draft.bearerAuthMode !== "env"
+        ? draft.bearerTokenRef
+        : "",
+    bearerToken:
+      draft.transport !== "stdio" &&
+      httpAuthType === "bearer" &&
+      draft.bearerAuthMode !== "env"
+        ? draft.bearerToken
         : "",
     oauthIssuerUrl:
       draft.transport !== "stdio" && httpAuthType === "oauth"
@@ -105,8 +128,16 @@ export function parseWords(value: string) {
 
 export function canSaveMcpDraft(draft: MCPServerConfig) {
   if (!draft.id.trim()) return false;
+  if ((draft.description?.trim().length ?? 0) > 500) {
+    return false;
+  }
   if (draft.transport === "stdio") return Boolean(draft.command?.trim());
-  if (draft.authType === "bearer" && !draft.bearerTokenEnv?.trim()) {
+  if (
+    draft.authType === "bearer" &&
+    (draft.bearerAuthMode === "env"
+      ? !draft.bearerTokenEnv?.trim()
+      : !draft.bearerToken?.trim() && !draft.bearerTokenRef?.trim())
+  ) {
     return false;
   }
   return Boolean(draft.url?.trim());

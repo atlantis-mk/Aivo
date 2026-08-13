@@ -95,7 +95,7 @@ func anthropicAttachmentParts(attachments []domain.MessageAttachment) []map[stri
 		}
 		data := strings.TrimSpace(attachment.Data)
 		if data == "" {
-			if text := strings.TrimSpace(attachment.Text); text != "" {
+			if text := attachment.Text; strings.TrimSpace(text) != "" {
 				parts = append(parts, map[string]any{"type": "text", "text": attachment.Name + "\n" + text})
 			}
 			continue

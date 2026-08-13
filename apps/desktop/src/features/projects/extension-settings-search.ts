@@ -1,4 +1,5 @@
 import type {
+  AgentModeDefinition,
   ExtensionInstall,
   MCPServerListItem,
   SkillEntry,
@@ -36,10 +37,35 @@ export function addButtonLabel(section: ExtensionSettingsSection) {
   if (section === "skills") {
     return "扫描技能";
   }
+  if (section === "agents") {
+    return "添加 Agent 模式";
+  }
   if (section === "mcp" || section === "tools") {
     return "添加 MCP 工具";
   }
   return "添加 MCP 工具";
+}
+
+export function filterAgentModes(items: AgentModeDefinition[], query: string) {
+  const normalized = normalizeSearch(query);
+  if (!normalized) return items;
+  return items.filter((mode) =>
+    matchesSearch(
+      [
+        mode.id,
+        mode.displayName,
+        mode.description,
+        mode.prompt,
+        mode.mode,
+        mode.permissionScope,
+        mode.source,
+        mode.model?.providerId,
+        mode.model?.modelId,
+        ...(mode.subagents ?? []),
+      ],
+      normalized,
+    ),
+  );
 }
 
 export function filterServers(items: MCPServerListItem[], query: string) {

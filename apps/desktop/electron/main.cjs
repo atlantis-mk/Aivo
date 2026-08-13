@@ -10,10 +10,87 @@ registerExtensionScheme()
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 const isMac = process.platform === 'darwin'
 const coreUrl = process.env.AIVO_CORE_URL || 'http://127.0.0.1:43117'
+const maxComposerAttachmentBytes = 50 * 1024 * 1024
+const maxComposerLocalResources = 32
 
 let coreProcess = null
 let logFile = null
 let extensionViewManager = null
+
+function composerAttachmentMimeType(filePath) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.png': return 'image/png'
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg'
+    case '.gif': return 'image/gif'
+    case '.webp': return 'image/webp'
+    case '.pdf': return 'application/pdf'
+    case '.docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case '.xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    case '.pptx': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    case '.txt':
+    case '.md': return 'text/plain'
+    case '.css': return 'text/css'
+    case '.html':
+    case '.htm': return 'text/html'
+    case '.js':
+    case '.jsx':
+    case '.mjs':
+    case '.cjs': return 'text/javascript'
+    case '.ts':
+    case '.tsx': return 'text/typescript'
+    case '.json': return 'application/json'
+    case '.csv': return 'text/csv'
+    case '.xml': return 'application/xml'
+    case '.yaml':
+    case '.yml': return 'application/yaml'
+    case '.toml': return 'application/toml'
+    default: return 'application/octet-stream'
+  }
+}
+
+async function composerLocalSelectionFromPath(selectedPath, byteBudget = maxComposerAttachmentBytes) {
+  if (typeof selectedPath !== 'string' || !path.isAbsolute(selectedPath)) {
+    throw new Error('本地资源路径无效。')
+  }
+  const selectedInfo = await fs.promises.lstat(selectedPath)
+  if (selectedInfo.isSymbolicLink()) {
+    throw new Error('不能将符号链接作为模型附件发送。')
+  }
+  if (selectedInfo.isDirectory()) {
+    return { kind: 'directory', path: selectedPath }
+  }
+  if (!selectedInfo.isFile()) {
+    throw new Error('只能选择普通文件或文件夹')
+  }
+  if (selectedInfo.size > byteBudget) {
+    throw new Error(`${path.basename(selectedPath)} 使本次附件总大小超过 50 MB。`)
+  }
+
+  const handle = await fs.promises.open(selectedPath, 'r')
+  try {
+    const openedInfo = await handle.stat()
+    if (!openedInfo.isFile()) {
+      throw new Error('只能选择普通文件或文件夹')
+    }
+    if (openedInfo.size > byteBudget) {
+      throw new Error(`${path.basename(selectedPath)} 使本次附件总大小超过 50 MB。`)
+    }
+    const data = await handle.readFile()
+    if (data.byteLength > byteBudget) {
+      throw new Error(`${path.basename(selectedPath)} 使本次附件总大小超过 50 MB。`)
+    }
+    return {
+      kind: 'file',
+      name: path.basename(selectedPath),
+      mimeType: composerAttachmentMimeType(selectedPath),
+      size: data.byteLength,
+      data: data.toString('base64'),
+    }
+  } finally {
+    await handle.close()
+  }
+}
 
 function appendLog(level, message, metadata = {}) {
   const line = JSON.stringify({
@@ -130,7 +207,6 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
@@ -167,6 +243,40 @@ ipcMain.handle('aivo:select-extension-directory', async () => {
   }
 
   return result.filePaths[0]
+})
+
+ipcMain.handle('aivo:select-composer-file-or-directory', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择文件或文件夹',
+    properties: ['openFile', 'openDirectory'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  return composerLocalSelectionFromPath(result.filePaths[0])
+})
+
+ipcMain.handle('aivo:inspect-dropped-composer-resources', async (_event, selectedPaths) => {
+  if (!Array.isArray(selectedPaths)) {
+    throw new Error('拖放资源列表无效。')
+  }
+  const uniquePaths = [...new Set(selectedPaths)]
+  if (uniquePaths.length > maxComposerLocalResources) {
+    throw new Error(`一次最多拖入 ${maxComposerLocalResources} 个文件或文件夹。`)
+  }
+
+  let remainingBytes = maxComposerAttachmentBytes
+  const selections = []
+  for (const selectedPath of uniquePaths) {
+    const selection = await composerLocalSelectionFromPath(selectedPath, remainingBytes)
+    selections.push(selection)
+    if (selection.kind === 'file') {
+      remainingBytes -= selection.size
+    }
+  }
+  return selections
 })
 
 ipcMain.handle('aivo:open-external', async (_event, target) => {

@@ -4,6 +4,7 @@ import { emptyMcpServer } from "@/features/projects/extension-settings-mcp-draft
 export const MCP_IMPORT_PLACEHOLDER = `{
   "mcpServers": {
     "filesystem": {
+      "description": "读取和管理指定目录中的文件",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/project"]
     }
@@ -64,7 +65,7 @@ function mcpServerFromImportEntry(
     id: cleanID,
     name: optionalString(value.name) || cleanID,
     displayName: optionalString(value.displayName),
-    description: optionalString(value.description),
+    description: optionalString(value.description) ?? "",
     transport,
     command: transport === "stdio" ? command : "",
     args:
@@ -75,8 +76,15 @@ function mcpServerFromImportEntry(
     env: optionalStringMap(value.env, `${cleanID}.env`),
     url: transport === "stdio" ? "" : url,
     headers: optionalStringMap(value.headers, `${cleanID}.headers`),
-    authType: normalizeImportedMcpAuthType(optionalString(value.authType)),
+    authType: normalizeImportedMcpAuthType(
+      optionalString(value.authType) ||
+        (optionalString(value.bearerToken) || optionalString(value.bearerTokenEnv)
+          ? "bearer"
+          : undefined),
+    ),
     bearerTokenEnv: optionalString(value.bearerTokenEnv),
+    bearerToken: optionalString(value.bearerToken),
+    bearerAuthMode: optionalString(value.bearerTokenEnv) ? "env" : "direct",
     oauthIssuerUrl: optionalString(value.oauthIssuerUrl),
     oauthClientId: optionalString(value.oauthClientId),
     oauthScopes: optionalStringArray(

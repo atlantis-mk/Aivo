@@ -2,12 +2,54 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"aivo/core/domain"
 )
+
+var protectedManagedAgentModes = map[string]bool{
+	domain.AgentModePlanner:         true,
+	domain.AgentModeSummary:         true,
+	domain.AgentModeTitle:           true,
+	domain.AgentModeSchedulerWorker: true,
+}
+
+func (s *Service) globalAgentCatalog(ctx context.Context) (*AgentCatalog, error) {
+	var persisted []domain.AgentModeDefinition
+	if store, ok := s.store.(agentModeDefinitionStore); ok {
+		definitions, err := store.ListAgentModeDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, definition := range definitions {
+			normalized, normalizeErr := normalizeManagedAgentMode(definition)
+			if normalizeErr != nil {
+				return nil, errors.New("invalid persisted agent mode " + definition.ID + ": " + normalizeErr.Error())
+			}
+			persisted = append(persisted, normalized)
+		}
+	}
+	catalog := NewAgentCatalogWithDefinitions(persisted)
+	if err := validateAgentCatalogAssociations(catalog); err != nil {
+		return nil, err
+	}
+	return catalog, nil
+}
+
+func (s *Service) agentCatalogForProject(ctx context.Context, projectPath string) (*AgentCatalog, error) {
+	catalog, err := s.globalAgentCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	catalog.ApplyRuntime(loadEffectiveRuntimeConfig(projectPath).Config)
+	if err := validateAgentCatalogAssociations(catalog); err != nil {
+		return nil, err
+	}
+	return catalog, nil
+}
 
 func (s *Service) resolveAgentModeForRequest(ctx context.Context, sessionID string, requested string) (domain.AgentModeDefinition, error) {
 	mode := strings.TrimSpace(requested)
@@ -26,7 +68,10 @@ func (s *Service) resolveAgentModeForRequest(ctx context.Context, sessionID stri
 			parentSessionID = session.ParentSessionID
 		}
 	}
-	catalog := NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(projectPath).Config)
+	catalog, err := s.agentCatalogForProject(ctx, projectPath)
+	if err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
 	def, err := catalog.Get(mode)
 	if err != nil {
 		return domain.AgentModeDefinition{}, err
@@ -34,7 +79,7 @@ func (s *Service) resolveAgentModeForRequest(ctx context.Context, sessionID stri
 	if def.Mode == "subagent" && parentSessionID == "" {
 		return domain.AgentModeDefinition{}, errors.New("subagent-only mode cannot be used by a primary session")
 	}
-	if def.Revision != "" {
+	if def.Revision != "" && !def.BuiltIn {
 		if err := s.validateAgentToolsets(projectPath, def); err != nil {
 			return domain.AgentModeDefinition{}, err
 		}
@@ -57,6 +102,10 @@ func allowedToolsetsForRun(modeDef domain.AgentModeDefinition, input domain.Subm
 func visibleToolSpecsForMode(mode string, specs []domain.ToolSpec) []domain.ToolSpec {
 	out := make([]domain.ToolSpec, 0, len(specs))
 	for _, spec := range specs {
+		if spec.Name == "agent_delegate_task" {
+			out = append(out, spec)
+			continue
+		}
 		action := permissionActionForSpec(spec)
 		switch mode {
 		case domain.AgentModeExplore, domain.AgentModePlan, domain.AgentModePlanner, domain.AgentModeReview, domain.AgentModeSummary, domain.AgentModeTitle:
@@ -70,6 +119,42 @@ func visibleToolSpecsForMode(mode string, specs []domain.ToolSpec) []domain.Tool
 		default:
 			out = append(out, spec)
 		}
+	}
+	return out
+}
+
+func configureAgentDelegateToolSpecs(modeDef domain.AgentModeDefinition, specs []domain.ToolSpec) []domain.ToolSpec {
+	out := make([]domain.ToolSpec, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Name != "agent_delegate_task" {
+			out = append(out, spec)
+			continue
+		}
+		if len(modeDef.Subagents) == 0 {
+			continue
+		}
+		spec.Description = "Delegate one bounded independent task to an associated child Agent. Available modes: " + strings.Join(modeDef.Subagents, ", ") + "."
+		spec.InputSchema = map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"mode": map[string]any{
+					"type":        "string",
+					"enum":        append([]string{}, modeDef.Subagents...),
+					"description": "Associated child Agent mode to run.",
+				},
+				"prompt": map[string]any{
+					"type":        "string",
+					"description": "Complete bounded task and context for the child Agent.",
+				},
+				"title": map[string]any{
+					"type":        "string",
+					"description": "Optional concise child-session title.",
+				},
+			},
+			"required": []string{"mode", "prompt"},
+		}
+		out = append(out, spec)
 	}
 	return out
 }
@@ -128,14 +213,218 @@ func (s *Service) validateAgentToolsets(projectPath string, mode domain.AgentMod
 }
 
 func (s *Service) ListAgentModes(ctx context.Context, includeHidden bool) ([]domain.AgentModeDefinition, error) {
-	if s.agentCatalog == nil {
-		s.agentCatalog = NewAgentCatalog()
+	catalog, err := s.globalAgentCatalog(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.agentCatalog.List(includeHidden), nil
+	return catalog.List(includeHidden), nil
 }
 
-func (s *Service) ListAgentModesForProject(_ context.Context, projectPath string, includeHidden bool) ([]domain.AgentModeDefinition, error) {
-	return NewAgentCatalogWithRuntime(loadEffectiveRuntimeConfig(projectPath).Config).List(includeHidden), nil
+func (s *Service) ListAgentModesForProject(ctx context.Context, projectPath string, includeHidden bool) ([]domain.AgentModeDefinition, error) {
+	catalog, err := s.agentCatalogForProject(ctx, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	return catalog.List(includeHidden), nil
+}
+
+func (s *Service) GetAgentMode(ctx context.Context, id string) (domain.AgentModeDefinition, error) {
+	catalog, err := s.globalAgentCatalog(ctx)
+	if err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	definition, err := catalog.Get(id)
+	if err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	if definition.Hidden || protectedManagedAgentModes[definition.ID] {
+		return domain.AgentModeDefinition{}, errors.New("agent mode is not manageable")
+	}
+	return definition, nil
+}
+
+func (s *Service) SaveAgentMode(ctx context.Context, input domain.AgentModeDefinition) (domain.AgentModeDefinition, error) {
+	store, ok := s.store.(agentModeDefinitionStore)
+	if !ok {
+		return domain.AgentModeDefinition{}, errors.New("agent mode persistence is unavailable")
+	}
+	definition, err := normalizeManagedAgentMode(input)
+	if err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	definitions, err := store.ListAgentModeDefinitions(ctx)
+	if err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	replaced := false
+	for index := range definitions {
+		if definitions[index].ID == definition.ID {
+			definitions[index] = definition
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		definitions = append(definitions, definition)
+	}
+	prospective := NewAgentCatalogWithDefinitions(definitions)
+	if err := validateAgentCatalogAssociations(prospective); err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	if err := store.SaveAgentModeDefinition(ctx, definition); err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	return s.GetAgentMode(ctx, definition.ID)
+}
+
+func (s *Service) DeleteAgentMode(ctx context.Context, id string) error {
+	store, ok := s.store.(agentModeDefinitionStore)
+	if !ok {
+		return errors.New("agent mode persistence is unavailable")
+	}
+	normalized, err := domain.NormalizeAgentMode(id)
+	if err != nil {
+		return err
+	}
+	if protectedManagedAgentModes[normalized] {
+		return errors.New("internal agent modes cannot be deleted")
+	}
+	builtIn := false
+	if definition, getErr := NewAgentCatalog().Get(normalized); getErr == nil {
+		builtIn = definition.BuiltIn && !definition.Hidden
+	}
+	return store.DeleteAgentModeDefinition(ctx, normalized, !builtIn)
+}
+
+func normalizeManagedAgentMode(input domain.AgentModeDefinition) (domain.AgentModeDefinition, error) {
+	id, err := domain.NormalizeAgentMode(input.ID)
+	if err != nil {
+		return domain.AgentModeDefinition{}, err
+	}
+	if protectedManagedAgentModes[id] {
+		return domain.AgentModeDefinition{}, errors.New("internal agent modes cannot be managed")
+	}
+	input.ID = id
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Description = strings.TrimSpace(input.Description)
+	input.Prompt = strings.TrimSpace(input.Prompt)
+	input.PermissionScope = strings.TrimSpace(strings.ToLower(input.PermissionScope))
+	input.Mode = strings.TrimSpace(strings.ToLower(input.Mode))
+	if len(input.Subagents) > 16 {
+		return domain.AgentModeDefinition{}, errors.New("subagents must not exceed 16 entries")
+	}
+	seenSubagents := map[string]bool{}
+	normalizedSubagents := make([]string, 0, len(input.Subagents))
+	for _, candidate := range input.Subagents {
+		subagent, normalizeErr := domain.NormalizeAgentMode(candidate)
+		if normalizeErr != nil {
+			return domain.AgentModeDefinition{}, errors.New("subagents contains an invalid agent mode")
+		}
+		if subagent == id {
+			return domain.AgentModeDefinition{}, errors.New("agent mode cannot associate itself as a subagent")
+		}
+		if seenSubagents[subagent] {
+			return domain.AgentModeDefinition{}, errors.New("subagents must contain unique agent modes")
+		}
+		seenSubagents[subagent] = true
+		normalizedSubagents = append(normalizedSubagents, subagent)
+	}
+	input.Subagents = normalizedSubagents
+	input.Variant = strings.TrimSpace(input.Variant)
+	if input.DisplayName == "" || len(input.DisplayName) > 80 {
+		return domain.AgentModeDefinition{}, errors.New("displayName is required and must not exceed 80 bytes")
+	}
+	if len(input.Description) > 500 {
+		return domain.AgentModeDefinition{}, errors.New("description must not exceed 500 bytes")
+	}
+	if input.Prompt == "" || len(input.Prompt) > 32768 {
+		return domain.AgentModeDefinition{}, errors.New("prompt is required and must not exceed 32768 bytes")
+	}
+	if input.Mode == "" {
+		input.Mode = "all"
+	}
+	if input.Mode != "primary" && input.Mode != "subagent" && input.Mode != "all" {
+		return domain.AgentModeDefinition{}, errors.New("mode must be primary, subagent, or all")
+	}
+	if input.Mode == "subagent" && len(input.Subagents) > 0 {
+		return domain.AgentModeDefinition{}, errors.New("subagent-only modes cannot associate subagents")
+	}
+	builtin, builtinErr := NewAgentCatalog().Get(id)
+	if builtinErr == nil && builtin.BuiltIn {
+		if input.Mode == "subagent" {
+			return domain.AgentModeDefinition{}, errors.New("built-in agent modes cannot become subagent-only")
+		}
+		input.Toolsets = append([]string{}, builtin.Toolsets...)
+	} else {
+		input.Toolsets = []string{"safe"}
+	}
+	switch input.PermissionScope {
+	case "", "workspace", "workspace_approval", "read_only", "no_shell":
+	default:
+		return domain.AgentModeDefinition{}, errors.New("unsupported permissionScope")
+	}
+	if input.Temperature != nil && (*input.Temperature < 0 || *input.Temperature > 2) {
+		return domain.AgentModeDefinition{}, errors.New("temperature must be between 0 and 2")
+	}
+	if input.TopP != nil && (*input.TopP < 0 || *input.TopP > 1) {
+		return domain.AgentModeDefinition{}, errors.New("topP must be between 0 and 1")
+	}
+	if input.MaxSteps < 0 || input.MaxSteps > 100 {
+		return domain.AgentModeDefinition{}, errors.New("maxSteps must be between 0 and 100")
+	}
+	if input.Model != nil {
+		input.Model.ProviderID = strings.TrimSpace(input.Model.ProviderID)
+		input.Model.ModelID = strings.TrimSpace(input.Model.ModelID)
+		if input.Model.ProviderID == "" || input.Model.ModelID == "" || len(input.Model.ProviderID) > 128 || len(input.Model.ModelID) > 256 {
+			return domain.AgentModeDefinition{}, errors.New("model requires bounded providerId and modelId")
+		}
+	}
+	if raw, marshalErr := json.Marshal(input.Options); marshalErr != nil || len(raw) > 16384 {
+		return domain.AgentModeDefinition{}, errors.New("options must be valid JSON and not exceed 16384 bytes")
+	}
+	input.Hidden = false
+	input.FileWriteAccess = input.PermissionScope != "read_only" && toolsetMayProvide(input.Toolsets, "coding")
+	input.CommandAccess = input.PermissionScope != "read_only" && toolsetMayProvide(input.Toolsets, "coding")
+	input.NetworkAccess = toolsetMayProvide(input.Toolsets, "web")
+	input.BackgroundTaskAccess = false
+	input.Source = ""
+	input.BuiltIn = false
+	input.Overridden = false
+	input.Revision = ""
+	return input, nil
+}
+
+func validateAgentCatalogAssociations(catalog *AgentCatalog) error {
+	if catalog == nil {
+		return nil
+	}
+	for _, definition := range catalog.List(true) {
+		if len(definition.Subagents) == 0 {
+			continue
+		}
+		if definition.Mode == "subagent" {
+			return errors.New("agent mode " + definition.ID + " is subagent-only and cannot associate subagents")
+		}
+		if len(definition.Subagents) > 16 {
+			return errors.New("agent mode " + definition.ID + " exceeds the subagent association limit")
+		}
+		seen := map[string]bool{}
+		for _, candidate := range definition.Subagents {
+			targetID, err := domain.NormalizeAgentMode(candidate)
+			if err != nil || targetID == definition.ID || seen[targetID] {
+				return errors.New("agent mode " + definition.ID + " has invalid subagent associations")
+			}
+			seen[targetID] = true
+			target, err := catalog.Get(targetID)
+			if err != nil {
+				return errors.New("agent mode " + definition.ID + " references missing subagent " + targetID)
+			}
+			if target.Hidden || protectedManagedAgentModes[target.ID] || target.Mode == "primary" {
+				return errors.New("agent mode " + definition.ID + " references unavailable subagent " + targetID)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) SetSessionAgentMode(ctx context.Context, input domain.SetSessionAgentModeInput) (domain.Session, error) {

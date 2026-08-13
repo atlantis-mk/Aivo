@@ -8,13 +8,24 @@ export type AgentModeDefinition = {
   displayName: string;
   description: string;
   prompt: string;
-  toolsets: string[];
   fileWriteAccess?: boolean;
   commandAccess?: boolean;
   networkAccess?: boolean;
   backgroundTaskAccess?: boolean;
   hidden?: boolean;
   mode?: "primary" | "subagent" | "all";
+  subagents?: string[];
+  model?: { providerId: string; modelId: string };
+  temperature?: number;
+  topP?: number;
+  maxSteps?: number;
+  permissionScope?: string;
+  variant?: string;
+  options?: Record<string, unknown>;
+  revision?: string;
+  source?: "builtin" | "user" | "project" | string;
+  builtIn?: boolean;
+  overridden?: boolean;
 };
 
 export type AgentRun = {
@@ -68,6 +79,27 @@ export function listAgentModesForProject(projectPath: string, includeHidden = fa
     projectPath,
     includeHidden,
   );
+}
+
+export function getAgentMode(id: string) {
+  return invoke<AgentModeDefinition>("GetAgentMode", id);
+}
+
+export async function saveAgentMode(definition: AgentModeDefinition) {
+  const saved = await invoke<AgentModeDefinition>("SaveAgentMode", definition);
+  notifyAgentModesChanged();
+  return saved;
+}
+
+export async function deleteAgentMode(id: string) {
+  await invoke<void>("DeleteAgentMode", { id });
+  notifyAgentModesChanged();
+}
+
+function notifyAgentModesChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("aivo:agent-modes-changed"));
+  }
 }
 
 export function setSessionAgentMode(sessionId: string, mode: AgentModeId) {

@@ -132,6 +132,8 @@ func NewAgentCatalog() *AgentCatalog {
 		if item.Mode == "" {
 			item.Mode = "all"
 		}
+		item.Source = "builtin"
+		item.BuiltIn = true
 		c.modes[item.ID] = item
 		c.order = append(c.order, item.ID)
 	}
@@ -140,6 +142,46 @@ func NewAgentCatalog() *AgentCatalog {
 
 func NewAgentCatalogWithRuntime(runtime domain.RuntimeConfig) *AgentCatalog {
 	catalog := NewAgentCatalog()
+	catalog.ApplyRuntime(runtime)
+	return catalog
+}
+
+func NewAgentCatalogWithDefinitions(definitions []domain.AgentModeDefinition) *AgentCatalog {
+	catalog := NewAgentCatalog()
+	for _, definition := range definitions {
+		id, err := domain.NormalizeAgentMode(definition.ID)
+		if err != nil {
+			continue
+		}
+		builtInDefinition, builtIn := catalog.modes[id]
+		definition.ID = id
+		if builtIn {
+			definition.Toolsets = append([]string{}, builtInDefinition.Toolsets...)
+		} else {
+			definition.Toolsets = []string{"safe"}
+		}
+		definition.BuiltIn = builtIn
+		definition.Overridden = builtIn
+		definition.Source = "user"
+		if definition.Mode == "" {
+			definition.Mode = "all"
+		}
+		definition.FileWriteAccess = definition.PermissionScope != "read_only" && toolsetMayProvide(definition.Toolsets, "coding")
+		definition.CommandAccess = definition.PermissionScope != "read_only" && toolsetMayProvide(definition.Toolsets, "coding")
+		definition.NetworkAccess = toolsetMayProvide(definition.Toolsets, "web")
+		definition.Revision = agentModeRevision(definition)
+		if !builtIn {
+			catalog.order = append(catalog.order, id)
+		}
+		catalog.modes[id] = definition
+	}
+	return catalog
+}
+
+func (catalog *AgentCatalog) ApplyRuntime(runtime domain.RuntimeConfig) {
+	if catalog == nil {
+		return
+	}
 	names := make([]string, 0, len(runtime.Agents))
 	for name := range runtime.Agents {
 		names = append(names, name)
@@ -196,18 +238,35 @@ func NewAgentCatalogWithRuntime(runtime domain.RuntimeConfig) *AgentCatalog {
 		if strings.TrimSpace(configured.Mode) != "" {
 			definition.Mode = strings.TrimSpace(configured.Mode)
 		}
+		if configured.Subagents != nil {
+			definition.Subagents = make([]string, 0, len(configured.Subagents))
+			for _, candidate := range configured.Subagents {
+				normalized, err := domain.NormalizeAgentMode(candidate)
+				if err != nil {
+					definition.Subagents = append(definition.Subagents, candidate)
+					continue
+				}
+				definition.Subagents = append(definition.Subagents, normalized)
+			}
+		}
 		definition.Variant = strings.TrimSpace(configured.Variant)
 		definition.Options = cloneAnyMap(configured.Options)
 		definition.Hidden = configured.Hidden
+		definition.Source = "project"
+		definition.BuiltIn = exists && definition.BuiltIn
+		definition.Overridden = exists
 		definition.FileWriteAccess = definition.PermissionScope != "read_only" && toolsetMayProvide(definition.Toolsets, "coding")
 		definition.CommandAccess = definition.PermissionScope != "read_only" && toolsetMayProvide(definition.Toolsets, "coding")
 		definition.NetworkAccess = toolsetMayProvide(definition.Toolsets, "web")
-		raw, _ := json.Marshal(configured)
-		sum := sha256.Sum256(raw)
-		definition.Revision = hex.EncodeToString(sum[:])
+		definition.Revision = agentModeRevision(configured)
 		catalog.modes[id] = definition
 	}
-	return catalog
+}
+
+func agentModeRevision(value any) string {
+	raw, _ := json.Marshal(value)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func removeAgentCatalogID(ids []string, wanted string) []string {

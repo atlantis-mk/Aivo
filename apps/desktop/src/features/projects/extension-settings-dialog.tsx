@@ -8,12 +8,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs } from "@/components/ui/tabs";
+import { Dialog } from "@/components/ui/dialog";
 import { ExtensionInstallDialog } from "@/features/projects/extension-install-dialog";
 import { AddToolDialog } from "@/features/projects/extension-settings-add-dialog";
 import type { ExtensionSettingsSection } from "@/features/projects/extension-settings-model";
 import { useExtensionSettingsState } from "@/features/projects/extension-settings-state";
 import { ExtensionSettingsTabPanels } from "@/features/projects/extension-settings-tab-panels";
 import { ExtensionSettingsToolbar } from "@/features/projects/extension-settings-toolbar";
+import { AgentModeEditorDialog } from "@/features/projects/extension-settings-agent-modes";
 import { cn } from "@/lib/utils";
 
 type ExtensionSettingsDialogProps = {
@@ -62,11 +64,16 @@ export function ExtensionSettingsContent({
   workspaceRoot,
 }: ExtensionSettingsContentProps) {
   const {
+    agentModeEditorOpen,
+    agentModes,
     addMcpServer,
     addMcpServers,
     addOpen,
     activeToolSet,
+    deleteManagedAgentMode,
     deleteSkill,
+    editingAgentMode,
+    editAgentMode,
     error,
     extensionInstallOpen,
     extensions,
@@ -74,17 +81,21 @@ export function ExtensionSettingsContent({
     importSkillCandidate,
     loading,
     openAddDialog,
+    providerCatalog,
     query,
     reload,
+    saveManagedAgentMode,
     section,
     servers,
     setAddOpen,
+    setAgentModeEditorOpen,
     setExtensionInstallOpen,
     setQuery,
     setSection,
     skills,
     toggleSkillEnabled,
     toggleTool,
+    visibleAgentModes,
     visibleAllTools,
     visibleExtensions,
     visibleServers,
@@ -93,7 +104,6 @@ export function ExtensionSettingsContent({
     visibleTools,
   } = useExtensionSettingsState({
     active,
-    sessionId,
     workspaceRoot,
   });
 
@@ -111,6 +121,18 @@ export function ExtensionSettingsContent({
         onOpenChange={setExtensionInstallOpen}
         open={extensionInstallOpen}
       />
+      <Dialog open={agentModeEditorOpen} onOpenChange={setAgentModeEditorOpen}>
+        <AgentModeEditorDialog
+          disabled={loading}
+          mode={editingAgentMode}
+          modes={agentModes}
+          onDelete={deleteManagedAgentMode}
+          onOpenChange={setAgentModeEditorOpen}
+          onSave={saveManagedAgentMode}
+          open={agentModeEditorOpen}
+          providerCatalog={providerCatalog}
+        />
+      </Dialog>
       {surface === "dialog" ? (
         <SheetHeader className="border-b px-5 py-4">
           <SheetTitle className="flex items-center gap-2 text-base">
@@ -126,6 +148,7 @@ export function ExtensionSettingsContent({
         className="min-h-0 flex-1 gap-0"
       >
         <ExtensionSettingsToolbar
+          agentModeCount={agentModes.length}
           extensionCount={extensions.length}
           loading={loading}
           onAdd={openAddDialog}
@@ -151,6 +174,7 @@ export function ExtensionSettingsContent({
         <ExtensionSettingsTabPanels
           activeToolSet={activeToolSet}
           loading={loading}
+          onEditAgentMode={editAgentMode}
           onDeleteSkill={deleteSkill}
           onIgnoreSkillCandidate={ignoreSkillCandidate}
           onImportSkillCandidate={importSkillCandidate}
@@ -160,6 +184,7 @@ export function ExtensionSettingsContent({
           query={query}
           sessionId={sessionId}
           visibleAllTools={visibleAllTools}
+          visibleAgentModes={visibleAgentModes}
           visibleExtensions={visibleExtensions}
           visibleServers={visibleServers}
           visibleSkillCandidates={visibleSkillCandidates}

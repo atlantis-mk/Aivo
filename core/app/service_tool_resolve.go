@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -11,16 +10,18 @@ import (
 )
 
 func (s *Service) preCallToolCandidates(ctx context.Context, sessionID, turnID string, registry *Registry, specs []domain.ToolSpec) (map[string]string, []domain.ToolCatalogEntry) {
+	_ = turnID
 	activated := map[string]string{}
 	for name := range s.rememberedDeferredTools(ctx, sessionID) {
-		activated[name] = "pinned"
+		activated[name] = "manual"
 	}
-	for name := range s.warmDeferredToolsForTurn(ctx, sessionID, turnID) {
+	automatic, initialized := s.autoSelectedTools(ctx, sessionID)
+	for name := range automatic {
 		if activated[name] == "" {
-			activated[name] = "warm"
+			activated[name] = "automatic"
 		}
 	}
-	if registry == nil {
+	if registry == nil || initialized {
 		return activated, nil
 	}
 	allowed := map[string]bool{}
@@ -29,59 +30,40 @@ func (s *Service) preCallToolCandidates(ctx context.Context, sessionID, turnID s
 	}
 	candidates := make([]domain.ToolCatalogEntry, 0)
 	for _, entry := range deferrableCatalogEntries(registry) {
-		if !allowed[entry.Name] {
+		if !allowed[entry.Name] || activated[entry.Name] != "" {
 			continue
 		}
-		if entry.ActivationPolicy == "default" && activated[entry.Name] == "" {
-			activated[entry.Name] = "mode"
-			continue
-		}
-		if firstNonEmpty(entry.ActivationPolicy, "auto") == "auto" && activated[entry.Name] == "" {
+		policy := firstNonEmpty(entry.ActivationPolicy, "auto")
+		if policy == "auto" || policy == "default" {
 			candidates = append(candidates, entry)
 		}
 	}
 	return activated, candidates
 }
 
-func (s *Service) warmDeferredToolsForTurn(ctx context.Context, sessionID, turnID string) map[string]bool {
-	result := map[string]bool{}
+func (s *Service) autoSelectedTools(ctx context.Context, sessionID string) (map[string]bool, bool) {
+	selected := map[string]bool{}
 	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
-		return result
+		return selected, false
 	}
 	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
-	if err != nil {
-		return result
+	if err != nil || state.Metadata == nil {
+		return selected, false
 	}
-	leases := intMapFromAny(state.Metadata[sessionMetadataWarmDeferredTools])
-	lastTurn, _ := state.Metadata[sessionMetadataWarmDeferredTurn].(string)
-	if strings.TrimSpace(turnID) != "" && lastTurn != turnID {
-		for name, remaining := range leases {
-			remaining--
-			if remaining <= 0 {
-				delete(leases, name)
-			} else {
-				leases[name] = remaining
-			}
-		}
-		if state.Metadata == nil {
-			state.Metadata = map[string]any{}
-		}
-		state.Metadata[sessionMetadataWarmDeferredTools] = leases
-		state.Metadata[sessionMetadataWarmDeferredTurn] = turnID
-		_, _ = s.store.UpsertSessionExecutionState(ctx, state)
-	}
-	for name, remaining := range leases {
-		if remaining > 0 {
-			result[name] = true
+	for _, name := range stringSliceFromAny(state.Metadata[sessionMetadataAutoSelectedTools]) {
+		name = strings.TrimSpace(name)
+		if name != "" && !isReservedCoreToolName(name) && !isBridgeToolName(name) {
+			selected[name] = true
 		}
 	}
-	return result
+	initialized, _ := state.Metadata[sessionMetadataAutoToolsInitialized].(bool)
+	return selected, initialized
 }
 
-func (s *Service) rememberWarmDeferredTool(ctx context.Context, sessionID, toolName string) error {
-	toolName = strings.TrimSpace(toolName)
-	if s == nil || s.store == nil || sessionID == "" || toolName == "" || isReservedCoreToolName(toolName) || isBridgeToolName(toolName) {
-		return nil
+func (s *Service) replaceAutoSelectedTools(ctx context.Context, sessionID string, toolNames []string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if s == nil || s.store == nil || sessionID == "" {
+		return errors.New("sessionId is required")
 	}
 	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
 	if err != nil {
@@ -90,48 +72,10 @@ func (s *Service) rememberWarmDeferredTool(ctx context.Context, sessionID, toolN
 	if state.Metadata == nil {
 		state.Metadata = map[string]any{}
 	}
-	leases := intMapFromAny(state.Metadata[sessionMetadataWarmDeferredTools])
-	leases[toolName] = 3
-	order := stringSliceFromAny(state.Metadata[sessionMetadataWarmDeferredOrder])
-	next := make([]string, 0, len(order)+1)
-	for _, name := range order {
-		if name != toolName && leases[name] > 0 {
-			next = append(next, name)
-		}
-	}
-	next = append(next, toolName)
-	for len(next) > 8 {
-		delete(leases, next[0])
-		next = next[1:]
-	}
-	state.Metadata[sessionMetadataWarmDeferredTools] = leases
-	state.Metadata[sessionMetadataWarmDeferredOrder] = next
+	state.Metadata[sessionMetadataAutoSelectedTools] = normalizeDeferredToolNames(toolNames)
+	state.Metadata[sessionMetadataAutoToolsInitialized] = true
 	_, err = s.store.UpsertSessionExecutionState(ctx, state)
 	return err
-}
-
-func intMapFromAny(value any) map[string]int {
-	out := map[string]int{}
-	if typed, ok := value.(map[string]int); ok {
-		for key, item := range typed {
-			out[key] = item
-		}
-		return out
-	}
-	if typed, ok := value.(map[string]any); ok {
-		for key, item := range typed {
-			switch number := item.(type) {
-			case float64:
-				out[key] = int(number)
-			case int:
-				out[key] = number
-			case json.Number:
-				parsed, _ := number.Int64()
-				out[key] = int(parsed)
-			}
-		}
-	}
-	return out
 }
 
 func (s *Service) rememberedDeferredTools(ctx context.Context, sessionID string) map[string]bool {
@@ -182,6 +126,16 @@ func (s *Service) SetSessionActiveTools(ctx context.Context, input domain.Sessio
 		return domain.SessionActiveToolsResult{}, err
 	}
 	names := normalizeDeferredToolNames(input.ToolNames)
+	current := s.rememberedDeferredTools(ctx, sessionID)
+	disabled, err := s.globallyDisabledToolNames(ctx)
+	if err != nil {
+		return domain.SessionActiveToolsResult{}, err
+	}
+	for _, name := range names {
+		if disabled[name] && !current[name] {
+			return domain.SessionActiveToolsResult{}, errors.New("tool is hidden from new conversation activation: " + name)
+		}
+	}
 	selected := map[string]bool{}
 	for _, name := range input.ToolNames {
 		selected[strings.TrimSpace(name)] = true

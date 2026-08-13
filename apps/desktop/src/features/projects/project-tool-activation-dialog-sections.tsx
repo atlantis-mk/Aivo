@@ -49,7 +49,7 @@ export function ToolActivationDialogTabs({
 
       <Separator />
 
-      {(["extensions", "tools"] as const).map((section) => (
+      {(["extensions", "mcp", "tools"] as const).map((section) => (
         <TabsContent
           className="min-h-0 flex-1 p-0"
           key={section}
@@ -149,6 +149,7 @@ function ToolActivationDialogStatusBar({
     <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <TabsList>
         <TabsTrigger value="extensions">扩展 {count("extensions")}</TabsTrigger>
+        <TabsTrigger value="mcp">MCP {count("mcp")}</TabsTrigger>
         <TabsTrigger value="skills">技能 {skillCount}</TabsTrigger>
         <TabsTrigger value="tools">工具 {count("tools")}</TabsTrigger>
       </TabsList>
@@ -163,7 +164,7 @@ function defaultActivationSection(
   groupedTools: ToolCatalogGroup[],
   skillCount: number,
 ) {
-  for (const section of ["extensions", "skills", "tools"] as const) {
+  for (const section of ["extensions", "mcp", "skills", "tools"] as const) {
     if (section === "skills") {
       if (skillCount > 0) return section;
       continue;

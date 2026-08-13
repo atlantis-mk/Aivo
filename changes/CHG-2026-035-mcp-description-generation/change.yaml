@@ -1,0 +1,36 @@
+id: "CHG-2026-035-mcp-description-generation"
+title: "Generate MCP descriptions from discovered tools"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0019"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-034-source-group-tool-selection"
+affected_surfaces:
+  - "MCP edit settings"
+  - "Core MCP management RPC"
+  - "auxiliary model generation"
+affected_formats:
+  - "MCP tool-summary generation prompt"
+  - "generated description result"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Projects every discovered tool name and description to the configured auxiliary model while excluding MCP connection configuration, credentials, and executable model tools"
+migration: "none; the generated description uses the existing optional MCP description field and is persisted only by the existing explicit save action"
+supersedes: []

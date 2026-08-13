@@ -38,7 +38,7 @@ func TestConversationalMCPRegistrationRequiresExactApprovalEvenInFullAccess(t *t
 		t.Fatal("builtin conversational registration tool is missing")
 	}
 	input := domain.MCPRegistrationProposalInput{
-		ID: "approval_test", DisplayName: "Approval Test", Transport: domain.MCPTransportStdio,
+		ID: "approval_test", DisplayName: "Approval Test", Description: "Test MCP registration approval", Transport: domain.MCPTransportStdio,
 		Command: os.Args[0], Args: []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
 	}
 	engine := NewPermissionEngine(service.store)
@@ -87,6 +87,56 @@ func TestConversationalMCPRegistrationIntentFindsHostOwnedToolLocally(t *testing
 	t.Fatalf("local registration intent did not select %s: %#v", toolRegistrationMCPName, matches)
 }
 
+func TestMCPAutomaticSelectionDoesNotDependOnAgentSourceListTool(t *testing.T) {
+	store := &memoryProviderStore{
+		mcpServers: []domain.MCPServerConfig{{
+			ID: "selection-mcp", Name: "Selection MCP", Description: "Look up exact documentation for the current task", Transport: domain.MCPTransportStdio,
+			Command: "not-used-from-cache", Enabled: true,
+		}},
+		mcpTools: map[string][]domain.MCPToolRecord{
+			"selection-mcp": {{
+				ID: "selection-mcp:lookup", ServerID: "selection-mcp", Name: "lookup",
+				Description: "Look up exact documentation for the current task", InputSchema: map[string]any{"type": "object"},
+				Capability: "mcp.read", RiskLevel: "low",
+			}},
+		},
+	}
+	service := NewService(store)
+	defer service.Shutdown()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, _ := service.toolsForWorkspace(t.TempDir())
+	if _, exists := registry.Get("aivo_tools_list_mcp"); exists {
+		t.Fatal("removed Agent-visible MCP source-list tool is still registered")
+	}
+	activations, candidates := service.preCallToolCandidates(ctx, session.ID, "turn", registry, registry.Specs())
+	const selectedName = "mcp_selection_mcp_lookup"
+	found := false
+	for _, candidate := range candidates {
+		if candidate.Name == selectedName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("concrete MCP tool is absent from automatic candidates: %#v", candidates)
+	}
+	activations[selectedName] = "automatic"
+	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activations)
+	names := toolSpecNames(assembly.Specs)
+	if !containsToolNames(names, selectedName, ToolResolveName) || containsToolNames(names, "aivo_tools_list_mcp") {
+		t.Fatalf("selected Provider tools = %v, want exact MCP tool without source-list executor", names)
+	}
+	for _, name := range names {
+		if strings.HasPrefix(name, "mcp_selection_mcp_") && name != selectedName {
+			t.Fatalf("unselected MCP tool %q entered Provider declarations: %v", name, names)
+		}
+	}
+}
+
 func TestConversationalMCPProposalDoesNotConnectBeforeApproval(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
@@ -96,7 +146,7 @@ func TestConversationalMCPProposalDoesNotConnectBeforeApproval(t *testing.T) {
 	}))
 	defer server.Close()
 	input := domain.MCPRegistrationProposalInput{
-		ID: "remote_test", DisplayName: "Remote Test", Transport: domain.MCPTransportStreamableHTTP, URL: server.URL,
+		ID: "remote_test", DisplayName: "Remote Test", Description: "Query the remote test service", Transport: domain.MCPTransportStreamableHTTP, URL: server.URL,
 	}
 	_, metadata, _, err := service.prepareMCPRegistrationPermission(context.Background(), toolRegistrationMCPName, mustJSON(input), domain.ToolExecutionContext{
 		SessionID: "session", TurnID: "turn", ToolCallID: "remote-proposal",
@@ -166,7 +216,7 @@ func TestConversationalMCPRegistrationFailureStaysDisabled(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	input := domain.MCPRegistrationProposalInput{
-		ID: "missing_mcp", DisplayName: "Missing MCP", Transport: domain.MCPTransportStdio,
+		ID: "missing_mcp", DisplayName: "Missing MCP", Description: "Exercise a missing MCP executable", Transport: domain.MCPTransportStdio,
 		Command: filepathForMissingMCPExecutable(t), TimeoutSeconds: 1, ConnectTimeoutSeconds: 1,
 	}
 	execCtx := domain.ToolExecutionContext{SessionID: "session", TurnID: "turn", ToolCallID: "register-failure"}
@@ -196,7 +246,7 @@ func TestConversationalMCPRegistrationReloadsAfterServiceRestart(t *testing.T) {
 	}
 	service := NewService(store)
 	input := domain.MCPRegistrationProposalInput{
-		ID: "restart_mcp", DisplayName: "Restart MCP", Transport: domain.MCPTransportStdio,
+		ID: "restart_mcp", DisplayName: "Restart MCP", Description: "Test MCP restart restoration", Transport: domain.MCPTransportStdio,
 		Command: os.Args[0], Args: []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
 		TimeoutSeconds: 5, ConnectTimeoutSeconds: 5,
 	}
@@ -234,7 +284,7 @@ func TestConversationalMCPRegistrationHasOneConcurrentWinner(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	input := domain.MCPRegistrationProposalInput{
-		ID: "race_mcp", DisplayName: "Race MCP", Transport: domain.MCPTransportStdio,
+		ID: "race_mcp", DisplayName: "Race MCP", Description: "Test concurrent MCP registration", Transport: domain.MCPTransportStdio,
 		Command: os.Args[0], Args: []string{"-test.run=TestMCPProbeHelperProcess", "--", "mcp-helper"},
 		TimeoutSeconds: 5, ConnectTimeoutSeconds: 5,
 	}
@@ -282,10 +332,11 @@ func TestConversationalMCPRegistrationRejectsUnsafeConfiguration(t *testing.T) {
 		input domain.MCPRegistrationProposalInput
 		code  string
 	}{
-		{name: "shell command", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Transport: domain.MCPTransportStdio, Command: "npx --yes bad"}, code: "invalid_command"},
-		{name: "raw secret", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Transport: domain.MCPTransportStdio, Command: "npx", Args: []string{"--token=secret"}}, code: "raw_secret_refused"},
-		{name: "credential URL", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Transport: domain.MCPTransportStreamableHTTP, URL: "https://user:secret@example.com/mcp"}, code: "invalid_url"},
-		{name: "remote HTTP", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Transport: domain.MCPTransportStreamableHTTP, URL: "http://example.com/mcp"}, code: "insecure_url"},
+		{name: "oversized description", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Description: strings.Repeat("a", 501), Transport: domain.MCPTransportStdio, Command: "npx"}, code: "invalid_description"},
+		{name: "shell command", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Description: "Bad MCP", Transport: domain.MCPTransportStdio, Command: "npx --yes bad"}, code: "invalid_command"},
+		{name: "raw secret", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Description: "Bad MCP", Transport: domain.MCPTransportStdio, Command: "npx", Args: []string{"--token=secret"}}, code: "raw_secret_refused"},
+		{name: "credential URL", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Description: "Bad MCP", Transport: domain.MCPTransportStreamableHTTP, URL: "https://user:secret@example.com/mcp"}, code: "invalid_url"},
+		{name: "remote HTTP", input: domain.MCPRegistrationProposalInput{ID: "bad", DisplayName: "Bad", Description: "Bad MCP", Transport: domain.MCPTransportStreamableHTTP, URL: "http://example.com/mcp"}, code: "insecure_url"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -294,6 +345,16 @@ func TestConversationalMCPRegistrationRejectsUnsafeConfiguration(t *testing.T) {
 				t.Fatalf("err = %v code = %q, want %q", err, mcpRegistrationErrorCode(err), test.code)
 			}
 		})
+	}
+}
+
+func TestConversationalMCPRegistrationAllowsBlankDescription(t *testing.T) {
+	input, err := normalizeMCPRegistrationInput(domain.MCPRegistrationProposalInput{
+		ID: "blank_description", DisplayName: "Blank Description",
+		Transport: domain.MCPTransportStdio, Command: "npx",
+	})
+	if err != nil || input.Description != "" {
+		t.Fatalf("normalized input = %#v, err = %v", input, err)
 	}
 }
 
