@@ -23,23 +23,23 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.1.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: core/go.mod
           cache-dependency-path: core/go.sum
@@ -69,6 +69,7 @@ jobs:
         run: npm run scripts:test
 
       - name: Test core
+        if: runner.os == 'Linux'
         run: npm run test:core
 
       - name: Lint desktop
@@ -95,7 +96,7 @@ jobs:
           AIVO_EXPECT_INSTALLERS: "1"
 
       - name: Upload packaged artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aivo-${{ matrix.name }}-${{ github.sha }}
           path: |

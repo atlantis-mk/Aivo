@@ -13,7 +13,7 @@ function walk(directory) {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const target = path.join(directory, entry.name);
-    return entry.isDirectory() ? walk(target) : [target];
+    return entry.isDirectory() ? walk(target) : [target.split(path.sep).join('/')];
   });
 }
 

@@ -13,8 +13,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.1.1
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - name: Verify tag, source version, and release record
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/release-publication.mjs validate \
+            --root "$GITHUB_WORKSPACE" \
+            --version "$version" \
+            --tag "$GITHUB_REF_NAME"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Resolve documentation archive baseline
+        run: |
+          if baseline="$(git rev-parse HEAD^ 2>/dev/null)"; then
+            echo "AIVO_ARCHIVE_BASE_REF=$baseline" >> "$GITHUB_ENV"
+          else
+            echo "AIVO_ARCHIVE_BASE_REF=0000000000000000000000000000000000000000" >> "$GITHUB_ENV"
+          fi
+      - name: Run release gates
+        run: |
+          pnpm docs:check
+          pnpm scripts:test
+          pnpm test:core
+          pnpm lint
+          pnpm build
+
   build:
     name: Build ${{ matrix.platform }}
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -60,17 +108,12 @@ jobs:
         with:
           go-version-file: core/go.mod
           cache-dependency-path: core/go.sum
-      - name: Verify tag, source version, release record, and runner architecture
+      - name: Verify native runner architecture
         env:
           EXPECTED_HOST_PLATFORM: ${{ matrix.host_platform }}
           EXPECTED_HOST_ARCH: ${{ matrix.host_arch }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          node scripts/release-publication.mjs validate \
-            --root "$GITHUB_WORKSPACE" \
-            --version "$version" \
-            --tag "$GITHUB_REF_NAME"
           node --input-type=module -e '
             const { EXPECTED_HOST_PLATFORM: platform, EXPECTED_HOST_ARCH: arch } = process.env;
             if (process.platform !== platform || process.arch !== arch) {
@@ -84,20 +127,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends libarchive-tools
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Resolve documentation archive baseline
-        run: |
-          if baseline="$(git rev-parse HEAD^ 2>/dev/null)"; then
-            echo "AIVO_ARCHIVE_BASE_REF=$baseline" >> "$GITHUB_ENV"
-          else
-            echo "AIVO_ARCHIVE_BASE_REF=0000000000000000000000000000000000000000" >> "$GITHUB_ENV"
-          fi
-      - name: Run release gates
-        run: |
-          pnpm docs:check
-          pnpm scripts:test
-          pnpm test:core
-          pnpm lint
-          pnpm build
       - name: Package desktop on the native target
         env:
           CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}

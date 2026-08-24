@@ -788,6 +788,7 @@ func (s *agentPTYSession) waitForBoundary(ctx context.Context, cursor int64, yie
 	var idle *time.Timer
 	var idleC <-chan time.Time
 	lastProcessCursor := int64(-1)
+	pendingInputBoundary := false
 	resetIdle := func() {
 		if idle == nil {
 			idle = time.NewTimer(agentPTYIdleBoundary)
@@ -814,8 +815,16 @@ func (s *agentPTYSession) waitForBoundary(ctx context.Context, cursor int64, yie
 			return result, nil
 		}
 		if result.Status == AgentPTYStatusWaitingInput && result.InputRequest != nil && !result.InputRequest.Resolved {
-			result.YieldReason = "input_request"
-			return result, nil
+			if strings.TrimSpace(result.InputRequest.Prompt) != "" || result.ProcessCursor > result.InputRequest.Cursor {
+				result.YieldReason = "input_request"
+				return result, nil
+			}
+			if !pendingInputBoundary {
+				resetIdle()
+				pendingInputBoundary = true
+			}
+		} else {
+			pendingInputBoundary = false
 		}
 		if result.OutputTruncated && len(result.Output) >= maxOutput {
 			result.YieldReason = "output_limit"
@@ -837,7 +846,11 @@ func (s *agentPTYSession) waitForBoundary(ctx context.Context, cursor int64, yie
 			return result, nil
 		case <-idleC:
 			result = s.snapshot(cursor, maxOutput)
-			result.YieldReason = "output_idle"
+			if result.Status == AgentPTYStatusWaitingInput && result.InputRequest != nil && !result.InputRequest.Resolved {
+				result.YieldReason = "input_request"
+			} else {
+				result.YieldReason = "output_idle"
+			}
 			return result, nil
 		case <-s.notify:
 		}
