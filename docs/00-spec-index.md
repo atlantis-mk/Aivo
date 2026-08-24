@@ -3,12 +3,12 @@
 ## Current baseline
 
 - Specification revision: `0.1.1-active`
-- Product version: `0.0.0-development`
+- Product version: `0.1.0`
 - Desktop shell: Electron + Vite/React
 - Local runtime: Go
 - Persistence schema: v1 baseline; explicit v2 transitions are required before schema changes
 - Status: Aivo v2 preparation is active; P0 product decisions remain open
-- Last updated: `2026-08-24`
+- Last updated: `2026-08-25`
 
 ## Routing order
 
