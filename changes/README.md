@@ -1,6 +1,6 @@
 # AI Work Packages
 
-Use `../AGENTS.md` section 1.2 to decide whether Work is required. The decision depends on durable decisions, contracts, risk, migration, reversibility, and whether verification can finish now—not on whether a change is UI, bug, or refactoring.
+Direct change is the default, including ordinary same-task behavior and specification changes. Create Work only for unfinished cross-task state, open decisions requiring approval, controlled security/data/contract/migration/dependency/platform/release boundaries, irreversible coordination, or severe unclear bugs. The exact threshold is in `../docs/09-document-governance.md`.
 
 Common IDs:
 
@@ -8,8 +8,8 @@ Common IDs:
 - Implementation deviation: `BUG-2026-001-cancelled-terminal-keeps-running`
 - Other durable work uses the same stable pattern and `type: security|dependency|migration|technical_debt|governance`.
 
-Copy `_template/` and fill both files. Low-risk Work may keep each body section to one short paragraph or explicit N/A. Accepted behavior is merged into primary specs and Traceability before implementation; Work does not replace current specifications.
+Create schema-v2 Work with `pnpm work:new -- <WORK-ID> --title "..." --type <type> --goal "..."`. It is one small `change.yaml`. Start it with `pnpm work:start -- <WORK-ID>` and run `pnpm docs:trace` after Requirement or routing changes.
 
-After `Verified` or `Rejected`, run `pnpm work:archive -- <WORK-ID>`. Historical `Released` Work is also completed and must be sealed. Once sealed, the directory and existing manifest entry are permanently read-only; corrections require a new Work. Releases reference only sealed Work.
+Finish schema-v2 Work with `pnpm work:finish -- <WORK-ID>`. It runs applicable checks, marks Done, refreshes Traceability, and validates without copying command evidence or creating a hash archive. Legacy Work retains its historical completion and archive path; existing sealed files remain permanently read-only.
 
 Full rules are in `../docs/09-document-governance.md`.

@@ -1,109 +1,109 @@
 # AI documentation, Work, and release governance
 
-This file preserves only what an agent needs to implement, verify, and evolve Aivo correctly without chat history. Meeting notes, staffing, time tracking, and performance reporting do not belong in this system.
+This file is the canonical owner of Aivo documentation governance. The system optimizes for compact current truth and executable constraints; Git owns ordinary change history.
 
 ## 1. Document responsibilities
 
-- `AGENTS.md`: highest-priority execution rules and prohibitions.
-- `docs/`: current product, scope, Requirements, architecture, data, security, test, and traceability truth.
-- `specs/`: focused cross-module behavior that cannot be expressed by a Requirement and code contract alone.
-- `adr/`: significant technical reasons and rejected alternatives that current code cannot explain.
-- `changes/<WORK-ID>/`: one change's increment, tasks, tests, and evidence.
-- `changes/archive.json`: immutable file set, digest, and sealing time for completed Work.
-- `releases/vX.Y.Z.md` plus Git tag: what was actually delivered, compatibility, and historical snapshot.
-- `openspec/changes/aivo-v2/`: retained preparation and migration evidence; accepted current behavior must be promoted into the primary specs above.
+- `AGENTS.md`: short execution-critical rules and prohibitions.
+- `docs/`: current product, scope, Requirements, architecture, data, security, global test policy, and generated Traceability.
+- `specs/`: focused current behavior that a Requirement and code contract cannot express clearly.
+- `adr/`: only significant durable decisions and rejected alternatives that code cannot explain.
+- `changes/<WORK-ID>/change.yaml`: temporary cross-task state or controlled-boundary coordination.
+- `changes/archive.json`: compatibility registry for legacy sealed Work only.
+- `releases/vX.Y.Z.md` plus the matching Git tag: delivered versions and release evidence.
 
-One rule has one primary specification owner. Work, Traceability, and Releases reference behavior; they do not restate it.
+Requirements own current behavior, code owns exhaustive contracts, tests own executable acceptance, ADRs own exceptional reasoning, and Git owns ordinary history. Do not copy those facts into Work.
 
-## 2. Work proportionality and creation threshold
+## 2. Governance lanes
 
-Work is required when a product decision, contract, risk, migration, or cross-task coordination must be preserved, not because of change category or diff size.
+### Direct is the default
 
-A change may proceed without Work only when it is inside accepted scope and behavior, local and easily reversible, introduces no product or architecture choice, crosses no high-risk or public contract boundary, and can be fully implemented and verified in the current task. Direct changes may add or update focused regression tests, fixtures, or snapshots that prove an existing expectation; test changes do not automatically require Work.
+Use Direct change for ordinary features, behavior changes, specification edits, bugs with a clear root cause, refactoring, UI work, tests, developer tooling, and reversible dependency-free improvements that can finish in the current task. Update the owning current spec and tests together when behavior changes. No Work, approval state, evidence file, or archive record is created.
 
-Copy/visual polish, restoration of accepted responsive or accessibility behavior, an ordinary bug with a clear local root cause, internal refactoring, type/null fixes, test strengthening, non-release development tooling, and local semantics-preserving performance improvements may qualify. This is not a whitelist.
+### Work is the exception
 
-Create or reuse Work when any of these applies:
+Create Work only when at least one condition applies:
 
-- A primary spec, Requirement, Scope, ADR, product decision, or security decision changes.
-- Security/trust, secrets, data ownership, persistence/schema, public API/RPC/IPC, compatibility/migration, platform/scope, release/rollback, or irreversible behavior changes.
-- Production dependencies or licenses, or cross-module/platform/version coordination, are involved.
-- A bug is severe, recurring, security/data-loss related, unclear in root cause, or needs durable remediation evidence.
-- Verification cannot finish in the current task or another agent needs preserved plans, risks, decisions, or unfinished state.
+- Unfinished context, risks, or next actions must survive across tasks.
+- An open product or architecture decision needs explicit user approval before implementation.
+- Security/trust, secrets, data ownership, persistence/schema, public API/RPC/IPC, compatibility/migration, production dependency/license, irreversible behavior, platform/scope, or release/rollback boundaries change.
+- A severe, recurring, security/data-loss, or unclear-root-cause bug needs durable coordination.
+- Cross-module/platform/version work cannot be completed and verified as one coherent task.
 
-Low-risk Work keeps the common metadata, routing, state machine, and gates while allowing one short paragraph or explicit N/A per body section. High-risk, cross-boundary, and long-lived changes require full detail. Never combine unrelated work into a catch-all package.
+A behavior or documentation change alone does not justify Work. Significant persistence, privilege, public-contract, credential, plugin/MCP trust, sandbox/authorization, platform, or irreversible decisions also require an ADR. Never combine unrelated work.
 
-## 3. Minimal Work structure
+## 3. New Work schema
 
-```text
-changes/<WORK-ID>/
-  change.yaml
-  change.md
+Schema-v2 Work is one `change.yaml` containing identity, goal, current state, routing, controlled boundaries, risks, and next actions. It has no mandatory body, task table, acceptance prose, command transcript, evidence JSON, profile, specification-delta field, or per-Work hash.
+
+```yaml
+schema: "2"
+id: "CHG-YYYY-NNN-change-name"
+title: "Change title"
+type: "feature"
+status: "Draft"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Why this state must survive the current task"
+requirements: []
+tests: []
+adrs: []
+context_refs: []
+related_changes: []
+boundaries: []
+risks: []
+next: []
 ```
 
-`change.yaml` contains routing and state metadata. `change.md` contains the problem, behavior increment, non-goals, impact, constraints, tasks, acceptance, evidence, security/data lifecycle, and compatibility. Add `design.md` or an ADR only for complex security, schema, IPC/API, migration, or architecture work.
+Use an ADR, focused spec, or optional design document for complex durable reasoning; do not inflate Work YAML into a second specification.
 
-## 4. Context routing and controlled search
+## 4. Context routing
 
-- `requirements`, `adrs`, `context_refs`, and `related_changes` form the declared initial reading set.
-- `context_refs` uses repository-root-relative paths and may append `#<heading or stable ID>` to constrain reading. It must not point to another Work.
-- `related_changes` is the only default route to another Work body; `supersedes` also permits reading the superseded Work.
-- Known Work ID: read its YAML/body first, then expand one routing layer. Unknown Work ID: read the spec index and search only Work filenames and YAML metadata first.
-- A search hit, shared ID, module, or path does not create a Work dependency. Before reading undeclared Work, state the concrete unanswered question; if confirmed, add its ID to `related_changes`.
-- New and materially updated Work must include both routing lists, even when empty.
-- Security/trust, credentials, persistence/schema, authorization, irreversible migration, platform boundaries, or discovered conflicts require expansion to every directly relevant primary spec and ADR.
-- Work status is owned only by `change.yaml`. Indexes, Traceability, and Releases must not duplicate an active-Work status table.
+- `requirements`, `adrs`, `context_refs`, and `related_changes` are the initial reading set.
+- `context_refs` uses repository-root-relative paths and optional `#<heading or stable ID>` selectors; it never points to another Work.
+- A search hit, shared ID, path, or module is not a dependency. Read undeclared Work only to resolve a concrete conflict or controlled boundary.
+- Known Work ID: read its YAML and optional legacy body, then one declared routing layer. Unknown ID: start at `docs/00-spec-index.md` and search filenames/YAML metadata only.
+- Archived and Done Work is history, not default current context.
 
-## 5. State machine
+## 5. Lifecycle
 
-- `Draft`: scope discovery and reversible investigation only.
-- `Accepted`: behavior, non-goals, risks, and acceptance are approved; implementation may be prepared.
-- `Implementing`: accepted behavior is merged into primary specs and Traceability; product code is changing.
-- `Verified`: implementation and applicable automated/platform acceptance have recorded evidence and await sealing.
-- `Released`: compatible historical completed state only; new releases do not rewrite Work to this state.
-- `Rejected`: not implemented, with the reason preserved.
+New Work uses `Draft -> Active -> Done`; a proposal may end at `Rejected`.
 
-Normal path: `Draft -> Accepted -> Implementing -> Verified -> sealed`. Rejection ends at `Rejected -> sealed`. A merge is not verification. Actual delivery belongs to a Release record and Git tag.
+- `Draft`: discovery and proposal; controlled implementation has not started.
+- `Active`: `pnpm work:start -- <WORK-ID>` records the explicit decision to proceed and refreshes Traceability.
+- `Done`: `pnpm work:finish -- <WORK-ID>` runs applicable checks, changes only the status, refreshes Traceability, and validates the result.
 
-## 6. Completed Work sealing
+Command results remain in the task/CI output and eventual Git history. New Work creates no `verification.json` or archive digest. Once a Done Work is committed, Git preserves it; a later cleanup may delete the small YAML in a separate reviewable commit when nothing references it.
 
-- `Verified`, `Rejected`, and historical `Released` are completed. Run `pnpm work:archive -- <WORK-ID>` in the same task; completion is not final until the manifest is written.
-- The manifest records Work ID, status, timestamp, complete directory file set, and per-file SHA-256. Work stays in place so references remain valid.
-- After sealing, never modify, delete, or add files under that Work directory and never delete, replace, or recalculate its existing manifest entry. Corrections and supplemental evidence require a new Work.
-- `changes/archive.json` is the single machine-readable archive owner. File permissions or a second archive directory are not integrity controls.
-- Local `pnpm docs:check` compares against `HEAD`. CI sets `AIVO_ARCHIVE_BASE_REF` to a trusted base commit so the same commit cannot rewrite a sealed body and its digest.
+## 6. Legacy compatibility
 
-## 7. Implementation flow
+Work without `schema: "2"` keeps the lifecycle and fields of the governance revision under which it was accepted. Existing Draft, Accepted, Implementing, Verified, Released, and Rejected states remain readable. Verified, Released, and Rejected legacy Work still requires its historical archive entry, and every existing archive directory/digest remains permanently immutable.
 
-1. Read Work metadata and body, then the routed Requirement, spec, ADR, and Test context.
-2. Freeze scope, behavior, non-goals, risks, compatibility, and acceptance before `Accepted`.
-3. Merge accepted behavior into the owning primary specs and Traceability, then move to `Implementing`.
-4. Implement a vertical slice, including failures, cancellation, repeated execution, timeouts, lifecycle cleanup, migration/rollback, and security where applicable.
-5. Record focused and full command evidence, CI/commit/build references, platform acceptance, and screenshots in the Work.
-6. Mark `Verified` only after all applicable evidence passes, finish the body, and immediately seal the Work as its last mutation.
-7. Release by referencing sealed Work in a Release record and creating the same-name Git tag; do not modify Work.
+Do not migrate or rehash legacy sealed Work. Active legacy Work may finish through the compatible `work:finish` path, which records and seals it according to its original contract.
 
-Bug Work must first reference an existing Requirement and capture minimum reproduction, expected/actual behavior, affected versions/surfaces, root cause, why tests missed it, a pre-fix failing/post-fix passing regression test, verification platforms, and fix version. If no Requirement exists, determine whether this is a specification omission, a behavior change requiring CHG, or by-design rejection.
+## 7. Generated Traceability
 
-## 8. IDs, ADRs, and history
+`docs/03-functional-requirements.md` owns Requirement text and Test IDs. Work YAML owns temporary routing. `pnpm docs:trace` generates active Work and completed evidence into `docs/08-traceability.md`; `pnpm docs:check` fails when it is stale.
+
+Traceability is an index, not an evidence store. Feature-specific acceptance lists and command results do not belong there.
+
+## 8. IDs, current truth, and history
 
 - Work, Requirement, Test, ADR, and OPEN IDs are never reused or redefined.
-- Superseded or removed Requirements remain with `Superseded by <ID>` or `Removed in vX.Y.Z`.
-- Completed and rejected Work remains for evidence and becomes permanently read-only when sealed.
-- Governance changes use `type: governance` and increment the specification revision.
-- Create or revise an ADR for persistence ownership/schema migration strategy, Electron privilege boundaries, public API/RPC/IPC contracts, provider credential ownership, plugin/MCP trust, sandbox/command authorization, platform scope, or irreversible migration.
-- Git tags freeze full historical snapshots; do not maintain duplicate versioned spec trees.
+- Current specs describe only current accepted behavior; Git shows how they changed.
+- Superseded Requirements keep a short replacement/removal pointer only when current compatibility requires it.
+- Git commits and tags replace narrative process archives for ordinary changes.
+- Protected branches and signed release tags should be enabled before legacy archive compatibility is considered removable.
 
 ## 9. Release minimum
 
-A Release records version, date, Git tag, Electron/desktop/core/schema/contract builds, sealed delivered Work, compatibility/migration, test and platform evidence, known issues, rollback limits, and compensation. It never redefines a Requirement or changes sealed Work.
+A Release records version, date, matching Git tag, component/schema/contract builds, delivered Done or legacy sealed Work when applicable, compatibility/migration, platform evidence, known issues, rollback limits, and compensation. It never redefines a Requirement.
+
+Release readiness is an explicit operator decision. Documentation and test evidence remain reviewable guidance but do not authorize or block publication. Publication automation may still fail closed when it cannot bind the version, build required artifacts, preserve immutable bytes, or publish a self-consistent update contract.
 
 ## 10. Completion gates
 
-- Work YAML parses and uses only template fields; routes, selectors, ADRs, and related Work resolve.
-- Primary specs own final behavior and Traceability maps every Requirement and Test ID.
-- Bug evidence includes the reproduction and regression result.
-- Failure, cancellation, repetition, timeout, teardown, migration, rollback, security, and platform effects are verified or explicit N/A.
-- All completed Work is sealed; archived file sets, digests, and previous manifest entries remain unchanged.
-- Documented `pnpm` commands exist.
-- Release records reference only sealed Work and pair with a Git tag.
+- `pnpm docs:trace` produces no diff and `pnpm docs:check` validates schemas, routing, IDs, commands, generated Traceability, releases, and historical archives.
+- `pnpm scripts:test` applies when governance or release scripts change.
+- `pnpm test:core`, `pnpm lint`, and `pnpm build` apply to their changed runtime surfaces.
+- Migration, security, public-contract, dependency, platform, and release-mechanism checks remain fail-closed for the Work that changes them.

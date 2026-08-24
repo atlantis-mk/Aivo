@@ -1,0 +1,29 @@
+id: "CHG-2026-047-lightweight-document-governance"
+title: "Reduce documentation governance overhead"
+type: "governance"
+profile: "controlled"
+spec_delta: "behavior_change"
+status: "Verified"
+spec_revision: "0.1.3-active"
+target_release: null
+requirements: []
+tests: []
+adrs: []
+context_refs:
+  - "docs/07-test-release-plan.md#Work verification"
+  - "docs/08-traceability.md"
+  - "docs/09-document-governance.md#2. Governance lanes"
+related_changes:
+  - "CHG-2026-046-operator-managed-release"
+affected_surfaces:
+  - "documentation governance"
+  - "Work lifecycle scripts"
+  - "Traceability generation"
+affected_formats:
+  - "change.yaml"
+  - "verification.json"
+affected_versions:
+  - "0.1.3-active and later governance"
+security_impact: "Controlled Work keeps the existing security, trust, migration, public-contract, platform, and release review boundaries. Light Work is forbidden for those boundaries."
+migration: "Unsealed Work receives explicit profile and spec-delta metadata. Sealed Work remains byte-for-byte unchanged and is accepted under its historical schema."
+supersedes: []

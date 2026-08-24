@@ -19,7 +19,7 @@ The matrix owns current product scope. Optional or Future behavior must not be i
 | Cloud sync, collaboration, Aivo accounts | Out | No approved server or multi-user scope |
 | Mobile clients | Out | Desktop only |
 | Telemetry or remote analytics | Out | No approved collection contract |
-| Public source distribution | Required | The recreated GitHub repository is Public and distributes licensor-owned source under `PolyForm-Noncommercial-1.0.0`; this is source-available/noncommercial, not OSI open source. Commercial use requires a separate written agreement. Tagged desktop releases publish target-OS artifacts to immutable R2 version paths and matching GitHub Release assets after release gates pass. |
+| Public source distribution | Required | The recreated GitHub repository is Public and distributes licensor-owned source under `PolyForm-Noncommercial-1.0.0`; this is source-available/noncommercial, not OSI open source. Commercial use requires a separate written agreement. An explicit operator-triggered stable tag publishes the complete target-OS artifact set to immutable R2 version paths and matching GitHub Release assets; release readiness is operator-managed rather than blocked by CI quality gates. |
 
 ## Platform scope
 

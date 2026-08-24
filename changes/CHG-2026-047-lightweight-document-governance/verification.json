@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "work_id": "CHG-2026-047-lightweight-document-governance",
+  "verified_at": "2026-08-24T21:54:14.935Z",
+  "commit": "c8ca440a853d7cebc0e3db9cebeeede3fec170ac",
+  "checks": [
+    {
+      "name": "docs:check",
+      "status": "passed",
+      "duration_ms": 440
+    },
+    {
+      "name": "scripts:test",
+      "status": "passed",
+      "duration_ms": 1351
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+id: "CHG-2026-048-ai-native-minimal-governance"
+title: "Adopt AI-native minimal governance"
+type: "governance"
+profile: "controlled"
+spec_delta: "behavior_change"
+status: "Verified"
+spec_revision: "0.1.4-active"
+target_release: null
+requirements: []
+tests: []
+adrs: []
+context_refs:
+  - "docs/07-test-release-plan.md#Work verification"
+  - "docs/09-document-governance.md#2. Governance lanes"
+related_changes:
+  - "CHG-2026-047-lightweight-document-governance"
+affected_surfaces:
+  - "documentation governance"
+  - "Work lifecycle scripts"
+  - "Traceability generation"
+affected_formats:
+  - "change.yaml schema v2"
+affected_versions:
+  - "0.1.4-active and later governance"
+security_impact: "High-risk security, data, migration, public-contract, dependency, platform, and release decisions still require explicit Work or ADR context. Ordinary same-task changes no longer create process records."
+migration: "New Work uses schema v2 and a single YAML file. Existing legacy active and sealed Work remains valid without rewriting or rehashing."
+supersedes: []

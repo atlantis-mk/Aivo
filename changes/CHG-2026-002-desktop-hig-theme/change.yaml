@@ -1,6 +1,8 @@
 id: "CHG-2026-002-desktop-hig-theme"
 title: "Adopt an HIG-aligned desktop theme scale"
 type: "feature"
+profile: "controlled"
+spec_delta: "behavior_change"
 status: "Implementing"
 spec_revision: "0.1.0-active"
 target_release: null

@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateArchiveManifest } from './work-archive-lib.mjs';
+import { expectedTraceability, isWorkV2, parseChangeYamlText, SPEC_DELTAS, WORK_PROFILES } from './document-governance-lib.mjs';
 
 const ROOT = process.cwd();
 const DOC_DIRS = ['docs', 'specs', 'adr', 'changes', 'releases'];
-const ALLOWED_STATUSES = new Set(['Draft', 'Accepted', 'Implementing', 'Verified', 'Released', 'Rejected']);
+const LEGACY_STATUSES = new Set(['Draft', 'Accepted', 'Implementing', 'Verified', 'Released', 'Rejected']);
+const V2_STATUSES = new Set(['Draft', 'Active', 'Done', 'Rejected']);
 const ALLOWED_TYPES = new Set(['feature', 'bug', 'security', 'dependency', 'migration', 'technical_debt', 'governance']);
-const CURRENT_SPEC_REVISION = '0.1.1-active';
+const CURRENT_SPEC_REVISION = '0.1.4-active';
 const SPEC_REVISION_PATTERN = /^0\.1\.(\d+)-active$/;
 
 function walk(directory) {
@@ -21,37 +23,8 @@ function setDifference(left, right) {
   return [...left].filter((value) => !right.has(value));
 }
 
-function parseScalar(encoded, file, line) {
-  if (encoded === 'null') return null;
-  if (encoded === '[]') return [];
-  if (/^"(?:[^"\\]|\\.)*"$/.test(encoded)) return JSON.parse(encoded);
-  throw new Error(`${file}:${line}: values must be quoted strings, null, or lists`);
-}
-
 function parseChangeYaml(file) {
-  const result = {};
-  let activeList = null;
-  for (const [index, raw] of fs.readFileSync(file, 'utf8').split(/\r?\n/).entries()) {
-    if (!raw.trim() || raw.trimStart().startsWith('#')) continue;
-    const listItem = raw.match(/^  - (.+)$/);
-    if (listItem) {
-      if (!activeList || !Array.isArray(result[activeList])) throw new Error(`${file}:${index + 1}: orphan list item`);
-      result[activeList].push(parseScalar(listItem[1], file, index + 1));
-      continue;
-    }
-    const field = raw.match(/^([a-z][a-z0-9_]*):(?: (.*))?$/);
-    if (!field) throw new Error(`${file}:${index + 1}: unsupported YAML syntax`);
-    const [, key, encoded = ''] = field;
-    if (key in result) throw new Error(`${file}:${index + 1}: duplicate key ${key}`);
-    if (!encoded) {
-      result[key] = [];
-      activeList = key;
-    } else {
-      result[key] = parseScalar(encoded, file, index + 1);
-      activeList = Array.isArray(result[key]) ? key : null;
-    }
-  }
-  return result;
+  return parseChangeYamlText(fs.readFileSync(file, 'utf8'), file);
 }
 
 function validateExplicitPaths(markdownFiles) {
@@ -99,7 +72,7 @@ const markdownFiles = ['AGENTS.md', ...DOC_DIRS.flatMap(walk)
 const requirementText = fs.readFileSync('docs/03-functional-requirements.md', 'utf8');
 const traceabilityText = fs.readFileSync('docs/08-traceability.md', 'utf8');
 const requirements = new Set([...requirementText.matchAll(/^### ((?:REQ|NFR)-[A-Z]+-\d+)/gm)].map((match) => match[1]));
-const tracedRequirements = new Set([...traceabilityText.matchAll(/^\| ((?:REQ|NFR)-[A-Z]+-\d+) \|/gm)].map((match) => match[1]));
+const tracedRequirements = new Set([...traceabilityText.matchAll(/^\| \[((?:REQ|NFR)-[A-Z]+-\d+)\]/gm)].map((match) => match[1]));
 const tests = new Set([...requirementText.matchAll(/`((?:AT|CT)-[A-Z-]+-\d+)`/g)].map((match) => match[1]));
 const tracedTests = new Set([...traceabilityText.matchAll(/(?:AT|CT)-[A-Z-]+-\d+/g)].map((match) => match[0]));
 
@@ -127,7 +100,13 @@ for (const file of yamlFiles) {
 
 const templateEntry = parsedChanges.find(([file]) => file === 'changes/_template/change.yaml');
 if (!templateEntry) yamlErrors.push('changes/_template/change.yaml: missing template');
-const templateKeys = Object.keys(templateEntry?.[1] ?? {}).sort();
+const v2Keys = Object.keys(templateEntry?.[1] ?? {}).sort();
+const legacyKeys = new Set([
+  'id', 'title', 'type', 'profile', 'spec_delta', 'status', 'spec_revision', 'target_release',
+  'requirements', 'tests', 'adrs', 'context_refs', 'related_changes', 'affected_surfaces',
+  'affected_formats', 'affected_versions', 'security_impact', 'migration', 'supersedes',
+]);
+const archivedIds = new Set(JSON.parse(fs.readFileSync('changes/archive.json', 'utf8')).archives.map((entry) => entry.work_id));
 const changeIds = new Map();
 for (const [file, change] of parsedChanges) {
   if (file === 'changes/_template/change.yaml') continue;
@@ -137,12 +116,31 @@ for (const [file, change] of parsedChanges) {
 
 for (const [file, change] of parsedChanges) {
   const keys = Object.keys(change).sort();
-  const missingKeys = templateKeys.filter((key) => !keys.includes(key));
-  const unknownKeys = keys.filter((key) => !templateKeys.includes(key));
-  if (missingKeys.length > 0) yamlErrors.push(`${file}: missing required fields ${missingKeys.join(', ')}`);
-  if (unknownKeys.length > 0) yamlErrors.push(`${file}: unknown fields ${unknownKeys.join(', ')}`);
-  if (!ALLOWED_STATUSES.has(change.status)) yamlErrors.push(`${file}: invalid status ${change.status}`);
+  const historicalArchive = file !== 'changes/_template/change.yaml' && archivedIds.has(change.id);
+  const v2 = isWorkV2(change);
+  if (v2) {
+    const missingKeys = v2Keys.filter((key) => !keys.includes(key));
+    const unknownKeys = keys.filter((key) => !v2Keys.includes(key));
+    if (missingKeys.length > 0) yamlErrors.push(`${file}: missing schema-v2 fields ${missingKeys.join(', ')}`);
+    if (unknownKeys.length > 0) yamlErrors.push(`${file}: unknown schema-v2 fields ${unknownKeys.join(', ')}`);
+    if (!V2_STATUSES.has(change.status)) yamlErrors.push(`${file}: invalid schema-v2 status ${change.status}`);
+    if (typeof change.goal !== 'string' || !change.goal.trim()) yamlErrors.push(`${file}: schema-v2 goal is required`);
+  } else {
+    const unknownKeys = keys.filter((key) => !legacyKeys.has(key));
+    if (unknownKeys.length > 0) yamlErrors.push(`${file}: unknown legacy fields ${unknownKeys.join(', ')}`);
+    if (!LEGACY_STATUSES.has(change.status)) yamlErrors.push(`${file}: invalid legacy status ${change.status}`);
+  }
   if (!ALLOWED_TYPES.has(change.type)) yamlErrors.push(`${file}: invalid type ${change.type}`);
+  if (!v2 && !historicalArchive) {
+    if (!WORK_PROFILES.has(change.profile)) yamlErrors.push(`${file}: invalid profile ${change.profile}`);
+    if (!SPEC_DELTAS.has(change.spec_delta)) yamlErrors.push(`${file}: invalid spec_delta ${change.spec_delta}`);
+    if (change.spec_delta === 'behavior_change' && change.profile !== 'controlled') {
+      yamlErrors.push(`${file}: behavior_change requires profile controlled`);
+    }
+    if (change.profile === 'light' && ['security', 'dependency', 'migration', 'governance'].includes(change.type)) {
+      yamlErrors.push(`${file}: type ${change.type} requires profile controlled`);
+    }
+  }
   if (file !== 'changes/_template/change.yaml') {
     const revision = SPEC_REVISION_PATTERN.exec(change.spec_revision ?? '');
     const currentRevision = SPEC_REVISION_PATTERN.exec(CURRENT_SPEC_REVISION);
@@ -150,7 +148,10 @@ for (const [file, change] of parsedChanges) {
       yamlErrors.push(`${file}: spec_revision must be a known revision no newer than ${CURRENT_SPEC_REVISION}`);
     }
   }
-  for (const field of ['requirements', 'tests', 'adrs', 'context_refs', 'related_changes', 'affected_surfaces', 'affected_formats', 'affected_versions', 'supersedes']) {
+  const listFields = v2
+    ? ['requirements', 'tests', 'adrs', 'context_refs', 'related_changes', 'boundaries', 'risks', 'next']
+    : ['requirements', 'tests', 'adrs', 'context_refs', 'related_changes', 'affected_surfaces', 'affected_formats', 'affected_versions', 'supersedes'];
+  for (const field of listFields) {
     if (!Array.isArray(change[field])) yamlErrors.push(`${file}: ${field} must be a list`);
   }
   for (const requirement of change.requirements ?? []) if (!requirements.has(requirement)) yamlErrors.push(`${file}: unknown Requirement ${requirement}`);
@@ -173,24 +174,25 @@ const specIndexText = fs.readFileSync('docs/00-spec-index.md', 'utf8');
 if (/^## Active Work$/m.test(specIndexText)) duplicateStateViews.push('docs/00-spec-index.md: duplicated active Work status list');
 if (/^## Active Work$/m.test(traceabilityText)) duplicateStateViews.push('docs/08-traceability.md: duplicated active Work status table');
 
-const governanceMarkers = [
-  ['AGENTS.md', '### 1.2 Work and documentation proportionality'],
-  ['AGENTS.md', 'Work is required when a product decision'],
-  ['AGENTS.md', 'Direct changes may add or update focused regression tests'],
-  ['docs/09-document-governance.md', '## 2. Work proportionality and creation threshold'],
-  ['docs/09-document-governance.md', 'A change may proceed without Work only when'],
-  ['changes/_template/change.md', '> Documentation proportionality:'],
+const governanceLinks = [
+  ['AGENTS.md', 'The canonical threshold and minimal lifecycle are owned only by `docs/09-document-governance.md`.'],
+  ['docs/09-document-governance.md', 'This file is the canonical owner of Aivo documentation governance.'],
+  ['changes/_template/change.yaml', 'schema: "2"'],
 ];
 const governanceErrors = [];
-for (const [file, marker] of governanceMarkers) {
+for (const [file, marker] of governanceLinks) {
   if (!fs.readFileSync(file, 'utf8').includes(marker)) governanceErrors.push(`${file}: missing governance marker ${marker}`);
 }
 
-const archivedIds = new Set(JSON.parse(fs.readFileSync('changes/archive.json', 'utf8')).archives.map((entry) => entry.work_id));
 const releaseErrors = [];
+const doneV2Ids = new Set(parsedChanges
+  .filter(([, change]) => isWorkV2(change) && change.status === 'Done')
+  .map(([, change]) => change.id));
 for (const file of walk('releases').filter((candidate) => /\/v[^/]+\.md$/.test(candidate))) {
   for (const match of fs.readFileSync(file, 'utf8').matchAll(/\b(?:CHG|BUG|SEC|DEP|MIG)-\d{4}-\d{3}[a-z0-9-]*\b/g)) {
-    if (!archivedIds.has(match[0])) releaseErrors.push(`${file}: Release references unarchived Work ${match[0]}`);
+    if (!archivedIds.has(match[0]) && !doneV2Ids.has(match[0])) {
+      releaseErrors.push(`${file}: Release references Work that is neither schema-v2 Done nor legacy sealed: ${match[0]}`);
+    }
   }
 }
 
@@ -200,6 +202,7 @@ const errors = {
   trace_without_requirement: setDifference(tracedRequirements, requirements),
   tests_not_traced: setDifference(tests, tracedTests),
   trace_tests_without_requirement: setDifference(tracedTests, tests),
+  stale_traceability: traceabilityText === expectedTraceability(ROOT) ? [] : ['docs/08-traceability.md: run pnpm docs:trace'],
   absent_commands: absentCommands,
   yaml_errors: yamlErrors,
   duplicate_work_state_views: duplicateStateViews,

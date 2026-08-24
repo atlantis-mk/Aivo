@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+      - "!v*-*"
+      - "!v*+*"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -27,58 +29,8 @@ env:
   RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
-  verify:
-    name: Verify release source
-    if: ${{ inputs.source_run_id == '' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          ref: ${{ env.RELEASE_TAG }}
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.1.1
-          run_install: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: core/go.mod
-          cache-dependency-path: core/go.sum
-      - name: Verify tag, source version, and release record
-        run: |
-          version="${RELEASE_TAG#v}"
-          node scripts/release-publication.mjs validate \
-            --root "$GITHUB_WORKSPACE" \
-            --version "$version" \
-            --tag "$RELEASE_TAG"
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Resolve documentation archive baseline
-        run: |
-          if baseline="$(git rev-parse HEAD^ 2>/dev/null)"; then
-            echo "AIVO_ARCHIVE_BASE_REF=$baseline" >> "$GITHUB_ENV"
-          else
-            echo "AIVO_ARCHIVE_BASE_REF=0000000000000000000000000000000000000000" >> "$GITHUB_ENV"
-          fi
-      - name: Run release gates
-        run: |
-          pnpm docs:check
-          pnpm scripts:test
-          pnpm test:core
-          pnpm lint
-          pnpm build
-
   build:
     name: Build ${{ matrix.platform }}
-    needs: verify
     if: ${{ inputs.source_run_id == '' }}
     strategy:
       fail-fast: false
@@ -126,6 +78,13 @@ jobs:
         with:
           go-version-file: core/go.mod
           cache-dependency-path: core/go.sum
+      - name: Bind requested release identity
+        run: |
+          version="${RELEASE_TAG#v}"
+          node scripts/release-publication.mjs validate-stable \
+            --root "$GITHUB_WORKSPACE" \
+            --version "$version" \
+            --tag "$RELEASE_TAG"
       - name: Verify native runner architecture
         env:
           EXPECTED_HOST_PLATFORM: ${{ matrix.host_platform }}
@@ -156,12 +115,6 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm ${{ matrix.package_script }}
-      - name: Smoke packaged release
-        env:
-          AIVO_EXPECT_INSTALLERS: "1"
-        run: pnpm smoke:release
-      - name: Verify native installer handoff package
-        run: node scripts/verify-native-package.mjs --input build/desktop
       - name: Normalize release artifacts
         run: |
           version="${RELEASE_TAG#v}"
@@ -343,7 +296,6 @@ jobs:
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
-          version="${tag#v}"
           release_record="releases/${tag}.md"
           mapfile -t release_titles < <(sed -n 's/^# \(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$release_record")
           if [[ "${#release_titles[@]}" -ne 1 ]]; then
@@ -367,9 +319,6 @@ jobs:
               --notes-file "$release_record"
               --draft
             )
-            if [[ "$version" == *-* ]]; then
-              arguments+=(--prerelease)
-            fi
             gh release create "${arguments[@]}"
           fi
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
@@ -406,7 +355,7 @@ jobs:
           jq -e '.draft == false' <<< "$final_json" >/dev/null
 
   recover_github_release:
-    name: Recover GitHub Release from verified artifacts
+    name: Recover GitHub Release from published artifacts
     if: ${{ inputs.source_run_id != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -427,6 +376,11 @@ jobs:
       - name: Verify source run belongs to the immutable release tag
         run: |
           set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          node scripts/release-publication.mjs validate-stable \
+            --root "$GITHUB_WORKSPACE" \
+            --version "$version" \
+            --tag "$RELEASE_TAG"
           [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
           run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
           expected_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
@@ -434,7 +388,6 @@ jobs:
           [[ "$actual_sha" == "$expected_sha" ]]
           jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/jobs?per_page=100")"
           required_jobs=(
-            "Verify release source"
             "Build darwin-aarch64"
             "Build darwin-x86_64"
             "Build windows-x86_64"

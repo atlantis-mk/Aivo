@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "work_id": "CHG-2026-048-ai-native-minimal-governance",
+  "verified_at": "2026-08-24T22:04:53.296Z",
+  "commit": "c8ca440a853d7cebc0e3db9cebeeede3fec170ac",
+  "checks": [
+    {
+      "name": "docs:check",
+      "status": "passed",
+      "duration_ms": 438
+    },
+    {
+      "name": "scripts:test",
+      "status": "passed",
+      "duration_ms": 1350
+    }
+  ]
+}

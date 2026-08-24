@@ -1,6 +1,8 @@
 id: "CHG-2026-003-sidebarless-chat-workspace"
 title: "Adopt a sidebarless chat workspace"
 type: "feature"
+profile: "controlled"
+spec_delta: "behavior_change"
 status: "Implementing"
 spec_revision: "0.1.0-active"
 target_release: null

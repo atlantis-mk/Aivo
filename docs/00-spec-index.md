@@ -2,7 +2,7 @@
 
 ## Current baseline
 
-- Specification revision: `0.1.1-active`
+- Specification revision: `0.1.4-active`
 - Product version: `0.1.2`
 - Desktop shell: Electron + Vite/React
 - Local runtime: Go
@@ -28,7 +28,7 @@
 | `05-data-model.md` | Persistence ownership, entities, schema, and migration rules | Active |
 | `06-security-privacy.md` | Trust boundaries, secrets, logging, and privacy | Active |
 | `07-test-release-plan.md` | Test layers, commands, and release gates | Active |
-| `08-traceability.md` | Requirement to spec, ADR, test, and status mapping | Active |
+| `08-traceability.md` | Generated Requirement, test, ADR, active Work, and sealed-evidence index | Generated |
 | `09-document-governance.md` | Work, ADR, release, routing, and archive rules | Active |
 
 ## Supporting and focused documents
@@ -49,7 +49,7 @@
 - `../releases/README.md`
 - `../releases/_template.md`
 
-Work status is owned only by each `change.yaml`. This index does not duplicate active or historical Work status.
+Work status is owned only by each `change.yaml`; run `pnpm docs:trace` to refresh the generated Traceability index. This index does not duplicate active or historical Work status.
 
 ## Authoritative code locations
 

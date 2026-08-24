@@ -1,0 +1,32 @@
+id: "CHG-2026-046-operator-managed-release"
+title: "Make stable publication operator-managed"
+type: "governance"
+profile: "controlled"
+spec_delta: "behavior_change"
+status: "Implementing"
+spec_revision: "0.1.2-active"
+target_release: null
+requirements:
+  - "NFR-RELEASE-001"
+tests:
+  - "CT-RELEASE-002"
+adrs: []
+context_refs:
+  - "docs/07-test-release-plan.md#Release gates"
+  - "docs/09-document-governance.md#9. Release minimum"
+  - "docs/release-quality.md#Tagged release publication"
+  - "docs/08-traceability.md#NFR-RELEASE-001"
+related_changes:
+  - "CHG-2026-043-public-source-release"
+  - "CHG-2026-044-desktop-auto-update"
+  - "CHG-2026-045-public-release-presentation"
+affected_surfaces:
+  - "GitHub Actions stable release workflow"
+  - "release governance"
+affected_formats:
+  - "stable GitHub and R2 release assets"
+affected_versions:
+  - "future stable releases"
+security_impact: "The operator becomes the authority for release readiness. Publication still refuses invalid tag/version identity, failed native packaging, incomplete target assets, digest conflicts, or failed R2 readback."
+migration: "none"
+supersedes: []

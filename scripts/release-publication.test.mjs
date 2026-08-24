@@ -8,6 +8,7 @@ import {
   collectPlatformArtifacts,
   createPublication,
   validateReleaseSource,
+  validateStableReleaseSource,
 } from './release-publication.mjs'
 import { macAppCandidates } from './smoke-release.mjs'
 
@@ -96,6 +97,22 @@ test('CT-RELEASE-001 binds a tag to both package manifests and a release record'
   )
 })
 
+test('CT-RELEASE-002 keeps non-stable tags out of operator-triggered stable publication', async (t) => {
+  const root = await temporaryDirectory(t)
+  await writeFixture(root, 'package.json', JSON.stringify({ version: '1.2.3-rc.1' }))
+  await writeFixture(
+    path.join(root, 'apps', 'desktop'),
+    'package.json',
+    JSON.stringify({ version: '1.2.3-rc.1' }),
+  )
+  await writeFixture(path.join(root, 'releases'), 'v1.2.3-rc.1.md', '# Preview')
+
+  await assert.rejects(
+    validateStableReleaseSource({ root, version: '1.2.3-rc.1', tag: 'v1.2.3-rc.1' }),
+    /must be a plain SemVer version/,
+  )
+})
+
 test('CT-RELEASE-001 keeps packaging names safe and disables implicit publication', async () => {
   const desktop = JSON.parse(
     await fs.readFile(path.join(import.meta.dirname, '..', 'apps', 'desktop', 'package.json'), 'utf8'),
@@ -135,12 +152,11 @@ test('CT-RELEASE-001 keeps R2-first GitHub publication resumable and digest-boun
   assert.match(workflow, /--json databaseId --jq '\.databaseId'/)
   assert.match(workflow, /releases\/\$\{release_id\}/)
   assert.match(workflow, /source_run_id:/)
-  assert.match(workflow, /Recover GitHub Release from verified artifacts/)
+  assert.match(workflow, /release-publication\.mjs validate-stable/)
+  assert.match(workflow, /Recover GitHub Release from published artifacts/)
   assert.match(workflow, /git rev-parse "\$RELEASE_TAG\^\{commit\}"/)
   assert.match(workflow, /run-id: \$\{\{ inputs\.source_run_id \}\}/)
   assert.match(workflow, /Refusing to reuse GitHub asset without digest evidence/)
-  assert.match(workflow, /Verify native installer handoff package/)
-  assert.match(workflow, /node scripts\/verify-native-package\.mjs --input build\/desktop/)
   assert.match(workflow, /if \[\[ "\$\(jq -r '\.draft'/)
   assert.ok(workflow.indexOf('Publish stable manifest last') < workflow.indexOf('Publish GitHub Release assets'))
 })
@@ -156,6 +172,33 @@ test('AT-UPDATE-001 runs release quality on every native update target', async (
   }
   assert.match(workflow, /Verify native installer handoff package/)
   assert.match(workflow, /node scripts\/verify-native-package\.mjs --input build\/desktop/)
+})
+
+test('CT-RELEASE-002 keeps stable publication operator-managed and mechanically bound', async () => {
+  const workflow = await fs.readFile(
+    path.join(import.meta.dirname, '..', '.github', 'workflows', 'publish-release.yml'),
+    'utf8',
+  )
+
+  assert.match(workflow, /workflow_dispatch:/)
+  assert.match(workflow, /\n\s+push:/)
+  for (const platform of ['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64', 'linux-x86_64']) {
+    assert.match(workflow, new RegExp(platform))
+  }
+  assert.doesNotMatch(workflow, /\n\s+verify:\n/)
+  assert.doesNotMatch(workflow, /needs: verify/)
+  for (const gate of ['pnpm docs:check', 'pnpm scripts:test', 'pnpm test:core', 'pnpm lint', 'pnpm build']) {
+    assert.doesNotMatch(workflow, new RegExp(gate.replaceAll(':', '\\:')))
+  }
+  assert.doesNotMatch(workflow, /pnpm smoke:release/)
+  assert.doesNotMatch(workflow, /verify-native-package\.mjs --input build\/desktop/)
+  assert.match(workflow, /release-publication\.mjs validate-stable/)
+  assert.match(workflow, /release-publication\.mjs collect/)
+  assert.match(workflow, /Publish stable manifest last and verify R2 readback/)
+  assert.match(workflow, /Refusing to overwrite an immutable object with different content/)
+  assert.match(workflow, /Refusing to replace GitHub asset with different content/)
+  assert.match(workflow, /- "!v\*-\*"/)
+  assert.match(workflow, /- "!v\*\+\*"/)
 })
 
 test('CT-RELEASE-001 presents v0.1.0 as a user-facing bilingual release', async () => {

@@ -274,6 +274,26 @@
         "changes/CHG-2026-045-public-release-presentation/change.md": "sha256:fb29aa5c2034f2d9e2a590ac419d6d5dce5921a2deed40d392127430fa3a2866",
         "changes/CHG-2026-045-public-release-presentation/change.yaml": "sha256:ba0126abff4721c229c565ebd5e6aa1f3ebba11706700db4299b9a30064deb5a"
       }
+    },
+    {
+      "work_id": "CHG-2026-047-lightweight-document-governance",
+      "status": "Verified",
+      "archived_at": "2026-08-24T21:54:14.935Z",
+      "files": {
+        "changes/CHG-2026-047-lightweight-document-governance/change.md": "sha256:65f15d1d298665d630ed59e73216f1cbfc758af278382051ae21e1d759bc6905",
+        "changes/CHG-2026-047-lightweight-document-governance/change.yaml": "sha256:2f7f8b43126d6cd3c5c2652cbfe8f48c8742ce98f09482264ee6b969df3442ea",
+        "changes/CHG-2026-047-lightweight-document-governance/verification.json": "sha256:746ea692820373685dee1e9ad59a9a1d59437f712f3b2dcfc7aac817f70f2192"
+      }
+    },
+    {
+      "work_id": "CHG-2026-048-ai-native-minimal-governance",
+      "status": "Verified",
+      "archived_at": "2026-08-24T22:04:53.296Z",
+      "files": {
+        "changes/CHG-2026-048-ai-native-minimal-governance/change.md": "sha256:bfd565fb0ebe6d952fa82b29a33c6404b31765b0ca26968e201d17678320c501",
+        "changes/CHG-2026-048-ai-native-minimal-governance/change.yaml": "sha256:bdc4e3cd8edfb5e7ec450a401a3a8cc2c591aaacbb892ebdf192ad46a7a12c91",
+        "changes/CHG-2026-048-ai-native-minimal-governance/verification.json": "sha256:dd9d21148201348aacda39f4be930d7db2787437cf37b70cb7a950c273e2e8f9"
+      }
     }
   ]
 }

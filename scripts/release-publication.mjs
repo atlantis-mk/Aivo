@@ -22,6 +22,7 @@ const platformContracts = {
 }
 
 const semverPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const stableSemverPattern = /^\d+\.\d+\.\d+$/
 
 function parseArguments(argv) {
   const [command, ...rest] = argv
@@ -199,6 +200,13 @@ export async function validateReleaseSource({ root, version, tag }) {
   return releaseRecord
 }
 
+export async function validateStableReleaseSource({ root, version, tag }) {
+  if (!stableSemverPattern.test(version)) {
+    throw new Error(`Stable release version must be a plain SemVer version: ${version}`)
+  }
+  return validateReleaseSource({ root, version, tag })
+}
+
 async function main() {
   const { command, values } = parseArguments(process.argv.slice(2))
   if (command === 'collect') {
@@ -223,6 +231,14 @@ async function main() {
   }
   if (command === 'validate') {
     await validateReleaseSource({
+      root: requireArgument(values, 'root'),
+      version: requireArgument(values, 'version'),
+      tag: requireArgument(values, 'tag'),
+    })
+    return
+  }
+  if (command === 'validate-stable') {
+    await validateStableReleaseSource({
       root: requireArgument(values, 'root'),
       version: requireArgument(values, 'version'),
       tag: requireArgument(values, 'tag'),
