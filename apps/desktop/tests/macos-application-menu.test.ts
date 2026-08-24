@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("macOS uses the Aivo name and Chinese application menu labels", async () => {
+test("desktop hides the Windows menu and localizes the macOS menu", async () => {
   const main = await readFile(
     new URL("../electron/main.cjs", import.meta.url),
     "utf8",
@@ -12,7 +12,10 @@ test("macOS uses the Aivo name and Chinese application menu labels", async () =>
   const menuSource = main.slice(menuStart, menuEnd);
 
   assert.match(main, /app\.setName\('Aivo'\)/);
-  assert.match(menuSource, /if \(!isMac\) return/);
+  assert.match(
+    menuSource,
+    /if \(!isMac\) \{\s*Menu\.setApplicationMenu\(null\)\s*return\s*\}/,
+  );
   for (const label of [
     "Aivo",
     "关于 Aivo",

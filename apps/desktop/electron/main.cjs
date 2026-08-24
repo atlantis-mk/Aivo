@@ -22,7 +22,10 @@ let extensionViewManager = null
 let desktopUpdater = null
 
 function configureApplicationMenu() {
-  if (!isMac) return
+  if (!isMac) {
+    Menu.setApplicationMenu(null)
+    return
+  }
 
   const menu = Menu.buildFromTemplate([
     {
