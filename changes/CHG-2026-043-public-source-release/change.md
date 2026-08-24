@@ -34,10 +34,10 @@ Aivo 当前 GitHub 仓库为 Private，仓库没有源码许可证，打包工�
 
 | Task | Requirement | Verifiable output | Test | Status |
 | --- | --- | --- | --- | --- |
-| `PUBLIC-01` | `NFR-RELEASE-001` | PolyForm 许可证、source-available/商业授权边界和一致包元数据 | `CT-LICENSE-001` | Pending |
-| `PUBLIC-02` | `NFR-RELEASE-001` | 版本标签驱动的四平台打包、R2 与 GitHub Release publication | `CT-RELEASE-001` | Pending |
-| `PUBLIC-03` | `NFR-RELEASE-001` | 仓库外备份、秘密扫描、新根 main 和同名 Public 仓库 | `CT-REPOSITORY-001` | Pending |
-| `PUBLIC-04` | N/A | 文档、脚本、构建、远端与发布证据 | `pnpm docs:check` | Pending |
+| `PUBLIC-01` | `NFR-RELEASE-001` | PolyForm 许可证、source-available/商业授权边界和一致包元数据 | `CT-LICENSE-001` | Complete |
+| `PUBLIC-02` | `NFR-RELEASE-001` | 版本标签驱动的四平台打包、R2 与 GitHub Release publication | `CT-RELEASE-001` | In Progress |
+| `PUBLIC-03` | `NFR-RELEASE-001` | 仓库外备份、秘密扫描、新根 main 和同名 Public 仓库 | `CT-REPOSITORY-001` | Complete |
+| `PUBLIC-04` | N/A | 文档、脚本、构建、远端与发布证据 | `pnpm docs:check` | In Progress |
 
 ## Acceptance and evidence
 
@@ -48,6 +48,17 @@ Aivo 当前 GitHub 仓库为 Private，仓库没有源码许可证，打包工�
 - 一次带版本 tag 的 GitHub Actions run 在四个原生 runner 上通过；R2 与 GitHub Release 的规范化资产、大小和 SHA-256 一致。
 - 目标 OS 签名/notarization 所需 secret 缺失时必须明确记录，不能把未执行的平台验收写成通过。
 - 完成证据写回后进入 `Verified` 并立即执行 `pnpm work:archive -- CHG-2026-043-public-source-release`。
+
+实施中证据（`2026-08-24`）：
+
+- 旧 Private 仓库 ID 为 `1295489589`（`R_kgDOTTeaNQ`）；删除后同名 Public 仓库 ID 为 `1345008131`（`R_kgDOUCsyAw`），创建时间为 `2026-08-24T13:48:03Z`，证明是新的 repository identity。
+- `/Users/atlan/Documents/Aivo-history-before-public-20260824.bundle` 包含删除前 28 个本地/远端/工具 refs 并通过 `git bundle verify`，SHA-256 为 `be84b460b302342d6ffab928d51a537b503f6b42f8b8dabb87a021889f425047`。`/Users/atlan/Documents/Aivo-github-backup-20260824/` 保存 repository、branch、tag、release、Action、hook、deployment 和远端 ref 元数据及 SHA-256 清单。
+- 新根 bundle 与源码 tar 分别为 `/Users/atlan/Documents/Aivo-public-root-20260824.bundle` 和 `/Users/atlan/Documents/Aivo-public-root-20260824.tar.gz`，SHA-256 分别为 `f99c5c18392209c343eb1423f4fd94f6ef05856a855225f16c861bfdb1e57401` 与 `df7f899e6b8ef2103a8eade38c607cac201ce455a3495cbdced4b89be1090cf0`；两者均已验证且未上传。
+- Gitleaks `8.30.1` 对新根提交 `edca100afbfbd8a7169b396dd8d2ee503d959139` 扫描 1,184 个 tracked 文件、约 6.1 MB，无 secret finding。新 Public `main` 初始提交正是该无 parent 根提交。
+- 新仓库最终只有 `main`，无 tag、PR、Issue、Release 或 Action；旧 Action run `29030534610` 返回 404，旧 main SHA `75ac8a7d1091e2df5c8ed70d4dc0f24a1247529b` 返回 422。description 和八个 topics 已恢复，secret scanning、push protection、private vulnerability reporting 均已启用。
+- `CT-LICENSE-001` 与 `CT-RELEASE-001` 聚焦测试 6/6 通过；`pnpm scripts:test` 85/85 通过；`pnpm docs:check` 通过（88 Markdown、44 YAML、21 Requirements、23 Test IDs、21 ADRs、43 Work Packages、24 archived Work Packages）；`pnpm lint` 通过并保留 16 个既有 Fast Refresh warnings；`pnpm build` 通过并保留既有 bundle-size warning。
+- `pnpm test:core` 首次因 compaction test 读取本机 models.dev cache 而得到 1,050,000 而非内建 400,000 context limit；测试隔离 `AIVO_MODELS_CACHE` 后聚焦测试与全套 `go test ./...` 通过。
+- 新仓库已经配置 VaultMesh 相同的 `R2_ACCOUNT_ID`、`R2_BUCKET` 与 `R2_PUBLIC_BASE_URL`，并用 `R2_PREFIX=aivo` 隔离对象。`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY` 和 macOS signing/notarization secrets 尚未恢复，因此 R2/GitHub tagged publication 与签名平台验收仍待完成。
 
 ## Security and data lifecycle
 
