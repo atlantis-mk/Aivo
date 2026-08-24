@@ -342,6 +342,13 @@ jobs:
           set -euo pipefail
           tag="$RELEASE_TAG"
           version="${tag#v}"
+          release_record="releases/${tag}.md"
+          mapfile -t release_titles < <(sed -n 's/^# \(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$release_record")
+          if [[ "${#release_titles[@]}" -ne 1 ]]; then
+            echo "Release record must contain exactly one non-empty H1: $release_record" >&2
+            exit 1
+          fi
+          release_title="${release_titles[0]}"
           asset_directory="$RUNNER_TEMP/aivo-github-release"
           mapfile -t assets < <(find "$asset_directory" -maxdepth 1 -type f \
             \( -name 'Aivo_*' -o -name 'SHA256SUMS' \) -print | sort)
@@ -354,8 +361,8 @@ jobs:
               "$tag"
               --repo "$GITHUB_REPOSITORY"
               --verify-tag
-              --title "Aivo ${version}"
-              --notes-file "releases/${tag}.md"
+              --title "$release_title"
+              --notes-file "$release_record"
               --draft
             )
             if [[ "$version" == *-* ]]; then
@@ -363,6 +370,9 @@ jobs:
             fi
             gh release create "${arguments[@]}"
           fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+            --title "$release_title" \
+            --notes-file "$release_record"
           release_id="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
           for asset_path in "${assets[@]}"; do
@@ -448,6 +458,13 @@ jobs:
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
+          release_record="releases/${tag}.md"
+          mapfile -t release_titles < <(sed -n 's/^# \(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$release_record")
+          if [[ "${#release_titles[@]}" -ne 1 ]]; then
+            echo "Release record must contain exactly one non-empty H1: $release_record" >&2
+            exit 1
+          fi
+          release_title="${release_titles[0]}"
           asset_directory="$RUNNER_TEMP/aivo-github-release"
           mapfile -t assets < <(find "$asset_directory" -maxdepth 1 -type f \
             \( -name 'Aivo_*' -o -name 'SHA256SUMS' \) -print | sort)
@@ -455,6 +472,9 @@ jobs:
             echo "Expected six platform packages plus SHA256SUMS, found ${#assets[@]}." >&2
             exit 1
           fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+            --title "$release_title" \
+            --notes-file "$release_record"
           release_id="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
           for asset_path in "${assets[@]}"; do

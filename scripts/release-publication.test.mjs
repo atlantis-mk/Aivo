@@ -125,7 +125,11 @@ test('CT-RELEASE-001 keeps R2-first GitHub publication resumable and digest-boun
   )
 
   assert.match(workflow, /needs: \[build, publish_r2\]/)
-  assert.match(workflow, /--notes-file "releases\/\$\{tag\}\.md"/)
+  assert.match(workflow, /release_record="releases\/\$\{tag\}\.md"/)
+  assert.match(workflow, /Release record must contain exactly one non-empty H1/)
+  assert.match(workflow, /--title "\$release_title"/)
+  assert.match(workflow, /--notes-file "\$release_record"/)
+  assert.match(workflow, /gh release edit "\$tag"[\s\S]*--title "\$release_title"[\s\S]*--notes-file "\$release_record"/)
   assert.match(workflow, /workflow_dispatch:/)
   assert.match(workflow, /RELEASE_TAG: \$\{\{ inputs\.release_tag \|\| github\.ref_name \}\}/)
   assert.match(workflow, /--json databaseId --jq '\.databaseId'/)
@@ -137,4 +141,31 @@ test('CT-RELEASE-001 keeps R2-first GitHub publication resumable and digest-boun
   assert.match(workflow, /Refusing to reuse GitHub asset without digest evidence/)
   assert.match(workflow, /if \[\[ "\$\(jq -r '\.draft'/)
   assert.ok(workflow.indexOf('Publish stable manifest last') < workflow.indexOf('Publish GitHub Release assets'))
+})
+
+test('CT-RELEASE-001 presents v0.1.0 as a user-facing bilingual release', async () => {
+  const record = await fs.readFile(
+    path.join(import.meta.dirname, '..', 'releases', 'v0.1.0.md'),
+    'utf8',
+  )
+
+  const h1s = record.match(/^# .+$/gm) ?? []
+  assert.deepEqual(h1s, ['# v0.1.0 Aivo 首个公开版本 / Initial Public Release'])
+  assert.match(record, /^## 新增 \/ Highlights$/m)
+  assert.match(record, /^## 下载 \/ Download$/m)
+  assert.match(record, /\| 系统 System \| 芯片 Chip \| 格式 Format \| 下载 Download \|/)
+  for (const asset of [
+    'Aivo_0.1.0_windows-x86_64-setup.exe',
+    'Aivo_0.1.0_darwin-aarch64.dmg',
+    'Aivo_0.1.0_darwin-x86_64.dmg',
+    'Aivo_0.1.0_linux-x86_64.AppImage',
+    'Aivo_0.1.0_darwin-aarch64.zip',
+    'Aivo_0.1.0_darwin-x86_64.zip',
+    'SHA256SUMS',
+  ]) {
+    assert.match(record, new RegExp(`releases/download/v0\\.1\\.0/${asset.replaceAll('.', '\\.')}`))
+  }
+  assert.match(record, /macOS and Windows packages are unsigned/)
+  assert.match(record, /source-available under a noncommercial license/)
+  assert.ok(record.indexOf('## 下载 / Download') < record.indexOf('## 发布记录 / Release record'))
 })
