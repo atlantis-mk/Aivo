@@ -56,9 +56,10 @@ Aivo 当前 GitHub 仓库为 Private，仓库没有源码许可证，打包工�
 - 新根 bundle 与源码 tar 分别为 `/Users/atlan/Documents/Aivo-public-root-20260824.bundle` 和 `/Users/atlan/Documents/Aivo-public-root-20260824.tar.gz`，SHA-256 分别为 `f99c5c18392209c343eb1423f4fd94f6ef05856a855225f16c861bfdb1e57401` 与 `df7f899e6b8ef2103a8eade38c607cac201ce455a3495cbdced4b89be1090cf0`；两者均已验证且未上传。
 - Gitleaks `8.30.1` 对新根提交 `edca100afbfbd8a7169b396dd8d2ee503d959139` 扫描 1,184 个 tracked 文件、约 6.1 MB，无 secret finding。新 Public `main` 初始提交正是该无 parent 根提交。
 - 新仓库最终只有 `main`，无 tag、PR、Issue、Release 或 Action；旧 Action run `29030534610` 返回 404，旧 main SHA `75ac8a7d1091e2df5c8ed70d4dc0f24a1247529b` 返回 422。description 和八个 topics 已恢复，secret scanning、push protection、private vulnerability reporting 均已启用。
-- `CT-LICENSE-001` 与 `CT-RELEASE-001` 聚焦测试 6/6 通过；`pnpm scripts:test` 85/85 通过；`pnpm docs:check` 通过（88 Markdown、44 YAML、21 Requirements、23 Test IDs、21 ADRs、43 Work Packages、24 archived Work Packages）；`pnpm lint` 通过并保留 16 个既有 Fast Refresh warnings；`pnpm build` 通过并保留既有 bundle-size warning。
+- `CT-LICENSE-001` 与 `CT-RELEASE-001` 聚焦测试 9/9 通过；`pnpm scripts:test` 全部通过；`pnpm docs:check` 通过（89 Markdown、45 YAML、21 Requirements、23 Test IDs、21 ADRs、44 Work Packages、25 archived Work Packages）；`pnpm lint` 通过并保留既有 Fast Refresh warnings；`pnpm build` 通过并保留既有 bundle-size warning。
 - `pnpm test:core` 首次因 compaction test 读取本机 models.dev cache 而得到 1,050,000 而非内建 400,000 context limit；测试隔离 `AIVO_MODELS_CACHE` 后聚焦测试与全套 `go test ./...` 通过。
 - 新仓库已经配置 VaultMesh 相同的 `R2_ACCOUNT_ID`、`R2_BUCKET` 与 `R2_PUBLIC_BASE_URL`，并用 `R2_PREFIX=aivo` 隔离对象。`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY` 和 macOS signing/notarization secrets 尚未恢复，因此 R2/GitHub tagged publication 与签名平台验收仍待完成。
+- GitHub Actions [Release quality 32763350745](https://github.com/atlantis-mk/Aivo/actions/runs/32763350745) 在 Windows x64、macOS Apple Silicon 与 Linux x64 原生 runner 上全部通过安装包生成、内嵌 Core 校验、健康启动 smoke 与 artifact 上传；对应 job 耗时 9分49秒、6分57秒、3分28秒。标签工作流另含 `macos-15-intel` 的 Intel 原生矩阵，但该平台和 R2/GitHub 最终 publication 仍必须由带 Release record 的真实版本 tag 验证。
 
 ## Security and data lifecycle
 

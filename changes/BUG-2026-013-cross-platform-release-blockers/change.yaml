@@ -1,7 +1,7 @@
 id: "BUG-2026-013-cross-platform-release-blockers"
 title: "修复跨平台打包暴露的进程生命周期缺陷"
 type: "bug"
-status: "Implementing"
+status: "Verified"
 spec_revision: "0.1.1-active"
 target_release: null
 requirements:

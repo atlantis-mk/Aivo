@@ -28,8 +28,8 @@ Public 发布的原生 CI 暴露了两个既有可靠性缺陷。Linux 上，快
 
 | Task | Requirement | Verifiable output | Test | Status |
 | --- | --- | --- | --- | --- |
-| `PTY-RACE-001` | `NFR-RELIABILITY-001` | 后继输入请求不被前一次写入清除 | `CT-RELIABILITY-001` | In Progress |
-| `PROCESS-OS-001` | `NFR-RELIABILITY-001` | Unix/Windows 进程终止实现按 build tag 编译 | `CT-RELIABILITY-001` | In Progress |
+| `PTY-RACE-001` | `NFR-RELIABILITY-001` | 后继输入请求不被前一次写入清除 | `CT-RELIABILITY-001` | Complete |
+| `PROCESS-OS-001` | `NFR-RELIABILITY-001` | Unix/Windows 进程终止实现按 build tag 编译 | `CT-RELIABILITY-001` | Complete |
 
 ## Acceptance and evidence
 
@@ -37,6 +37,8 @@ Public 发布的原生 CI 暴露了两个既有可靠性缺陷。Linux 上，快
 - PTY 交互测试在 Linux CI 和本机重复运行通过。
 - `GOOS=windows GOARCH=amd64 go test ./app -run '^$'` 或等价 Windows 原生构建通过。
 - `pnpm test:core`、`pnpm docs:check`、`pnpm lint`、`pnpm build` 与原生发布质量 CI 通过。
+
+验证于 `2026-08-25`：PTY 三个聚焦测试连续 50 次通过，`GOOS=windows GOARCH=amd64 go build ./cmd/aivo-core` 通过，完整 `pnpm test:core`、`pnpm scripts:test`、`pnpm docs:check`、`pnpm lint`、`pnpm build` 与 `git diff --check` 通过。GitHub Actions [Release quality 32763350745](https://github.com/atlantis-mk/Aivo/actions/runs/32763350745) 在 Windows、macOS 与 Linux 原生 runner 上完成构建、安装包生成、内嵌 Core 检查、Core 健康启动 smoke 和 artifact 上传；Windows、macOS、Linux job 分别耗时 9分49秒、6分57秒、3分28秒。现有 Fast Refresh 与 bundle-size warning 未升级为错误。
 
 ## Security and data lifecycle
 

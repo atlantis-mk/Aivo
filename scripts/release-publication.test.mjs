@@ -117,3 +117,16 @@ test('CT-RELEASE-001 smokes native macOS output directories', () => {
     ],
   )
 })
+
+test('CT-RELEASE-001 keeps R2-first GitHub publication resumable and digest-bound', async () => {
+  const workflow = await fs.readFile(
+    path.join(import.meta.dirname, '..', '.github', 'workflows', 'publish-release.yml'),
+    'utf8',
+  )
+
+  assert.match(workflow, /needs: \[build, publish_r2\]/)
+  assert.match(workflow, /--notes-file "releases\/\$\{tag\}\.md"/)
+  assert.match(workflow, /Refusing to reuse GitHub asset without digest evidence/)
+  assert.match(workflow, /if \[\[ "\$\(jq -r '\.draft'/)
+  assert.ok(workflow.indexOf('Publish stable manifest last') < workflow.indexOf('Publish GitHub Release assets'))
+})

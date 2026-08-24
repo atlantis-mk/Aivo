@@ -11,6 +11,15 @@
       }
     },
     {
+      "work_id": "BUG-2026-013-cross-platform-release-blockers",
+      "status": "Verified",
+      "archived_at": "2026-08-24T18:46:45.632Z",
+      "files": {
+        "changes/BUG-2026-013-cross-platform-release-blockers/change.md": "sha256:072115196837c402f645a4b9b0872ddef0bcb66d4b35cd1f6de95b94af678f52",
+        "changes/BUG-2026-013-cross-platform-release-blockers/change.yaml": "sha256:a56ee6903822942d9771025d3f7c89835dd9657a9a64b6ef6a00aa4ce77d0020"
+      }
+    },
+    {
       "work_id": "CHG-2026-001-document-governance",
       "status": "Verified",
       "archived_at": "2026-07-30T21:21:01.997Z",

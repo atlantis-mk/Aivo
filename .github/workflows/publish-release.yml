@@ -329,29 +329,33 @@ jobs:
             echo "Expected six platform packages plus SHA256SUMS, found ${#assets[@]}." >&2
             exit 1
           fi
-          created=false
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             arguments=(
               "$tag"
               --repo "$GITHUB_REPOSITORY"
               --verify-tag
               --title "Aivo ${version}"
-              --generate-notes
+              --notes-file "releases/${tag}.md"
               --draft
             )
             if [[ "$version" == *-* ]]; then
               arguments+=(--prerelease)
             fi
             gh release create "${arguments[@]}"
-            created=true
           fi
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
           for asset_path in "${assets[@]}"; do
             asset_name="$(basename "$asset_path")"
             local_digest="sha256:$(sha256sum "$asset_path" | awk '{print $1}')"
+            remote_count="$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)] | length' <<< "$release_json")"
             remote_digest="$(jq -r --arg name "$asset_name" \
               '[.assets[] | select(.name == $name)][0].digest // empty' <<< "$release_json")"
-            if [[ -n "$remote_digest" ]]; then
+            if [[ "$remote_count" != "0" ]]; then
+              if [[ -z "$remote_digest" ]]; then
+                echo "Refusing to reuse GitHub asset without digest evidence: $asset_name" >&2
+                exit 1
+              fi
               if [[ "$remote_digest" != "$local_digest" ]]; then
                 echo "Refusing to replace GitHub asset with different content: $asset_name" >&2
                 exit 1
@@ -361,7 +365,7 @@ jobs:
             fi
             gh release upload "$tag" "$asset_path" --repo "$GITHUB_REPOSITORY"
           done
-          if [[ "$created" == "true" ]]; then
+          if [[ "$(jq -r '.draft' <<< "$release_json")" == "true" ]]; then
             gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
           fi
           final_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
