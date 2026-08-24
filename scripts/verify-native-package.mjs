@@ -57,6 +57,15 @@ function findExecutable(root, expectedName) {
   return ''
 }
 
+function removeTemporary(directory) {
+  fs.rmSync(directory, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === 'win32' ? 10 : 2,
+    retryDelay: 500,
+  })
+}
+
 function verifyMac(input) {
   const { dmg, zip } = selectNativeArtifacts(input, 'darwin')
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'aivo-native-mac-'))
@@ -73,7 +82,7 @@ function verifyMac(input) {
     run('unzip', ['-t', zip])
   } finally {
     if (mounted) run('hdiutil', ['detach', mountPoint])
-    fs.rmSync(temporary, { recursive: true, force: true })
+    removeTemporary(temporary)
   }
 }
 
@@ -85,10 +94,8 @@ function verifyWindows(input) {
     run(installer, ['/S', `/D=${installDirectory}`])
     const executable = findExecutable(installDirectory, 'aivo.exe')
     if (!executable) throw new Error('NSIS installation did not produce aivo.exe.')
-    const uninstaller = findExecutable(installDirectory, 'Uninstall Aivo.exe')
-    if (uninstaller) run(uninstaller, ['/S'])
   } finally {
-    fs.rmSync(temporary, { recursive: true, force: true })
+    removeTemporary(temporary)
   }
 }
 
@@ -102,7 +109,7 @@ function verifyLinux(input) {
       throw new Error('AppImage extraction did not produce AppRun.')
     }
   } finally {
-    fs.rmSync(temporary, { recursive: true, force: true })
+    removeTemporary(temporary)
   }
 }
 
