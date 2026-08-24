@@ -1,9 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
 
+import { useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { AiCloud01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowLeft, Settings } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Settings } from 'lucide-react'
 import { WindowControls } from '@/components/app-top-bar-controls'
 import {
   Sidebar,
@@ -17,12 +18,15 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import { ProviderSettingsScreen } from '@/features/providers/provider-settings-screen'
+import { DesktopUpdateSettings } from '@/features/updates/desktop-update-settings'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsRoute,
 })
 
 function SettingsRoute() {
+  const [section, setSection] = useState<'providers' | 'updates'>('providers')
+
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b px-3" data-app-drag>
@@ -49,12 +53,24 @@ function SettingsRoute() {
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
-                      aria-current="page"
+                      aria-current={section === 'providers' ? 'page' : undefined}
                       className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
-                      isActive
+                      isActive={section === 'providers'}
+                      onClick={() => setSection('providers')}
                     >
                       <HugeiconsIcon icon={AiCloud01Icon} strokeWidth={1.8} />
                       <span>模型提供商</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      aria-current={section === 'updates' ? 'page' : undefined}
+                      className="gap-2.5 px-1.5 py-2 text-sm text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+                      isActive={section === 'updates'}
+                      onClick={() => setSection('updates')}
+                    >
+                      <RefreshCw />
+                      <span>软件更新</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
@@ -64,7 +80,7 @@ function SettingsRoute() {
         </Sidebar>
         <SidebarInset className="h-full min-h-0 min-w-0 overflow-hidden">
           <main className="min-h-0 flex-1 bg-background">
-            <ProviderSettingsScreen />
+            {section === 'providers' ? <ProviderSettingsScreen /> : <DesktopUpdateSettings />}
           </main>
         </SidebarInset>
       </SidebarProvider>

@@ -12,6 +12,14 @@
 
 Provider credentials, MCP Bearer tokens, OAuth tokens, authorization headers, signing material, and secure-store values remain in privileged local services or cross the renderer boundary only as an explicit one-time write-only credential input. Core converts a direct MCP Bearer value to a Host-owned secure-store reference before persistence and returns only configured status or reference data. UI read DTOs and diagnostic DTOs expose only status, provider/source identity, expiry, or other non-secret summaries. Secrets are cleared from transient memory when their owning session or process ends where supported by the runtime.
 
+## Desktop update trust
+
+- Only Electron main may contact the fixed public R2 stable manifest and fixed `atlantis-mk/Aivo` GitHub Release API for updates. The renderer cannot supply or override origins, URLs, paths, commands, versions, artifacts, sizes, or digests.
+- The mutable R2 channel pointer is not sufficient execution authority by itself. The selected fixed-path R2 asset must agree with the same-tag non-draft GitHub Release on exact normalized name, size, and SHA-256, and the downloaded bytes must independently match the agreed size and SHA-256 before OS handoff.
+- Metadata and packages have explicit HTTPS origin/path, schema, size, timeout, redirect, and stable-SemVer bounds. Ambiguous assets, downgrade, unsupported platform/architecture, mismatched metadata, partial content, overflow, timeout, and cancellation fail closed and delete partial files.
+- A verified digest does not claim code signing. Package execution/replacement remains an explicit native-user action with OS prompts; unsigned packages are never silently installed or represented as signed.
+- Update checks contain no credentials, device identifier, telemetry, prompts, projects, or other private workspace data. Safe state may include only the app version, target platform/architecture, phase, bounded progress, and actionable error category.
+
 ## Execution safety
 
 - Managed prompt Markdown is private local user data read and written only by Core below its bounded prompt root. Renderer input cannot select a path. Symlinks, path escapes, oversized catalogs, malformed frontmatter, unknown variables, and broken required references are rejected before activation. Prompt text is never an authorization source and cannot change code-owned tool, credential, permission, parser, or structured-envelope policy.

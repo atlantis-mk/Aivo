@@ -31,6 +31,14 @@ SQLite, providers, OS processes, MCP, LSP, and other adapters
 - Each process, stream, window, and subscription has explicit ownership, cancellation, and teardown.
 - Generated bindings in `apps/desktop/bridge/go` are generated from their owner and never hand-edited.
 
+### Desktop update boundary
+
+- Electron main owns the fixed R2 stable-channel and GitHub Release metadata clients, stable SemVer comparison, platform/architecture artifact derivation, schema/origin/path validation, streaming download, SHA-256 verification, temporary package lifecycle, and OS package handoff.
+- Preload exposes only state, check, download, install/handoff, cancellation, and state-subscription capabilities. Renderer data cannot select an update origin, URL, path, command, version, artifact, size, or digest.
+- One coordinator owns at most one metadata or download operation. Every network request has a timeout and response bound, progress is bounded and throttled, shutdown aborts owned work, and partial or rejected files are removed.
+- The updater requires matching R2 and same-tag non-draft GitHub Release asset metadata before download. Verification is defense in depth and does not replace platform signing, notarization, or OS security prompts.
+- Installation is an explicit native-user handoff. macOS and Windows open the verified installer package; Linux reveals the verified AppImage rather than assuming an installation layout that Aivo does not own.
+
 ### Go core
 
 - `core/domain` does not depend on HTTP, GORM, Electron, or provider SDK shapes.

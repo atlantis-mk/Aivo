@@ -20,6 +20,7 @@
 | Package smoke | Installer contents, launch, bundled core, health | `pnpm smoke:release` after platform package command |
 | Source license | Canonical PolyForm Noncommercial text, source-available/noncommercial wording, commercial authorization boundary, required notice, and workspace package-manifest consistency | `CT-LICENSE-001` in `scripts/source-license-metadata.test.mjs` |
 | Release publication | Tag/version validation, normalized four-platform asset contract, immutable R2 publication plan, stable channel manifest, and GitHub Release asset set | `CT-RELEASE-001` in `scripts/release-publication.test.mjs` plus a successful tagged Actions run |
+| Desktop automatic update | Stable SemVer/platform selection, fixed R2/GitHub identity and schema validation, cross-source name/size/SHA-256 agreement, bounded streaming download/progress, exact byte verification, typed IPC isolation, startup/manual flows, cancellation/cleanup, user-confirmed package handoff, and responsive Settings states | `AT-UPDATE-001`, `CT-SECURITY-001`, `CT-RELIABILITY-001` evidence in the owning Work |
 | Public repository | External backup, secret scan, new root history, new Public repository identity, metadata, and repository security settings | `CT-REPOSITORY-001` evidence in the owning Work |
 
 ## Work verification
@@ -32,6 +33,7 @@
 - Embedded View tests cover same-identity no-navigation reuse, monotonic latest-wins bounded context delivery, stale mount refusal, different-identity teardown, close/reopen, and bridge compatibility for pages that do not subscribe.
 - Runtime messaging tests cover v1 denial/v2 permission, sender and current-generation ownership, one-shot timeout/overflow/malformed response, Port connection limits, ordered bounded NDJSON, post/disconnect repetition, EOF/failure, and View/service teardown.
 - Local extension installation tests prove preview/copy executes no code, confirmation re-hashes against TOCTOU changes, copied packages match the confirmed integrity before atomic publication, executable trust remains native-user-only, schema v3 receives a verified backup before v4, exact linked rows promote safely, managed installs survive source mutation/removal and restart, partial staging stays invisible, and uninstall/cleanup cannot escape the Host-owned root or delete source.
+- Desktop update tests prove the renderer cannot choose a URL/path/command, the R2 and same-tag GitHub metadata agree before bytes are accepted, redirects/oversize/ambiguity/downgrade/mismatch fail closed, partial files are removed on failure/cancellation/shutdown, repeated actions retain one owner, and each target OS exposes only the documented explicit package handoff.
 - Legacy plugin retirement tests prove plugin RPC methods are unsupported, no legacy manifest or stored row starts a process or contributes a tool/hook/provider, no plugin management UI remains, and preserved rows/source folders are untouched.
 - UI Work includes wide and narrow screenshots when behavior or layout changes.
 - Agent-mode tests prove code defaults require no rows, built-in overrides reset exactly, management data omits toolsets while runtime restores code/safe capabilities, association/self/role/target bounds are enforced, custom deletion and role changes refuse durable references, empty associations omit model delegation, non-empty associations narrow Provider exposure and reject forged targets before child creation, project file overlays remain higher precedence, schema v5 receives a verified backup before v6, schema v6 receives a verified backup before v7 payload cleanup, and schema v7 receives a verified backup before v8.
@@ -49,6 +51,7 @@
 | GATE-6 | Migration backup, forward migration, failure recovery, and rollback pass when data changes |
 | GATE-7 | Release record references only sealed Work and the same-name Git tag is created |
 | GATE-8 | R2 immutable assets and GitHub Release assets have the same normalized names, sizes, and SHA-256 digests; the stable channel manifest is published last and verified by readback |
+| GATE-9 | Packaged update check/download/handoff passes on each target OS and architecture using the published stable-channel contract; unsigned artifacts remain explicit and non-silent |
 
 macOS signing/notarization and platform packaging details remain in `docs/release-quality.md`. Cross-compilation cannot satisfy target-OS package acceptance.
 

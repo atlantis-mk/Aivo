@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { createDesktopUpdater } = require('./desktop-updater.cjs')
 const { createExtensionViewManager, registerExtensionScheme } = require('./extension-views.cjs')
 
 registerExtensionScheme()
@@ -18,6 +19,7 @@ app.setName('Aivo')
 let coreProcess = null
 let logFile = null
 let extensionViewManager = null
+let desktopUpdater = null
 
 function configureApplicationMenu() {
   if (!isMac) return
@@ -307,6 +309,69 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     appendLog('error', 'renderer failed to load', { errorCode, errorDescription, validatedURL })
   })
+  return mainWindow
+}
+
+function requireMainRenderer(event) {
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Update capability is available only to the main Aivo renderer')
+  }
+}
+
+ipcMain.handle('aivo:update:get-state', (event) => {
+  requireMainRenderer(event)
+  return desktopUpdater?.getState()
+})
+
+ipcMain.handle('aivo:update:check', (event) => {
+  requireMainRenderer(event)
+  return desktopUpdater?.check()
+})
+
+ipcMain.handle('aivo:update:download', (event) => {
+  requireMainRenderer(event)
+  return desktopUpdater?.download()
+})
+
+ipcMain.handle('aivo:update:install', (event) => {
+  requireMainRenderer(event)
+  return desktopUpdater?.install()
+})
+
+ipcMain.handle('aivo:update:cancel', (event) => {
+  requireMainRenderer(event)
+  return desktopUpdater?.cancel()
+})
+
+async function checkAndOfferStartupUpdate(mainWindow) {
+  const state = await desktopUpdater.check()
+  if (state.phase !== 'available' || mainWindow.isDestroyed()) return
+  const offer = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Aivo 更新可用',
+    message: `发现 Aivo v${state.availableVersion}`,
+    detail: '更新包会同时核对 R2 与 GitHub Release，并在下载后验证 SHA-256。安装仍会显示操作系统安全提示。',
+    buttons: ['下载更新', '稍后'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (offer.response !== 0) return
+  const downloaded = await desktopUpdater.download()
+  if (downloaded.phase !== 'ready' || mainWindow.isDestroyed()) return
+  const ready = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Aivo 更新已验证',
+    message: `Aivo v${downloaded.availableVersion} 已准备好`,
+    detail: process.platform === 'linux'
+      ? '将显示验证后的 AppImage，由你按当前安装方式完成替换。'
+      : '将打开验证后的更新包；请按操作系统提示完成安装。',
+    buttons: [process.platform === 'linux' ? '显示更新包' : '打开安装包', '稍后'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (ready.response === 0) await desktopUpdater.install()
 }
 
 ipcMain.handle('aivo:select-project-directory', async () => {
@@ -451,7 +516,33 @@ app.whenReady().then(async () => {
   }
 
   extensionViewManager = createExtensionViewManager({ ipcMain, coreUrl })
-  createWindow()
+  desktopUpdater = createDesktopUpdater({
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    isPackaged: app.isPackaged,
+    tempRoot: app.getPath('temp'),
+    shell,
+    onState: (state) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send('aivo:update:state', state)
+      }
+      appendLog(state.phase === 'error' ? 'error' : 'info', 'desktop update state', {
+        phase: state.phase,
+        currentVersion: state.currentVersion,
+        availableVersion: state.availableVersion,
+        errorCode: state.errorCode,
+      })
+    },
+  })
+  const mainWindow = createWindow()
+  if (app.isPackaged) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        void checkAndOfferStartupUpdate(mainWindow)
+      }, 3_000)
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -467,6 +558,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  desktopUpdater?.dispose()
   extensionViewManager?.closeAll()
   if (coreProcess && coreProcess.exitCode === null) {
     coreProcess.kill()

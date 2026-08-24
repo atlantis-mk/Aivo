@@ -40,6 +40,16 @@ interface Window {
     focusWindow(): Promise<void>;
     toggleMaximize(): Promise<void>;
     exportDiagnostics(): Promise<string>;
+    updates: {
+      getState(): Promise<import("./features/updates/desktop-update-model").DesktopUpdateState>;
+      check(): Promise<import("./features/updates/desktop-update-model").DesktopUpdateState>;
+      download(): Promise<import("./features/updates/desktop-update-model").DesktopUpdateState>;
+      install(): Promise<import("./features/updates/desktop-update-model").DesktopUpdateState>;
+      cancel(): Promise<import("./features/updates/desktop-update-model").DesktopUpdateState>;
+      onState(
+        listener: (state: import("./features/updates/desktop-update-model").DesktopUpdateState) => void,
+      ): () => void;
+    };
     openExtensionView(input: {
       extensionId: string;
       viewId: string;

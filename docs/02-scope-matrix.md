@@ -4,7 +4,7 @@ The matrix owns current product scope. Optional or Future behavior must not be i
 
 | Capability | Status | Current boundary |
 | --- | --- | --- |
-| Electron desktop shell | Required | macOS, Windows, and Linux packaging targets |
+| Electron desktop shell | Required | macOS, Windows, and Linux packaging targets; packaged builds automatically check the trusted stable channel and offer a verified, user-confirmed native update handoff |
 | Local Go agent runtime | Required | Owns application behavior and privileged runtime coordination |
 | Provider configuration and model use | Required | Supported providers already represented by the registry and runtime |
 | Local projects and workspace context | Required | User-selected local repositories/folders, one configured initial directory for unscoped conversations, and Agent-assisted project query/registration with immutable one-time conversation binding |

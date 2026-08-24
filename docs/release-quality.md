@@ -52,6 +52,12 @@ Required GitHub Actions variables:
 
 Optional `R2_PREFIX` defaults to `aivo`. R2 credentials should be scoped to the chosen bucket and the Aivo prefix. Release jobs never print credentials.
 
+## Desktop update channel
+
+Packaged desktops check the public `aivo/channels/stable/latest.json` object after startup and on explicit user request. Electron main derives the normalized package name for its own platform/architecture and accepts only a newer stable SemVer. Before downloading, it requires the manifest entry to use the immutable `aivo/releases/v<version>/` R2 HTTPS path and cross-checks the exact name, size, and SHA-256 against the same-tag non-draft GitHub Release in `atlantis-mk/Aivo`.
+
+The downloaded bytes are streamed into an Aivo-owned temporary directory, bounded by the declared size and a hard package limit, and rechecked for exact size and SHA-256. Only then may a native user action open the DMG or NSIS package, or reveal the Linux AppImage. This update flow does not make unsigned artifacts signed, does not bypass OS warnings, and does not silently install or downgrade. A release is update-ready only after `GATE-8` publication consistency and `GATE-9` target-platform handoff acceptance pass.
+
 ## macOS Signing And Notarization
 
 The desktop package config enables hardened runtime, entitlements, signing, and electron-builder notarization. Unsigned local builds are allowed for development, but release CI should provide signing and notarization credentials.
