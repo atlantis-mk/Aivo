@@ -33,7 +33,7 @@ The history owner remains the renderer router. Only the `file:` protocol selects
 - `pnpm docs:check`, `pnpm scripts:test`, `pnpm test:core`, `pnpm lint`, `pnpm build`, and `git diff --check` must pass before verification.
 - The tagged `v0.1.2` workflow must repeat native packaging and smoke checks on macOS Apple Silicon, macOS Intel, Windows x64, and Linux x64.
 
-Evidence pending final local gates.
+Verified on 2026-08-25: the focused renderer-bundle tests passed for relative assets and the absolute/missing refusal paths; protocol-history tests passed for `file:`, HTTP, and HTTPS; and full `pnpm docs:check`, `pnpm scripts:test`, `pnpm test:core`, `pnpm lint`, `pnpm build`, and `git diff --check` gates passed on macOS. The build generated relative renderer references and the post-build verifier confirmed all eight emitted local references. Existing Fast Refresh and bundle-size warnings did not become errors. The formal tagged workflow remains the owner of native macOS Apple Silicon/Intel, Windows x64, and Linux x64 package/smoke acceptance before publication.
 
 ## Security and data lifecycle
 

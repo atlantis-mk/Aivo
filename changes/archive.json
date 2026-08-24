@@ -20,6 +20,15 @@
       }
     },
     {
+      "work_id": "BUG-2026-014-packaged-renderer-navigation",
+      "status": "Verified",
+      "archived_at": "2026-08-24T21:36:37.936Z",
+      "files": {
+        "changes/BUG-2026-014-packaged-renderer-navigation/change.md": "sha256:5ebf642fe2f860e88384776416acacd52d773b66a36e8c2746fdd74583f6dbac",
+        "changes/BUG-2026-014-packaged-renderer-navigation/change.yaml": "sha256:2a533bb675e38f3e067ef3d21f81c1f8a3526adb22008ab044d10f8701863714"
+      }
+    },
+    {
       "work_id": "CHG-2026-001-document-governance",
       "status": "Verified",
       "archived_at": "2026-07-30T21:21:01.997Z",

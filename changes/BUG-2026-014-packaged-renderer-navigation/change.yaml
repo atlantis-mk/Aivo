@@ -1,7 +1,7 @@
 id: "BUG-2026-014-packaged-renderer-navigation"
 title: "Restore packaged renderer assets and navigation"
 type: "bug"
-status: "Implementing"
+status: "Verified"
 spec_revision: "0.1.1-active"
 target_release: "v0.1.2"
 requirements:
