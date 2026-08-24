@@ -245,6 +245,15 @@
         "changes/CHG-2026-043-public-source-release/change.md": "sha256:eef2d92f9393360d0cc75ca500020b90877bb18d1cbe8ea6c5d2a0d8cfe62e30",
         "changes/CHG-2026-043-public-source-release/change.yaml": "sha256:1fd4eadb6ba4b8003de0cfe9cdf6ae6843679926de696f94441fbe2b4f82f140"
       }
+    },
+    {
+      "work_id": "CHG-2026-045-public-release-presentation",
+      "status": "Verified",
+      "archived_at": "2026-08-24T19:52:30.213Z",
+      "files": {
+        "changes/CHG-2026-045-public-release-presentation/change.md": "sha256:fb29aa5c2034f2d9e2a590ac419d6d5dce5921a2deed40d392127430fa3a2866",
+        "changes/CHG-2026-045-public-release-presentation/change.yaml": "sha256:ba0126abff4721c229c565ebd5e6aa1f3ebba11706700db4299b9a30064deb5a"
+      }
     }
   ]
 }

@@ -28,7 +28,7 @@ Each job runs `test:core`, `lint`, `build`, full platform packaging, `smoke:rele
 
 ## Tagged release publication
 
-`.github/workflows/publish-release.yml` runs when a `v<SemVer>` tag is pushed. The tag version must match both package manifests and must have a same-name release record under `releases/`. The workflow runs documentation, script, Core, lint, build, native package, and package-smoke gates on these GitHub-hosted targets:
+`.github/workflows/publish-release.yml` runs when a `v<SemVer>` tag is pushed. The tag version must match both package manifests and must have a same-name release record under `releases/`. That record must contain exactly one non-empty H1; the workflow uses it as the GitHub Release title and the complete file as the Release body. Bilingual highlights, the system/chip/format download table, integrity guidance, and installation warnings precede the retained internal release record. The workflow runs documentation, script, Core, lint, build, native package, and package-smoke gates on these GitHub-hosted targets:
 
 - macOS Apple Silicon on `macos-15`
 - macOS Intel on `macos-15-intel`

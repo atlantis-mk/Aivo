@@ -1,0 +1,30 @@
+id: "CHG-2026-045-public-release-presentation"
+title: "Present public releases for end users"
+type: "governance"
+status: "Verified"
+spec_revision: "0.1.1-active"
+target_release: null
+requirements:
+  - "NFR-RELEASE-001"
+tests:
+  - "CT-RELEASE-001"
+adrs: []
+context_refs:
+  - "docs/03-functional-requirements.md#NFR-RELEASE-001 Public source and release integrity"
+  - "docs/07-test-release-plan.md#Release gates"
+  - "docs/release-quality.md#Tagged release publication"
+  - "releases/_template.md"
+related_changes:
+  - "CHG-2026-043-public-source-release"
+affected_surfaces:
+  - "github-release"
+  - "release-documentation"
+  - "release-workflow"
+affected_formats:
+  - "release-markdown"
+affected_versions:
+  - "v0.1.0"
+  - "future-releases"
+security_impact: "none"
+migration: "none"
+supersedes: []
