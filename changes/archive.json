@@ -247,6 +247,17 @@
       }
     },
     {
+      "work_id": "CHG-2026-044-desktop-auto-update",
+      "status": "Verified",
+      "archived_at": "2026-08-24T20:29:44.993Z",
+      "files": {
+        "changes/CHG-2026-044-desktop-auto-update/change.md": "sha256:82850aab94c2589931663fdee46b5107debad1db4e10c394246f53f95b7345f8",
+        "changes/CHG-2026-044-desktop-auto-update/change.yaml": "sha256:7f7f915f42aad5644b5e3e852d4a896340daaa3fda74e3dab031d9ed4fb0561e",
+        "changes/CHG-2026-044-desktop-auto-update/evidence/desktop-update-ready-narrow.png": "sha256:1a113338d6beac50e935220f0c9abbaff1c26ce4c59ef482160fe5f295f05b6d",
+        "changes/CHG-2026-044-desktop-auto-update/evidence/desktop-update-ready-wide.png": "sha256:1c95ef3bb41008773ddf87454d1e46599b530276e31eb57c45b243377c0525ae"
+      }
+    },
+    {
       "work_id": "CHG-2026-045-public-release-presentation",
       "status": "Verified",
       "archived_at": "2026-08-24T19:52:30.213Z",

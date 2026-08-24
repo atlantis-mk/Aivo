@@ -139,8 +139,23 @@ test('CT-RELEASE-001 keeps R2-first GitHub publication resumable and digest-boun
   assert.match(workflow, /git rev-parse "\$RELEASE_TAG\^\{commit\}"/)
   assert.match(workflow, /run-id: \$\{\{ inputs\.source_run_id \}\}/)
   assert.match(workflow, /Refusing to reuse GitHub asset without digest evidence/)
+  assert.match(workflow, /Verify native installer handoff package/)
+  assert.match(workflow, /node scripts\/verify-native-package\.mjs --input build\/desktop/)
   assert.match(workflow, /if \[\[ "\$\(jq -r '\.draft'/)
   assert.ok(workflow.indexOf('Publish stable manifest last') < workflow.indexOf('Publish GitHub Release assets'))
+})
+
+test('AT-UPDATE-001 runs release quality on every native update target', async () => {
+  const workflow = await fs.readFile(
+    path.join(import.meta.dirname, '..', '.github', 'workflows', 'release-quality.yml'),
+    'utf8',
+  )
+
+  for (const runner of ['macos-15', 'macos-15-intel', 'windows-2025', 'ubuntu-24.04']) {
+    assert.match(workflow, new RegExp(`os: ${runner.replaceAll('.', '\\.')}`))
+  }
+  assert.match(workflow, /Verify native installer handoff package/)
+  assert.match(workflow, /node scripts\/verify-native-package\.mjs --input build\/desktop/)
 })
 
 test('CT-RELEASE-001 presents v0.1.0 as a user-facing bilingual release', async () => {
