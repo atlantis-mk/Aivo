@@ -15,6 +15,7 @@ import {
   turnsFromEvents,
 } from "@/features/projects/project-conversation-events";
 import { parseTime } from "@/features/projects/project-time-model";
+import { runtimeMetricsFromEventPayload } from "@/features/projects/project-session-runtime-stats";
 import {
   listSessionEvents,
   listSessionToolCalls,
@@ -84,6 +85,9 @@ export function useProjectConversationTurnLoader({
             responseCompletedAt: completedAt,
             responseText: options.fallbackAssistantEvent.content ?? "",
             responseVisible: true,
+            runtimeMetrics: runtimeMetricsFromEventPayload(
+              options.fallbackAssistantEvent.payload,
+            ),
             startedAt: submittedAt.getTime(),
             stopped: false,
             submittedAt,

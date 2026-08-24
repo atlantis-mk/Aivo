@@ -16,6 +16,7 @@ type Service struct {
 	onAuthSuccess            func()
 	onProviderAuthUpdated    func(domain.ProviderAuthStatus)
 	onSessionUpdated         func(string, *domain.Session)
+	onSessionEventUpdated    func(domain.SessionEvent, bool)
 	onTurnUpdated            func(string, domain.Turn)
 	onAssistantDelta         func(sessionID string, turnID string, delta string)
 	onToolCallUpdated        func(string, string, domain.ToolCall, bool)
@@ -51,9 +52,22 @@ type Service struct {
 	skillManager             *SkillManager
 	extensionSupervisor      *ExtensionSupervisor
 	extensionCredentials     *HostCredentialBroker
+	prompts                  *PromptRegistry
 }
 
 func NewService(store Store) *Service {
+	prompts, promptErr := NewBuiltinPromptRegistry()
+	if rootStore, ok := store.(promptRootStore); ok {
+		if root, err := rootStore.ManagedPromptRoot(); err == nil {
+			prompts, promptErr = NewPromptRegistry(root)
+		} else {
+			promptErr = err
+		}
+	}
+	if promptErr != nil {
+		log.Printf("prompt_catalog init_failed error_class=prompt_initialization")
+		prompts, _ = NewBuiltinPromptRegistry()
+	}
 	service := &Service{
 		store:                    store,
 		now:                      time.Now,
@@ -72,6 +86,7 @@ func NewService(store Store) *Service {
 		activeAgentRunCancel:     map[string]context.CancelFunc{},
 		activeTurnCancel:         map[string]context.CancelFunc{},
 		mcpRegistrationProposals: newMCPRegistrationProposalStore(),
+		prompts:                  prompts,
 	}
 	service.mcpManager = NewMCPManager(store, service.secrets)
 	service.skillManager = NewSkillManager(store)

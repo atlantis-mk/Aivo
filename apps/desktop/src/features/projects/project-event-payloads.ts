@@ -24,6 +24,11 @@ export function normalizeToolCallUpdatedPayload(payloads: unknown[]) {
   return normalizeToolCallObject(payload?.toolCall);
 }
 
+export function normalizeSessionEventUpdatedPayload(payloads: unknown[]) {
+  const payload = normalizeRecordPayload(payloads);
+  return normalizeSessionEventObject(payload?.event);
+}
+
 export function normalizeShellOutputPayload(
   payloads: unknown[],
 ): ShellOutputPayload {
@@ -120,6 +125,19 @@ function normalizeToolCallObject(value: unknown): domain.ToolCall | null {
   const record = value as Record<string, unknown>;
   if (typeof record.id === "string" && typeof record.sessionId === "string") {
     return record as unknown as domain.ToolCall;
+  }
+  return null;
+}
+
+function normalizeSessionEventObject(value: unknown): domain.SessionEvent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.id === "string" &&
+    typeof record.sessionId === "string" &&
+    typeof record.type === "string"
+  ) {
+    return record as unknown as domain.SessionEvent;
   }
   return null;
 }

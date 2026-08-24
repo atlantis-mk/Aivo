@@ -9,6 +9,7 @@ import { useAutoTextareaHeight } from "@/features/projects/project-prompt-compos
 import { PromptComposerTextarea } from "@/features/projects/project-prompt-composer-textarea";
 import { PromptComposerToolbar } from "@/features/projects/project-prompt-composer-toolbar";
 import type { PromptComposerProps } from "@/features/projects/project-prompt-composer-types";
+import { ProjectSessionRuntimeStatsLine } from "@/features/projects/project-session-runtime-stats-line";
 import { hasAppBridge } from "@/lib/app-config";
 import { cn } from "@/lib/utils";
 import { selectComposerFileOrDirectory } from "@/services/aivo/project-service";
@@ -25,6 +26,7 @@ export function PromptComposer({
   onExtraHeightChange,
   onHeightChange,
   onModelSelect,
+  onCompactContext,
   onPromptMentionRemove,
   onPromptMentionSelect,
   onOpenToolActivationDialog,
@@ -46,6 +48,7 @@ export function PromptComposer({
   projects,
   attachments,
   reasoningEffort,
+  runtimeStatsLine,
   serviceTier,
   showProjectPicker,
   showServiceTier,
@@ -133,6 +136,7 @@ export function PromptComposer({
           />
           <PromptComposerTextarea
             onAddAttachments={onAddAttachments}
+            onCompactContext={onCompactContext}
             onPromptChange={onPromptChange}
             onPromptMentionRemove={onPromptMentionRemove}
             onPromptMentionSelect={onPromptMentionSelect}
@@ -173,6 +177,7 @@ export function PromptComposer({
           />
         </CardFooter>
       </Card>
+      <ProjectSessionRuntimeStatsLine value={runtimeStatsLine} />
     </div>
   );
 }

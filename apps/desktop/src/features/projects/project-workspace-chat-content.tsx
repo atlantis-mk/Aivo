@@ -21,6 +21,16 @@ import { ProjectConversationViewport } from "@/features/projects/project-workspa
 import { constructConversationTimelineRows } from "@/features/projects/conversation-timeline-row-model";
 import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
 import { ConversationToolInspector } from "@/features/projects/conversation-tool-inspector";
+import {
+  deriveSessionRuntimeStats,
+  formatSessionRuntimeStatsValue,
+} from "@/features/projects/project-session-runtime-stats";
+import {
+  compactSessionContext,
+  getSessionRuntimeStats,
+  type SessionRuntimeStats,
+} from "@/services/aivo";
+import { toast } from "sonner";
 
 export function ProjectWorkspaceChatContent({
   activeSessionId,
@@ -94,6 +104,27 @@ export function ProjectWorkspaceChatContent({
   viewportHandlers,
 }: ProjectWorkspaceMainContentProps) {
   const [selectedToolActivityId, setSelectedToolActivityId] = useState("");
+  const [contextCompactionPending, setContextCompactionPending] = useState(false);
+  const compactContext = useCallback(async () => {
+    if (!activeSessionId) {
+      toast.info("请先开始会话，再压缩上下文");
+      return;
+    }
+    if (hasPendingTurn) {
+      toast.info("请等待当前回复完成后再压缩上下文");
+      return;
+    }
+    if (contextCompactionPending) return;
+    setContextCompactionPending(true);
+    try {
+      await compactSessionContext(activeSessionId);
+      toast.success("上下文已压缩");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "压缩上下文失败");
+    } finally {
+      setContextCompactionPending(false);
+    }
+  }, [activeSessionId, contextCompactionPending, hasPendingTurn]);
   const toolActivities = useMemo(
     () =>
       constructConversationTimelineRows(turns).flatMap((row) => {
@@ -106,6 +137,41 @@ export function ProjectWorkspaceChatContent({
         return [];
       }),
     [turns],
+  );
+  const [persistedRuntimeStats, setPersistedRuntimeStats] = useState<{
+    sessionId: string;
+    value?: SessionRuntimeStats;
+  }>({ sessionId: "" });
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeSessionId) {
+      setPersistedRuntimeStats({ sessionId: "" });
+      return () => {
+        cancelled = true;
+      };
+    }
+    setPersistedRuntimeStats({ sessionId: activeSessionId });
+    void getSessionRuntimeStats(activeSessionId)
+      .then((value) => {
+        if (!cancelled) setPersistedRuntimeStats({ sessionId: activeSessionId, value });
+      })
+      .catch(() => {
+        if (!cancelled) setPersistedRuntimeStats({ sessionId: activeSessionId });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, hasPendingTurn]);
+  const runtimeStatsLine = useMemo(
+    () =>
+      showConversationLayout
+        ? formatSessionRuntimeStatsValue(
+            persistedRuntimeStats.sessionId === activeSessionId
+              ? persistedRuntimeStats.value ?? deriveSessionRuntimeStats(turns)
+              : deriveSessionRuntimeStats(turns),
+          )
+        : "",
+    [activeSessionId, persistedRuntimeStats, showConversationLayout, turns],
   );
   const toolInspectorAutoOpenRef = useRef({
     observedToolCallIds: new Set(
@@ -256,6 +322,7 @@ export function ProjectWorkspaceChatContent({
             onHeightChange={onHeightChange}
             onHideCompletedTodoPlan={onHideCompletedTodoPlan}
             onModelSelect={onModelSelect}
+            onCompactContext={compactContext}
             onOpenToolActivationDialog={onOpenToolActivationDialog}
             onPermissionModeSelect={onPermissionModeSelect}
             onProjectAdd={onProjectAdd}
@@ -269,7 +336,7 @@ export function ProjectWorkspaceChatContent({
             onScrollToBottom={onScrollToBottom}
             onServiceTierSelect={onServiceTierSelect}
             onSubmit={onSubmit}
-            pending={hasPendingTurn}
+            pending={hasPendingTurn || contextCompactionPending}
             permissionMode={permissionMode}
             prompt={prompt}
             promptResourceReferences={promptResourceReferences}
@@ -277,6 +344,7 @@ export function ProjectWorkspaceChatContent({
             projectPath={projectPath}
             projects={projects}
             reasoningEffort={reasoningEffort}
+            runtimeStatsLine={runtimeStatsLine}
             serviceTier={serviceTier}
             shouldShowTodoFloatingStatus={shouldShowTodoFloatingStatus}
             showConversationLayout={showConversationLayout}

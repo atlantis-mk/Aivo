@@ -1,4 +1,7 @@
+import { Archive } from "lucide-react";
+
 import { AnimatedTitle } from "@/components/animated-title";
+import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -15,12 +18,14 @@ import type { domain } from "../../../bridge/go/models";
 export function ProjectConversationHistoryList({
   activeConversationId,
   conversations,
+  onArchiveConversation,
   onSelectConversation,
   pendingPermissionCountsBySessionId,
   runningConversationIds,
 }: {
   activeConversationId: string;
   conversations: domain.Session[];
+  onArchiveConversation: (sessionId: string) => void;
   onSelectConversation: (session: domain.Session) => void;
   pendingPermissionCountsBySessionId: Record<string, number>;
   runningConversationIds: string[];
@@ -35,8 +40,8 @@ export function ProjectConversationHistoryList({
   );
 
   return (
-    <ScrollArea className="max-h-[min(72vh,560px)] [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-[min(72vh,560px)]">
-      <ItemGroup className="gap-1 p-2">
+    <ScrollArea className="max-h-[min(72vh,560px)] w-full min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-[min(72vh,560px)] [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">
+      <ItemGroup className="min-w-0 max-w-full gap-1 p-2">
         {orderedConversations.map((conversation) => {
           const projectName = sessionProjectName(conversation);
           const pendingPermissionCount =
@@ -53,22 +58,22 @@ export function ProjectConversationHistoryList({
 
           return (
             <Item
-              asChild
-              className="aria-[current=page]:bg-muted"
+              aria-current={
+                conversation.id === activeConversationId ? "page" : undefined
+              }
+              className="group/history-item relative min-w-0 max-w-full flex-nowrap overflow-hidden p-0 aria-[current=page]:bg-muted"
               key={conversation.id}
+              role="listitem"
               size="sm"
               variant="outline"
             >
               <button
-                aria-current={
-                  conversation.id === activeConversationId ? "page" : undefined
-                }
+                className="flex min-w-0 flex-1 rounded-md px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 onClick={() => onSelectConversation(conversation)}
-                role="listitem"
                 type="button"
               >
-                <ItemContent className="min-w-0">
-                  <ItemTitle className="min-w-0">
+                <ItemContent className="min-w-0 max-w-full">
+                  <ItemTitle className="w-full min-w-0 max-w-full">
                     <AnimatedTitle
                       className="min-w-0"
                       value={conversation.title}
@@ -78,10 +83,25 @@ export function ProjectConversationHistoryList({
                     {projectName ? (
                       <span className="truncate">{projectName}</span>
                     ) : null}
-                    <span className="ml-auto shrink-0">{status}</span>
+                    <span className="ml-auto shrink-0 transition-opacity group-hover/history-item:opacity-0">
+                      {status}
+                    </span>
                   </ItemDescription>
                 </ItemContent>
               </button>
+              {!pendingPermissionCount ? (
+                <Button
+                  aria-label="归档对话"
+                  className="pointer-events-none absolute right-2 bottom-2 opacity-0 transition-opacity group-hover/history-item:pointer-events-auto group-hover/history-item:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+                  onClick={() => onArchiveConversation(conversation.id)}
+                  size="icon-xs"
+                  title="归档对话"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Archive />
+                </Button>
+              ) : null}
             </Item>
           );
         })}

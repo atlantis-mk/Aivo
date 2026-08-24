@@ -131,7 +131,12 @@ func (s *Service) resumeAgentTerminalInput(input ResolveAgentTerminalInputReques
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	prompt := fmt.Sprintf("Continue the interactive terminal process %s at cursor %d. The user assigned terminal input to you (%s). Poll it first and inspect the prompt. For normal line input, call write_stdin once with plain chars and press_enter=true; never append escaped newline text.", input.ProcessRef, cursor, input.Mode)
+	prompt, promptErr := s.renderManagedPrompt("task.terminal_resume", map[string]string{
+		"process_ref": input.ProcessRef, "cursor": fmt.Sprint(cursor), "mode": input.Mode,
+	})
+	if promptErr != nil {
+		return
+	}
 	prepared, err := s.SubmitSessionMessageStreaming(context.Background(), domain.SubmitSessionMessageRequest{SessionID: input.SessionID, Text: prompt})
 	if err == nil && prepared.UserEvent.ID != "" {
 		_, _ = s.store.SetSessionEventVisibility(context.Background(), prepared.UserEvent.ID, domain.EventVisibilityInternal)

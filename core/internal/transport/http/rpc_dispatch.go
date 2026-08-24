@@ -16,6 +16,9 @@ func (api *API) call(ctx context.Context, method string, args []json.RawMessage)
 	if result, handled, err := api.callAgentRPC(ctx, method, args); handled {
 		return result, err
 	}
+	if result, handled, err := api.callPromptRPC(ctx, method, args); handled {
+		return result, err
+	}
 	if result, handled, err := api.callSessionEventRPC(ctx, method, args); handled {
 		return result, err
 	}

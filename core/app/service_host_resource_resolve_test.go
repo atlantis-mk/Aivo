@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -174,7 +176,7 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 		w.Header().Set("Content-Type", "application/json")
 		switch index {
 		case 1:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[\"extension_com_example_ui\",\"mcp_docs\"]"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"sources\":[{\"kind\":\"extension\",\"id\":\"com.example.ui\"},{\"kind\":\"mcp\",\"id\":\"docs\"}]}"}}]}`))
 		case 2:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"resources\":[\"skill:ui-review\",\"context:com.example.ui:ui-checklist\"],\"skillInstructions\":[\"skill:ui-review\"],\"reason\":\"direct matches\"}"}}]}`))
 		default:
@@ -194,8 +196,30 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	if err != nil {
 		t.Fatal(err)
 	}
+	type visibleSelectionUpdate struct {
+		Created bool
+		Event   domain.SessionEvent
+	}
+	visibleSelectionUpdates := []visibleSelectionUpdate{}
+	service.SetSessionEventUpdatedHook(func(event domain.SessionEvent, created bool) {
+		if event.Payload["kind"] == "host_tool_selection" {
+			visibleSelectionUpdates = append(visibleSelectionUpdates, visibleSelectionUpdate{Created: created, Event: event})
+		}
+	})
 	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "Review this UI accessibility"}); err != nil {
 		t.Fatal(err)
+	}
+	if len(visibleSelectionUpdates) != 2 {
+		t.Fatalf("live visible selection updates = %#v, want running creation and completed update", visibleSelectionUpdates)
+	}
+	if !visibleSelectionUpdates[0].Created || visibleSelectionUpdates[0].Event.Payload["status"] != "running" {
+		t.Fatalf("first visible selection update = %#v, want created running event", visibleSelectionUpdates[0])
+	}
+	if visibleSelectionUpdates[1].Created || visibleSelectionUpdates[1].Event.Payload["status"] != "completed" {
+		t.Fatalf("second visible selection update = %#v, want completed update", visibleSelectionUpdates[1])
+	}
+	if visibleSelectionUpdates[0].Event.ID != visibleSelectionUpdates[1].Event.ID {
+		t.Fatalf("visible selection changed event identity: %#v", visibleSelectionUpdates)
 	}
 
 	mu.Lock()
@@ -208,7 +232,7 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	for _, message := range captured[0].Messages {
 		toolGroupText += message.Content
 	}
-	if !strings.Contains(toolGroupText, "Host tool-group selector") || !strings.Contains(toolGroupText, "extension_com_example_ui：Inspect UI accessibility") || !strings.Contains(toolGroupText, "mcp_docs：Search UI documentation") || strings.Contains(toolGroupText, "example_capture_ui") || strings.Contains(toolGroupText, "mcp_docs_read_docs") || len(captured[0].Tools) != 0 {
+	if !strings.Contains(toolGroupText, "Host MCP/extension selector") || !strings.Contains(toolGroupText, "extension:com.example.ui：Inspect UI accessibility") || !strings.Contains(toolGroupText, "mcp:docs：Search UI documentation") || strings.Contains(toolGroupText, "example_capture_ui") || strings.Contains(toolGroupText, "mcp_docs_read_docs") || len(captured[0].Tools) != 0 {
 		t.Fatalf("first request was not the minimal source-group resolver: %#v", captured[0])
 	}
 	primaryText := ""
@@ -222,16 +246,189 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	for _, tool := range captured[2].Tools {
 		toolNames[tool.Function.Name] = true
 	}
-	if len(toolNames) != 12 || !toolNames["read"] || !toolNames["bash"] || !toolNames["edit"] || !toolNames["write"] || !toolNames[ToolResolveName] || !toolNames["example_inspect_ui"] || !toolNames["example_capture_ui"] || !toolNames["mcp_docs_search_docs"] || !toolNames["mcp_docs_read_docs"] || !toolNames["mcp_host_docs_list_resource_templates"] || !toolNames["mcp_host_docs_list_resources"] || !toolNames["mcp_host_docs_read_resource"] {
-		t.Fatalf("primary tools = %#v, want core, selection control, and every member of the selected Manifest/MCP groups", captured[2].Tools)
+	standaloneTools := []string{"aivo_projects_add", "aivo_projects_associate", "aivo_projects_query", "aivo_tools_register_mcp"}
+	if len(toolNames) != 16 || !toolNames["read"] || !toolNames["bash"] || !toolNames["edit"] || !toolNames["write"] || !toolNames[ToolResolveName] || !toolNames["example_inspect_ui"] || !toolNames["example_capture_ui"] || !toolNames["mcp_docs_search_docs"] || !toolNames["mcp_docs_read_docs"] || !toolNames["mcp_host_docs_list_resource_templates"] || !toolNames["mcp_host_docs_list_resources"] || !toolNames["mcp_host_docs_read_resource"] {
+		t.Fatalf("primary tools = %#v, want core, standalone tools, selection control, and every member of the selected extension/MCP sources", captured[2].Tools)
+	}
+	for _, name := range standaloneTools {
+		if !toolNames[name] {
+			t.Fatalf("primary tools are missing standalone tool %q: %#v", name, captured[2].Tools)
+		}
 	}
 	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
-	if !initialized || !automatic["example_inspect_ui"] || !automatic["example_capture_ui"] || !automatic["mcp_docs_search_docs"] || !automatic["mcp_docs_read_docs"] || !automatic["mcp_host_docs_list_resource_templates"] || !automatic["mcp_host_docs_list_resources"] || !automatic["mcp_host_docs_read_resource"] || len(automatic) != 7 {
+	if !initialized || !automatic["example_inspect_ui"] || !automatic["example_capture_ui"] || !automatic["mcp_docs_search_docs"] || !automatic["mcp_docs_read_docs"] || !automatic["mcp_host_docs_list_resource_templates"] || !automatic["mcp_host_docs_list_resources"] || !automatic["mcp_host_docs_read_resource"] || len(automatic) != 11 {
 		t.Fatalf("persisted automatic selection = %#v initialized=%t", automatic, initialized)
 	}
+	for _, name := range standaloneTools {
+		if !automatic[name] {
+			t.Fatalf("persisted automatic selection is missing standalone tool %q: %#v", name, automatic)
+		}
+	}
+	assertVisibleInitialToolSelection(t, service, ctx, session.ID, "conversation", []hostToolSelectionResource{
+		{Kind: "extension", ID: "com.example.ui", Name: "com.example.ui", ToolCount: 2},
+		{Kind: "mcp", ID: "docs", Name: "docs", ToolCount: 5},
+		{Kind: "tool", ID: "aivo_projects_add", Name: "aivo_projects_add", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_projects_associate", Name: "aivo_projects_associate", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_projects_query", Name: "aivo_projects_query", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_tools_register_mcp", Name: "aivo_tools_register_mcp", ToolCount: 1},
+	})
 	activeIDs, _ := service.activeSkills(ctx, session.ID)
 	if len(activeIDs) != 0 {
 		t.Fatalf("automatic Skill selection persisted across requests: %v", activeIDs)
+	}
+	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "Review the same UI again"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(visibleSelectionUpdates) != 2 {
+		t.Fatalf("later turn emitted duplicate visible selection updates: %#v", visibleSelectionUpdates)
+	}
+	assertVisibleInitialToolSelection(t, service, ctx, session.ID, "conversation", []hostToolSelectionResource{
+		{Kind: "extension", ID: "com.example.ui", Name: "com.example.ui", ToolCount: 2},
+		{Kind: "mcp", ID: "docs", Name: "docs", ToolCount: 5},
+		{Kind: "tool", ID: "aivo_projects_add", Name: "aivo_projects_add", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_projects_associate", Name: "aivo_projects_associate", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_projects_query", Name: "aivo_projects_query", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_tools_register_mcp", Name: "aivo_tools_register_mcp", ToolCount: 1},
+	})
+}
+
+func TestToolInventoryInspectionInjectsAllEligibleToolsForOneProviderRequest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	extensionRoot := t.TempDir()
+	const inventoryToolCount = 66
+	contributedTools := make([]any, 0, inventoryToolCount)
+	for index := 0; index < inventoryToolCount; index++ {
+		contributedTools = append(contributedTools, map[string]any{
+			"name":        fmt.Sprintf("inventory_tool_%02d", index),
+			"description": "Inspect inventory data",
+			"schema":      map[string]any{"type": "object"},
+			"activation":  "auto",
+		})
+	}
+	writeTestExtensionManifest(t, extensionRoot, map[string]any{
+		"schemaVersion": 2, "id": "com.example.inventory", "name": "Inventory tools", "description": "Inspect inventory data", "version": "1", "apiVersion": "2",
+		"runtime":     map[string]any{"type": "builtin"},
+		"contributes": map[string]any{"tools": contributedTools},
+	})
+	events := []string{}
+	service.extensionSupervisor.RegisterBuiltin("com.example.inventory", func() extensionRuntimeClient {
+		return &builtinExtensionTestClient{events: &events}
+	})
+	status, err := service.extensionSupervisor.Discover(extensionRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.extensionSupervisor.Enable(ctx, status.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	type capturedRequest struct {
+		Tools []struct {
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		} `json:"tools"`
+	}
+	var mu sync.Mutex
+	requests := []capturedRequest{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body capturedRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		mu.Lock()
+		requests = append(requests, body)
+		index := len(requests)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if index == 1 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"inspect\",\"sources\":[]}"}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"inventory response"}}]}`))
+	}))
+	defer server.Close()
+	if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateModelPreferences(ctx, domain.ModelPreferencesInput{
+		Model: &domain.ModelRef{ProviderID: "custom-api", ModelID: "test-model"}, AuxiliaryModel: &domain.ModelRef{ProviderID: "custom-api", ModelID: "test-model"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "Tool inventory", ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "当前有哪些工具可调用"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "谢谢"}); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	captured := append([]capturedRequest(nil), requests...)
+	mu.Unlock()
+	if len(captured) != 3 {
+		t.Fatalf("provider request count = %d, want auxiliary inspection and two primary requests", len(captured))
+	}
+	firstPrimary := map[string]bool{}
+	for _, tool := range captured[1].Tools {
+		firstPrimary[tool.Function.Name] = true
+	}
+	secondPrimary := map[string]bool{}
+	for _, tool := range captured[2].Tools {
+		secondPrimary[tool.Function.Name] = true
+	}
+	for index := 0; index < inventoryToolCount; index++ {
+		name := fmt.Sprintf("inventory_tool_%02d", index)
+		if !firstPrimary[name] {
+			t.Fatalf("inspection Provider tools are missing %q from the complete eligible extension group", name)
+		}
+	}
+	if !firstPrimary[ToolResolveName] {
+		t.Fatalf("inspection Provider tools are missing %q", ToolResolveName)
+	}
+	if secondPrimary["inventory_tool_00"] || secondPrimary["inventory_tool_65"] || !secondPrimary[ToolResolveName] {
+		t.Fatalf("later Provider tools = %#v, request-only tools leaked into the conversation", secondPrimary)
+	}
+	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
+	if !initialized || len(automatic) != 0 {
+		t.Fatalf("inspection automatic set = %#v initialized=%t, want initialized empty", automatic, initialized)
+	}
+	selectionEvents, err := service.ListEvents(ctx, session.ID, false, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, event := range selectionEvents {
+		if event.Type != domain.EventTypeSystemNote || event.Payload["kind"] != "host_tool_selection" {
+			continue
+		}
+		found = true
+		if event.Payload["lifetime"] != "request" {
+			t.Fatalf("inspection event lifetime = %#v", event.Payload["lifetime"])
+		}
+		selected := hostToolSelectionResourcesFromAny(event.Payload["resources"])
+		var inventory *hostToolSelectionResource
+		for index := range selected {
+			if selected[index].Kind == "extension" && selected[index].ID == "com.example.inventory" {
+				inventory = &selected[index]
+				break
+			}
+		}
+		if inventory == nil || inventory.ToolCount != inventoryToolCount {
+			t.Fatalf("inspection event resources = %#v, want one unsplit inventory extension source beyond the legacy member limit", selected)
+		}
+	}
+	if !found {
+		t.Fatal("missing visible request-only tool-selection event")
 	}
 }
 
@@ -269,10 +466,6 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if index == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
-			return
-		}
-		if index == 2 {
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"resources\":[\"skill:ui-summary\"],\"reason\":\"summary is sufficient\"}"}}]}`))
 			return
 		}
@@ -298,18 +491,18 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 	mu.Lock()
 	captured := append([]capturedRequest(nil), requests...)
 	mu.Unlock()
-	if len(captured) != 3 {
-		t.Fatalf("provider request count = %d, want tool-group auxiliary, resource auxiliary, and primary", len(captured))
+	if len(captured) != 2 {
+		t.Fatalf("provider request count = %d, want resource auxiliary and primary without an empty source-selector call", len(captured))
 	}
 	auxiliaryText := ""
-	for _, message := range captured[1].Messages {
+	for _, message := range captured[0].Messages {
 		auxiliaryText += message.Content
 	}
 	if !strings.Contains(auxiliaryText, "Explain the available UI component workflow") || strings.Contains(auxiliaryText, "PRIVATE_UI_WORKFLOW") {
 		t.Fatalf("auxiliary catalog was not summary-only: %s", auxiliaryText)
 	}
 	primaryText := ""
-	for _, message := range captured[2].Messages {
+	for _, message := range captured[1].Messages {
 		primaryText += message.Content
 	}
 	if !strings.Contains(primaryText, `<skill_summary name="ui-summary"`) || !strings.Contains(primaryText, "Explain the available UI component workflow") {
@@ -318,6 +511,52 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 	if strings.Contains(primaryText, "PRIVATE_UI_WORKFLOW") || strings.Contains(primaryText, `<skill_content name="ui-summary"`) {
 		t.Fatalf("summary-only selection exposed Skill instructions: %s", primaryText)
 	}
+	assertVisibleInitialToolSelection(t, service, ctx, session.ID, "conversation", []hostToolSelectionResource{
+		{Kind: "tool", ID: "aivo_projects_add", Name: "aivo_projects_add", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_projects_associate", Name: "aivo_projects_associate", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_projects_query", Name: "aivo_projects_query", ToolCount: 1},
+		{Kind: "tool", ID: "aivo_tools_register_mcp", Name: "aivo_tools_register_mcp", ToolCount: 1},
+	})
+}
+
+func assertVisibleInitialToolSelection(t *testing.T, service *Service, ctx context.Context, sessionID, lifetime string, want []hostToolSelectionResource) {
+	t.Helper()
+	events, err := service.ListEvents(ctx, sessionID, false, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matching := make([]domain.SessionEvent, 0, 1)
+	for _, event := range events {
+		if event.Type == domain.EventTypeSystemNote && event.Payload["kind"] == "host_tool_selection" {
+			matching = append(matching, event)
+		}
+	}
+	if len(matching) != 1 {
+		t.Fatalf("visible initial tool-selection events = %#v, want exactly one", matching)
+	}
+	event := matching[0]
+	got := hostToolSelectionResourcesFromAny(event.Payload["resources"])
+	if !reflect.DeepEqual(got, normalizeHostToolSelectionResources(want)) {
+		t.Fatalf("visible initial tool selection = %#v, want %#v", got, want)
+	}
+	if event.Payload["lifetime"] != lifetime {
+		t.Fatalf("visible initial tool selection lifetime = %#v, want %q", event.Payload["lifetime"], lifetime)
+	}
+	if event.Payload["status"] != "completed" {
+		t.Fatalf("visible initial tool selection status = %#v, want completed", event.Payload["status"])
+	}
+	for _, forbidden := range []string{"reason", "description", "schema", "prompt", "candidates"} {
+		if _, ok := event.Payload[forbidden]; ok {
+			t.Fatalf("visible initial selection exposed %q: %#v", forbidden, event.Payload)
+		}
+	}
+}
+
+func hostToolSelectionResourcesFromAny(value any) []hostToolSelectionResource {
+	raw, _ := json.Marshal(value)
+	var resources []hostToolSelectionResource
+	_ = json.Unmarshal(raw, &resources)
+	return resources
 }
 
 func TestHostPreCallSkillInventoryIsInjectedWithoutSessionActivation(t *testing.T) {

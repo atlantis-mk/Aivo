@@ -64,7 +64,11 @@ func (s *Store) UpdateSessionEvent(ctx context.Context, input domain.UpdateSessi
 	if eventID == "" {
 		return domain.SessionEvent{}, errors.New("eventId is required")
 	}
-	if err := s.db.WithContext(ctx).Model(&sessionEventRow{}).Where("id = ?", eventID).Update("content", strings.TrimSpace(input.Content)).Error; err != nil {
+	updates := map[string]any{"content": strings.TrimSpace(input.Content)}
+	if input.Payload != nil {
+		updates["payload"] = encodeAnyMap(input.Payload)
+	}
+	if err := s.db.WithContext(ctx).Model(&sessionEventRow{}).Where("id = ?", eventID).Updates(updates).Error; err != nil {
 		return domain.SessionEvent{}, err
 	}
 	event, err := s.GetSessionEvent(ctx, eventID)

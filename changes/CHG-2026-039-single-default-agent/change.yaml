@@ -1,0 +1,36 @@
+id: "CHG-2026-039-single-default-agent"
+title: "Reduce built-in Agents to one visible default"
+type: "feature"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-AGENT-001"
+  - "REQ-SESSION-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-AGENT-001"
+  - "AT-SESSION-001"
+  - "AT-UI-001"
+adrs: []
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-AGENT-001 Dynamic Agent mode management"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-027-dynamic-agent-modes"
+  - "CHG-2026-038-prompt-management"
+affected_surfaces:
+  - "Core built-in Agent and prompt catalogs"
+  - "conversation composer Agent picker and fallback"
+  - "Agent-mode management list"
+affected_formats: []
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Reduces selectable built-in capability profiles; it grants no new authority and keeps required internal workers hidden"
+migration: "none; legacy built-in mode IDs resolve compatibly to the Assistant default without rewriting stored history"
+supersedes: []

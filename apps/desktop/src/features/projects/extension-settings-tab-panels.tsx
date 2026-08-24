@@ -7,10 +7,8 @@ import {
   ToolItemGroup,
 } from "@/features/projects/extension-settings-components";
 import { ExtensionInstallList } from "@/features/projects/extension-install-list";
-import { AgentModeManagementGroup } from "@/features/projects/extension-settings-agent-modes";
 import { McpRow } from "@/features/projects/extension-settings-server-row";
 import type {
-  AgentModeDefinition,
   SkillEntry,
   SkillImportCandidate,
   ExtensionInstall,
@@ -21,7 +19,6 @@ import type {
 export function ExtensionSettingsTabPanels({
   activeToolSet,
   loading,
-  onEditAgentMode,
   onDeleteSkill,
   onIgnoreSkillCandidate,
   onImportSkillCandidate,
@@ -31,7 +28,6 @@ export function ExtensionSettingsTabPanels({
   query,
   sessionId,
   visibleAllTools,
-  visibleAgentModes,
   visibleExtensions,
   visibleServers,
   visibleSkillCandidates,
@@ -39,7 +35,6 @@ export function ExtensionSettingsTabPanels({
 }: {
   activeToolSet: Set<string>;
   loading: boolean;
-  onEditAgentMode: (mode: AgentModeDefinition) => void;
   onDeleteSkill: (skill: SkillEntry) => void;
   onIgnoreSkillCandidate: (candidate: SkillImportCandidate) => void;
   onImportSkillCandidate: (candidate: SkillImportCandidate) => void;
@@ -49,7 +44,6 @@ export function ExtensionSettingsTabPanels({
   query: string;
   sessionId?: string;
   visibleAllTools: ToolCatalogEntry[];
-  visibleAgentModes: AgentModeDefinition[];
   visibleExtensions: ExtensionInstall[];
   visibleServers: MCPServerListItem[];
   visibleSkillCandidates: SkillImportCandidate[];
@@ -89,18 +83,6 @@ export function ExtensionSettingsTabPanels({
                 ))}
               </ItemGroup>
             )}
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
-      <TabsContent className="min-h-0 p-0" value="agents">
-        <ScrollArea className="h-full">
-          <div className="p-4">
-            <AgentModeManagementGroup
-              disabled={loading}
-              modes={visibleAgentModes}
-              onEdit={onEditAgentMode}
-            />
           </div>
         </ScrollArea>
       </TabsContent>

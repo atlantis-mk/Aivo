@@ -9,6 +9,7 @@ import {
   toolActionHeading,
   type ToolCallGroup,
 } from "@/features/projects/conversation-timeline-tool-model";
+import { hostToolSelectionFromSystemNote } from "@/features/projects/conversation-system-note-model";
 
 export type { ConversationTimelineRow } from "@/features/projects/conversation-timeline-row-types";
 export {
@@ -34,6 +35,7 @@ export function constructConversationTimelineRows(
       turn,
       type: "user-message",
     });
+    pushInitialToolSelectionNotes(rows, turn);
 
     const preambleParts = assistantPreambleParts(turn);
     const toolGroups = groupToolCalls(
@@ -125,7 +127,22 @@ function pushAssistantPreambles(
 
 function pushSystemNotes(rows: ConversationTimelineRow[], turn: ConversationTurn) {
   for (const note of turn.systemNotes ?? []) {
-    if (!note.content.trim()) continue;
+    if (!note.content.trim() || hostToolSelectionFromSystemNote(note)) continue;
+    rows.push({
+      key: `system-note:${turn.id}:${note.id}`,
+      note,
+      turnId: turn.turnId ?? turn.id,
+      type: "system-note",
+    });
+  }
+}
+
+function pushInitialToolSelectionNotes(
+  rows: ConversationTimelineRow[],
+  turn: ConversationTurn,
+) {
+  for (const note of turn.systemNotes ?? []) {
+    if (!hostToolSelectionFromSystemNote(note)) continue;
     rows.push({
       key: `system-note:${turn.id}:${note.id}`,
       note,

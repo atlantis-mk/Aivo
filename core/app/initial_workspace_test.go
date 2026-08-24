@@ -68,6 +68,42 @@ func TestCompleteInitializationUsesDefaultInitialWorkspace(t *testing.T) {
 	}
 }
 
+func TestManagedWorkspaceRootUsesHyphenatedDirectoryName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(managedWorkspaceRootEnv, "")
+
+	workspace, err := managedWorkspaceRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, "Documents", "Aivo-Workspaces")
+	if workspace != want {
+		t.Fatalf("managed workspace root = %q, want %q", workspace, want)
+	}
+	if strings.Contains(filepath.Base(workspace), " ") {
+		t.Fatalf("managed workspace directory contains spaces: %q", workspace)
+	}
+}
+
+func TestIsManagedWorkspaceRecognizesCurrentAndLegacyRoots(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(managedWorkspaceRootEnv, "")
+
+	for _, workspace := range []string{
+		filepath.Join(home, "Documents", "Aivo-Workspaces", "current"),
+		filepath.Join(home, "Documents", "Aivo Workspaces", "legacy"),
+	} {
+		if !isManagedWorkspace(workspace) {
+			t.Fatalf("managed workspace was not recognized: %q", workspace)
+		}
+	}
+	if isManagedWorkspace(filepath.Join(home, "Documents", "Aivo Project")) {
+		t.Fatal("ordinary project was recognized as a managed workspace")
+	}
+}
+
 func TestCompleteInitializationRejectsNonDirectoryWorkspace(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()

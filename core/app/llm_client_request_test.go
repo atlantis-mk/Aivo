@@ -93,6 +93,30 @@ func TestResponsesRequestBodyRendersImageAndFileAttachments(t *testing.T) {
 	}
 }
 
+func TestProviderRequestBuildersNeverSerializeGenericBinaryMIME(t *testing.T) {
+	attachment := domain.MessageAttachment{
+		Name: "archive.zip", MIMEType: "application/octet-stream", Kind: "file", Data: "UEsDBA==",
+	}
+	if part := responsesAttachmentPart(attachment); part != nil {
+		t.Fatalf("Responses part = %#v, want unsupported attachment omitted by the final defensive layer", part)
+	}
+	if dataURL := dataURLForAttachment(attachment.MIMEType, attachment.Data); dataURL != "" {
+		t.Fatalf("data URL = %q, want no generic binary data URL", dataURL)
+	}
+	chatParts := chatCompletionContentParts("inspect", []domain.MessageAttachment{attachment})
+	if len(chatParts) != 1 {
+		t.Fatalf("Chat Completions parts = %#v, want prompt only", chatParts)
+	}
+	googleParts := googleAttachmentParts([]domain.MessageAttachment{attachment})
+	if len(googleParts) != 0 {
+		t.Fatalf("Google parts = %#v, want no generic binary part", googleParts)
+	}
+	anthropicParts := anthropicAttachmentParts([]domain.MessageAttachment{attachment})
+	if len(anthropicParts) != 0 {
+		t.Fatalf("Anthropic parts = %#v, want no generic binary part", anthropicParts)
+	}
+}
+
 func TestResponsesRequestBodyUsesCodexToolStreamingShape(t *testing.T) {
 	body := responsesRequestBody("gpt-5.5", []llmChatMessage{{Role: "user", Text: "hello"}}, []domain.ToolSpec{{
 		Name:        "read_file",

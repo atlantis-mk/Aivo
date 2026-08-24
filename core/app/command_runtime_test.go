@@ -110,7 +110,7 @@ func TestBuiltinReviewCommandRunsInForkedSubtaskAndReturnsResult(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 	child, err := service.GetRuntimeSession(ctx, result.ChildSessionID)
-	if err != nil || child.ParentSessionID != parent.ID || child.AgentMode != domain.AgentModeReview {
+	if err != nil || child.ParentSessionID != parent.ID || child.AgentMode != domain.AgentModeAssistant {
 		t.Fatalf("child = %#v err = %v", child, err)
 	}
 	events, err := service.ListEvents(ctx, parent.ID, false, 50)

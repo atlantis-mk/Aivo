@@ -11,12 +11,18 @@ import (
 	"aivo/core/domain"
 )
 
-func (s *Service) fallbackSummary(ctx context.Context, sessionID string) string {
-	events, err := s.store.ListSessionEvents(ctx, sessionID, false, 5)
+func (s *Service) fallbackSummary(ctx context.Context, input domain.CreateSummaryRequest) string {
+	events, previous, err := s.summaryEvents(ctx, input)
 	if err != nil || len(events) == 0 {
 		return "No visible events have been recorded yet."
 	}
+	if len(events) > 5 {
+		events = events[len(events)-5:]
+	}
 	parts := make([]string, 0, len(events))
+	if previous != nil && strings.TrimSpace(previous.Summary) != "" {
+		parts = append(parts, bounded(previous.Summary, 1000))
+	}
 	for _, event := range events {
 		if event.Content != "" {
 			parts = append(parts, bounded(event.Content, 160))

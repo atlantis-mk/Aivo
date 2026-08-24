@@ -7,6 +7,7 @@ export type AgentModeDefinition = {
   id: AgentModeId;
   displayName: string;
   description: string;
+  promptId?: string;
   prompt: string;
   fileWriteAccess?: boolean;
   commandAccess?: boolean;

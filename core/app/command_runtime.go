@@ -16,8 +16,8 @@ const expandedCommandMaxChars = 64 * 1024
 func (s *Service) ListCommandCatalog(ctx context.Context, input domain.CommandCatalogInput) ([]domain.CommandCatalogEntry, error) {
 	effective := loadEffectiveRuntimeConfig(input.ProjectPath)
 	entries := []domain.CommandCatalogEntry{
-		{ID: "builtin:init", Name: "init", Description: "Analyze the project and create or improve its AGENTS.md instructions.", Source: "builtin", SourceID: "init", Agent: domain.AgentModeBuild},
-		{ID: "builtin:review", Name: "review", Description: "Review current changes, a commit, or a branch in an isolated child session.", Source: "builtin", SourceID: "review", Agent: domain.AgentModeReview, Subtask: true},
+		{ID: "builtin:init", Name: "init", Description: "Analyze the project and create or improve its AGENTS.md instructions.", Source: "builtin", SourceID: "init", Agent: domain.AgentModeAssistant},
+		{ID: "builtin:review", Name: "review", Description: "Review current changes, a commit, or a branch in an isolated child session.", Source: "builtin", SourceID: "review", Agent: domain.AgentModeAssistant, Subtask: true},
 	}
 	for name, command := range effective.Config.Commands {
 		entries = append(entries, domain.CommandCatalogEntry{
@@ -73,13 +73,21 @@ func (s *Service) InvokeCommand(ctx context.Context, input domain.InvokeCommandI
 		var result domain.InvokeCommandResult
 		switch name {
 		case "init":
-			result = domain.InvokeCommandResult{CommandID: commandID, Source: "builtin", SourceID: name, Agent: domain.AgentModeBuild, Prompt: "Inspect this repository, then create or improve AGENTS.md with concise project-specific structure, build/test commands, coding conventions, safety constraints, and verification guidance. Preserve useful existing instructions and do not invent commands that are not present in the project."}
+			prompt, promptErr := s.renderManagedPrompt("task.init", nil)
+			if promptErr != nil {
+				return domain.InvokeCommandResult{}, errors.New("built-in init prompt is disabled or invalid")
+			}
+			result = domain.InvokeCommandResult{CommandID: commandID, Source: "builtin", SourceID: name, Agent: domain.AgentModeAssistant, Prompt: prompt}
 		case "review":
 			target := strings.TrimSpace(input.Arguments["ARGUMENTS"])
 			if target == "" {
 				target = "the current uncommitted changes"
 			}
-			result = domain.InvokeCommandResult{CommandID: commandID, Source: "builtin", SourceID: name, Agent: domain.AgentModeReview, Subtask: true, Prompt: "Review " + target + ". Prioritize correctness bugs, regressions, security or data-loss risks, and missing tests. Report findings first with concrete file references; do not modify files."}
+			prompt, promptErr := s.renderManagedPrompt("task.review", map[string]string{"target": target})
+			if promptErr != nil {
+				return domain.InvokeCommandResult{}, errors.New("built-in review prompt is disabled or invalid")
+			}
+			result = domain.InvokeCommandResult{CommandID: commandID, Source: "builtin", SourceID: name, Agent: domain.AgentModeAssistant, Subtask: true, Prompt: prompt}
 		default:
 			return domain.InvokeCommandResult{}, fmt.Errorf("built-in command %q not found", name)
 		}

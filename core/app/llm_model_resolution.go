@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"aivo/core/domain"
@@ -174,7 +175,7 @@ func (s *Service) resolveCredential(ctx context.Context, provider domain.Provide
 	return s.resolveCredentialWithDefinition(ctx, provider, providerDefinitionForConfig(provider))
 }
 
-func normalizeChatMessages(messages []domain.ChatMessage) []llmChatMessage {
+func normalizeChatMessages(messages []domain.ChatMessage) ([]llmChatMessage, error) {
 	out := make([]llmChatMessage, 0, len(messages))
 	for _, message := range messages {
 		role := strings.TrimSpace(message.Role)
@@ -185,39 +186,15 @@ func normalizeChatMessages(messages []domain.ChatMessage) []llmChatMessage {
 		if text == "" && len(message.Attachments) == 0 && len(message.ToolCalls) == 0 {
 			continue
 		}
-		out = append(out, llmChatMessage{Role: role, Text: text, Attachments: sanitizeLLMAttachments(message.Attachments), ToolCalls: message.ToolCalls, ToolCallID: message.ToolCallID, Name: message.Name})
+		attachments := sanitizeLLMAttachments(message.Attachments)
+		if err := validateSessionMessageAttachments(attachments); err != nil {
+			return nil, fmt.Errorf("invalid model attachment: %w", err)
+		}
+		out = append(out, llmChatMessage{Role: role, Text: text, Attachments: attachments, ToolCalls: message.ToolCalls, ToolCallID: message.ToolCallID, Name: message.Name})
 	}
-	return out
+	return out, nil
 }
 
 func sanitizeLLMAttachments(attachments []domain.MessageAttachment) []domain.MessageAttachment {
-	out := make([]domain.MessageAttachment, 0, len(attachments))
-	for _, attachment := range attachments {
-		data := strings.TrimSpace(attachment.Data)
-		text := attachment.Text
-		if data == "" && strings.TrimSpace(text) == "" {
-			continue
-		}
-		name := strings.TrimSpace(attachment.Name)
-		if name == "" {
-			name = "attachment"
-		}
-		mimeType := strings.TrimSpace(attachment.MIMEType)
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
-		kind := strings.TrimSpace(attachment.Kind)
-		if kind == "" {
-			if strings.HasPrefix(mimeType, "image/") {
-				kind = "image"
-			} else {
-				kind = "file"
-			}
-		}
-		out = append(out, domain.MessageAttachment{
-			ID: attachment.ID, Name: name, MIMEType: mimeType, Kind: kind,
-			Data: data, Text: text, Size: attachment.Size,
-		})
-	}
-	return out
+	return normalizeSessionMessageAttachments(attachments)
 }

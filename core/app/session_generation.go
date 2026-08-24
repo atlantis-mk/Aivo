@@ -54,9 +54,14 @@ func (s *Service) ensureGeneratedSessionTitle(ctx context.Context, sessionID str
 }
 
 func (s *Service) generateSessionTitle(ctx context.Context, userText string, model *domain.ModelRef) (string, error) {
+	systemPrompt, systemErr := s.renderManagedPrompt("auxiliary.title.system", nil)
+	userPrompt, userErr := s.renderManagedPrompt("auxiliary.title.user", map[string]string{"content": strings.TrimSpace(userText)})
+	if systemErr != nil || userErr != nil {
+		return "", errors.New("title prompts are unavailable")
+	}
 	messages := []domain.ChatMessage{
-		{Role: "system", Text: sessionTitleSystemPrompt},
-		{Role: "user", Text: "Generate a title for this conversation:\n\n" + strings.TrimSpace(userText)},
+		{Role: "system", Text: systemPrompt},
+		{Role: "user", Text: userPrompt},
 	}
 	var failures []string
 	for _, titleModel := range s.resolveAuxiliaryModels(ctx, model) {
@@ -77,27 +82,27 @@ func (s *Service) generateSessionTitle(ctx context.Context, userText string, mod
 	return "", nil
 }
 
-const sessionSummarySystemPrompt = `You are a conversation summarizer. Output ONLY a concise durable summary.
-
-Rules:
-- Keep the summary factual and compact.
-- Preserve user goals, decisions, constraints, open tasks, files, commands, errors, and important technical terms.
-- Do not include markdown headings, bullets, preambles, or commentary.
-- Use the same primary language as the conversation.`
-
-func (s *Service) generatedSummary(ctx context.Context, sessionID string) string {
-	events, err := s.store.ListSessionEvents(ctx, sessionID, false, 80)
+func (s *Service) generatedSummary(ctx context.Context, input domain.CreateSummaryRequest) string {
+	events, previous, err := s.summaryEvents(ctx, input)
 	if err != nil || len(events) == 0 {
 		return ""
 	}
 	transcript := renderEventsForSummary(events)
+	if previous != nil && strings.TrimSpace(previous.Summary) != "" {
+		transcript = "Previous durable summary:\n" + bounded(previous.Summary, 4000) + "\n\nNew conversation range:\n" + transcript
+	}
 	if strings.TrimSpace(transcript) == "" {
+		return ""
+	}
+	systemPrompt, systemErr := s.renderManagedPrompt("auxiliary.summary.system", nil)
+	userPrompt, userErr := s.renderManagedPrompt("auxiliary.summary.user", map[string]string{"content": transcript})
+	if systemErr != nil || userErr != nil {
 		return ""
 	}
 	for _, model := range s.configuredAuxiliaryModels(ctx) {
 		summary, _, err := s.GenerateChatReply(ctx, []domain.ChatMessage{
-			{Role: "system", Text: sessionSummarySystemPrompt},
-			{Role: "user", Text: "Summarize this conversation for future context:\n\n" + transcript},
+			{Role: "system", Text: systemPrompt},
+			{Role: "user", Text: userPrompt},
 		}, &model, "medium", "default")
 		if err == nil && strings.TrimSpace(summary) != "" {
 			return bounded(strings.TrimSpace(stripThinkBlocks(summary)), 4000)
@@ -106,9 +111,58 @@ func (s *Service) generatedSummary(ctx context.Context, sessionID string) string
 	return ""
 }
 
+func (s *Service) summaryEvents(ctx context.Context, input domain.CreateSummaryRequest) ([]domain.SessionEvent, *domain.SessionSummary, error) {
+	events, err := s.store.ListSessionEvents(ctx, input.SessionID, false, 500)
+	if err != nil {
+		return nil, nil, err
+	}
+	var previous *domain.SessionSummary
+	if strings.TrimSpace(input.FromEventID) != "" {
+		previous, _ = s.store.LatestSummary(ctx, input.SessionID)
+	}
+	if strings.TrimSpace(input.FromEventID) == "" && strings.TrimSpace(input.ToEventID) == "" {
+		if len(events) > 80 {
+			events = events[len(events)-80:]
+		}
+		return events, nil, nil
+	}
+	start := 0
+	if input.FromEventID != "" {
+		found := false
+		for i, event := range events {
+			if event.ID == input.FromEventID {
+				start = i + 1
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, previous, errors.New("summary start boundary was not found")
+		}
+	}
+	end := len(events)
+	if input.ToEventID != "" {
+		found := false
+		for i := start; i < len(events); i++ {
+			if events[i].ID == input.ToEventID {
+				end = i + 1
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, previous, errors.New("summary end boundary was not found")
+		}
+	}
+	return events[start:end], previous, nil
+}
+
 func renderEventsForSummary(events []domain.SessionEvent) string {
 	parts := make([]string, 0, len(events))
 	for _, event := range events {
+		if event.Type == domain.EventTypeSummary || event.Payload["kind"] == "context_compacted" {
+			continue
+		}
 		content := strings.TrimSpace(event.Content)
 		if content == "" {
 			continue
@@ -264,28 +318,6 @@ func (s *Service) updateSessionTitle(ctx context.Context, sessionID string, titl
 	}
 	return updated, err
 }
-
-const sessionTitleSystemPrompt = `You are a title generator. You output ONLY a thread title. Nothing else.
-
-Rules:
-- The title must be a single line.
-- The title must be <=50 characters.
-- Use the same language as the user's message.
-- Do not include quotes, punctuation wrappers, prefixes, explanations, markdown, bullets, or emojis.
-- Do not mention tool names, model names, or implementation details unless they are the topic.
-- Focus on the main task or question.
-- Preserve important technical terms, filenames, frameworks, languages, and errors.
-- Prefer concise noun phrases over full sentences.
-
-Examples:
-User: How do I fix TypeScript error TS2345 in my React app?
-Title: Fix React TS2345 error
-
-User: 帮我写一个 Redis 缓存方案
-Title: Redis 缓存方案
-
-User: What's the difference between OAuth and SAML?
-Title: OAuth and SAML comparison`
 
 func isLegacyUntitledSessionTitle(title string, firstUserText string) bool {
 	title = strings.TrimSpace(title)

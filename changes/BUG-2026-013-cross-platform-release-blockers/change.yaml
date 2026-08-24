@@ -1,0 +1,27 @@
+id: "BUG-2026-013-cross-platform-release-blockers"
+title: "修复跨平台打包暴露的进程生命周期缺陷"
+type: "bug"
+status: "Verified"
+spec_revision: "0.1.1-active"
+target_release: null
+requirements:
+  - "NFR-RELIABILITY-001"
+tests:
+  - "CT-RELIABILITY-001"
+adrs: []
+context_refs:
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-043-public-source-release"
+affected_surfaces:
+  - "Agent PTY input-request lifecycle"
+  - "sandbox child-process termination"
+  - "Windows Core packaging build"
+affected_formats: []
+affected_versions:
+  - "0.0.0-development"
+security_impact: "The fix preserves existing process ownership and input authorization; it adds no privilege, credential, persistence, or renderer boundary."
+migration: "none"
+supersedes: []

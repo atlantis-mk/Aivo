@@ -17,9 +17,9 @@ func (s *Service) CreateSummary(ctx context.Context, input domain.CreateSummaryR
 	}
 	summaryText := strings.TrimSpace(input.Summary)
 	if summaryText == "" {
-		summaryText = s.generatedSummary(ctx, input.SessionID)
+		summaryText = s.generatedSummary(ctx, input)
 		if summaryText == "" {
-			summaryText = s.fallbackSummary(ctx, input.SessionID)
+			summaryText = s.fallbackSummary(ctx, input)
 		}
 	}
 	summary := domain.SessionSummary{ID: uuid.NewString(), SessionID: input.SessionID, FromEventID: input.FromEventID, ToEventID: input.ToEventID, Summary: summaryText, Facts: input.Facts, Decisions: input.Decisions, OpenTasks: input.OpenTasks, ChangedFiles: input.ChangedFiles, NextSuggestedAction: input.NextSuggestedAction, TimeCreated: domain.NowString(s.now())}
@@ -63,28 +63,50 @@ func (s *Service) CompactSession(ctx context.Context, sessionID string) (domain.
 }
 
 func (s *Service) CompactSessionContext(ctx context.Context, input domain.CompactSessionContextInput) (domain.CompactSessionContextResult, error) {
+	return s.compactSessionContext(ctx, input, nil)
+}
+
+func (s *Service) compactSessionContext(ctx context.Context, input domain.CompactSessionContextInput, plan *compactionPlan) (domain.CompactSessionContextResult, error) {
 	sessionID := strings.TrimSpace(input.SessionID)
 	if sessionID == "" {
 		return domain.CompactSessionContextResult{}, errors.New("sessionId is required")
+	}
+	currentState, _ := s.store.GetSessionExecutionState(ctx, sessionID)
+	if currentState.Status == domain.ExecutionStatusRunning || currentState.Status == domain.ExecutionStatusCompacting {
+		return domain.CompactSessionContextResult{}, errors.New("session context can only be compacted while idle")
+	}
+	eventsBefore, err := s.store.ListSessionEvents(ctx, sessionID, false, 500)
+	if err != nil {
+		return domain.CompactSessionContextResult{}, err
+	}
+	latest, _ := s.store.LatestSummary(ctx, sessionID)
+	if plan == nil {
+		start := firstEventAfterSummary(eventsBefore, latest)
+		toIndex := len(eventsBefore) - 1
+		for toIndex >= start && !compactableSessionEvent(eventsBefore[toIndex]) {
+			toIndex--
+		}
+		if toIndex < start {
+			return domain.CompactSessionContextResult{}, errors.New("no uncompacted conversation history is available")
+		}
+		fromEventID := ""
+		if latest != nil {
+			fromEventID = latest.ToEventID
+		}
+		plan = &compactionPlan{FromEventID: fromEventID, ToEventID: eventsBefore[toIndex].ID}
+	}
+	if strings.TrimSpace(plan.ToEventID) == "" {
+		return domain.CompactSessionContextResult{}, errors.New("compaction boundary is required")
 	}
 	compactionKind := "manual"
 	if input.Automatic {
 		compactionKind = "automatic"
 	}
-	compacting, err := s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusCompacting, Reason: compactionKind + " compaction requested"})
+	_, err = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusCompacting, Reason: compactionKind + " compaction requested"})
 	if err != nil {
 		return domain.CompactSessionContextResult{}, err
 	}
-	eventsBefore, _ := s.store.ListSessionEvents(ctx, sessionID, false, 500)
-	fromEventID := ""
-	if latest, _ := s.store.LatestSummary(ctx, sessionID); latest != nil {
-		fromEventID = latest.ToEventID
-	}
-	toEventID := ""
-	if len(eventsBefore) > 0 {
-		toEventID = eventsBefore[len(eventsBefore)-1].ID
-	}
-	summary, err := s.CreateSummary(ctx, domain.CreateSummaryRequest{SessionID: sessionID, FromEventID: fromEventID, ToEventID: toEventID})
+	summary, err := s.CreateSummary(ctx, domain.CreateSummaryRequest{SessionID: sessionID, FromEventID: plan.FromEventID, ToEventID: plan.ToEventID})
 	if err != nil {
 		_, _ = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusFailed, Reason: err.Error()})
 		return domain.CompactSessionContextResult{}, err
@@ -98,20 +120,30 @@ func (s *Service) CompactSessionContext(ctx context.Context, input domain.Compac
 		_, _ = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusFailed, Reason: err.Error()})
 		return domain.CompactSessionContextResult{}, err
 	}
-	event, _ := s.AppendEvent(ctx, domain.AppendEventRequest{
+	payload := map[string]any{
+		"kind": "context_compacted", "mode": compactionKind, "summaryId": summary.ID,
+		"sectionCount": len(contextResult.Sections), "fromEventId": plan.FromEventID, "toEventId": plan.ToEventID,
+	}
+	if input.Automatic {
+		payload["thresholdPercent"] = plan.Pressure.ThresholdPercent
+		payload["contextWindowTokens"] = plan.Pressure.ContextWindowTokens
+		payload["capacitySource"] = plan.Pressure.CapacitySource
+	}
+	event, err := s.AppendEvent(ctx, domain.AppendEventRequest{
 		SessionID: sessionID, Type: domain.EventTypeSystemNote, Role: domain.EventRoleSystem,
 		Visibility: domain.EventVisibilityNormal, Content: "Session context compacted",
-		Payload: map[string]any{"kind": "context_compacted", "mode": compactionKind, "summaryId": summary.ID, "sectionCount": len(contextResult.Sections)},
+		Payload: payload,
 	})
+	if err != nil {
+		_, _ = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusFailed, Reason: err.Error()})
+		return domain.CompactSessionContextResult{}, err
+	}
 	state, err := s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: sessionID, Status: domain.ExecutionStatusIdle, Reason: "compaction complete", LastEventID: event.ID})
 	if err != nil {
 		return domain.CompactSessionContextResult{}, err
 	}
 	if s.onSessionUpdated != nil {
 		s.onSessionUpdated(sessionID, nil)
-	}
-	if compacting.Status == "" {
-		compacting = state
 	}
 	return domain.CompactSessionContextResult{State: state, Summary: summary, Context: contextResult, CompactedEventID: event.ID}, nil
 }

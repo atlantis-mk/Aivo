@@ -48,6 +48,13 @@ func (api *API) callSessionEventRPC(ctx context.Context, method string, args []j
 		}
 		result, err := api.service.ListEvents(ctx, sessionID, includeNonNormal, limit)
 		return result, true, err
+	case "GetSessionRuntimeStats":
+		sessionID, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.GetSessionRuntimeStats(ctx, sessionID)
+		return result, true, err
 	case "AppendSessionEvent":
 		input, err := arg[domain.AppendEventRequest](args, 0)
 		if err != nil {

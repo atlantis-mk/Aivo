@@ -62,7 +62,10 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 	if !providerPolicyBool(policy.EnableFallback) && len(routes) > 1 {
 		routes = routes[:1]
 	}
-	chatMessages := normalizeChatMessages(chatRequest.Messages)
+	chatMessages, err := normalizeChatMessages(chatRequest.Messages)
+	if err != nil {
+		return domain.ChatResponse{}, nil, err
+	}
 	var lastErr error
 	for fallbackIndex, route := range routes {
 		route = applyChatRequestGenerationSettings(route, chatRequest)

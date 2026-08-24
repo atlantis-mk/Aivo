@@ -70,6 +70,11 @@ func isToolCatalogEntryDeferrable(entry domain.ToolCatalogEntry) bool {
 	return !isBridgeToolName(entry.Name) && isDeferrableToolSpec(spec, domain.ToolRegistrationIdentity{Source: entry.Source})
 }
 
+func isStandaloneToolCatalogEntry(entry domain.ToolCatalogEntry) bool {
+	return entry.Source == domain.ToolSourceBuiltin ||
+		(entry.Source == domain.ToolSourceExtension && strings.HasPrefix(entry.SourceID, "aivo."))
+}
+
 func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionContext, source string, category string, riskLevel string) []domain.ToolCatalogEntry {
 	if registry == nil {
 		return nil
@@ -107,10 +112,7 @@ func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionConte
 	return out
 }
 
-func validateToolResolveSelection(candidates []domain.ToolCatalogEntry, names []string, limit int) []domain.ToolCatalogEntry {
-	if limit <= 0 || limit > hostExpandedToolLimit {
-		limit = hostToolSelectionLimit
-	}
+func validateToolResolveSelection(candidates []domain.ToolCatalogEntry, names []string) []domain.ToolCatalogEntry {
 	byName := map[string]domain.ToolCatalogEntry{}
 	for _, entry := range candidates {
 		byName[entry.Name] = entry
@@ -128,9 +130,6 @@ func validateToolResolveSelection(candidates []domain.ToolCatalogEntry, names []
 		}
 		selected = append(selected, entry)
 		seen[name] = true
-		if len(selected) >= limit {
-			break
-		}
 	}
 	return selected
 }

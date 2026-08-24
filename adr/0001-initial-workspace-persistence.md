@@ -12,7 +12,7 @@ Unscoped coding conversations need a privileged, durable filesystem root even th
 ## Decision
 
 - The Go application and persistence layers MUST own one global `initialWorkspacePath` in `AppConfig`.
-- The Go application MUST expose `~/Documents/Aivo Workspaces` (or the existing environment override) as the initialization default without persisting or creating it before confirmation.
+- The Go application MUST expose `~/Documents/Aivo-Workspaces` (or the existing environment override) as the initialization default without persisting or creating it before confirmation. The default directory name uses a hyphen rather than whitespace so terminal entry and path search do not require space escaping.
 - Initialization MUST let the user accept that default or choose another directory, resolve the confirmed path to an absolute path, ensure the configured root exists as a directory, persist it, and only then mark initialization complete.
 - An unscoped coding session MUST use the configured directory in its coding context but MUST NOT be persisted as belonging to a project.
 - Aivo MUST create the configured root with private permissions when it is missing, but MUST NOT create per-session child directories, delete the root, or migrate content into it.

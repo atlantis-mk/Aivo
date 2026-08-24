@@ -58,3 +58,19 @@ type ListSessionEventsAfterCursorResult struct {
 	Events     []SessionEvent `json:"events"`
 	NextCursor string         `json:"nextCursor"`
 }
+
+type SessionRuntimeStats struct {
+	Turns              int64 `json:"turns"`
+	Steps              int64 `json:"steps"`
+	LLMMs              int64 `json:"llmMs"`
+	TTFTMs             int64 `json:"ttftMs,omitempty"`
+	TTFTSteps          int64 `json:"ttftSteps,omitempty"`
+	DecodeMs           int64 `json:"decodeMs,omitempty"`
+	DecodeTokens       int64 `json:"decodeTokens,omitempty"`
+	InputTokens        int64 `json:"inputTokens,omitempty"`
+	OutputTokens       int64 `json:"outputTokens,omitempty"`
+	CacheReadTokens    int64 `json:"cacheReadTokens,omitempty"`
+	CacheReadAvailable bool  `json:"cacheReadAvailable,omitempty"`
+	InputUsageSteps    int64 `json:"-"`
+	CacheUsageSteps    int64 `json:"-"`
+}

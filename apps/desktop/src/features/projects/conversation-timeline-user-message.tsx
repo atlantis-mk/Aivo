@@ -117,7 +117,7 @@ export const UserMessageRow = memo(function UserMessageRow({
             </Button>
           ) : null}
         </div>
-        <div className="mt-1.5 flex items-center gap-2 opacity-0 transition-opacity duration-200 ease-out group-hover/user-message:opacity-100 group-focus-within/user-message:opacity-100">
+        <div className="mb-3 mt-1.5 flex items-center gap-2">
           <span className="text-sm">{formatCompletionTime(turn.submittedAt)}</span>
           <CopyTextButton ariaLabel="复制消息" text={turn.prompt} />
           {turn.userEventId && actions.onEditUserMessage ? (

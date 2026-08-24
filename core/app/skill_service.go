@@ -99,7 +99,7 @@ func (s *Service) loadSkillIntoSession(ctx context.Context, input domain.LoadSki
 	if err != nil {
 		return loadedSkillResult{}, err
 	}
-	output := renderSkillModelOutput(skill, content, files)
+	output := renderSkillModelOutputWithSnapshot(s.currentPromptSnapshot(), skill, content, files)
 	if _, err := s.rememberActiveSkill(ctx, sessionID, skill); err != nil {
 		return loadedSkillResult{}, err
 	}
@@ -243,7 +243,7 @@ func (s *Service) activeSkillsContext(ctx context.Context, sessionID string) str
 			continue
 		}
 		files, _ := manager.SupportingFiles(skill, skillSupportingFileLimit)
-		blocks = append(blocks, renderSkillModelOutput(skill, content, files))
+		blocks = append(blocks, renderSkillModelOutputWithSnapshot(s.currentPromptSnapshot(), skill, content, files))
 	}
 	return strings.Join(blocks, "\n\n")
 }
@@ -305,9 +305,17 @@ func renderAvailableSkills(skills []domain.SkillEntry, candidates []domain.Skill
 }
 
 func renderSkillModelOutput(skill domain.SkillEntry, content string, files []string) string {
+	return renderSkillModelOutputWithSnapshot(PromptSnapshot{}, skill, content, files)
+}
+
+func renderSkillModelOutputWithSnapshot(snapshot PromptSnapshot, skill domain.SkillEntry, content string, files []string) string {
 	directory := strings.TrimSpace(skill.RootPath)
 	if directory == "" && strings.TrimSpace(skill.SkillPath) != "" {
 		directory = filepath.Dir(skill.SkillPath)
+	}
+	footer, err := snapshot.Render("dynamic.skill_content_footer", map[string]string{"directory": directory})
+	if err != nil {
+		footer, _ = renderPromptTemplate(builtinPromptBody("dynamic.skill_content_footer"), map[string]string{"directory": directory})
 	}
 	lines := []string{
 		fmt.Sprintf(`<skill_content name="%s">`, xmlEscape(skill.Name)),
@@ -315,9 +323,7 @@ func renderSkillModelOutput(skill domain.SkillEntry, content string, files []str
 		"",
 		strings.TrimSpace(content),
 		"",
-		"Skill directory: " + directory,
-		"Relative paths in this skill are relative to the skill directory.",
-		"Bundled resources are listed but not loaded. Read only the specific resources required by the instructions. The resource list may be incomplete.",
+		footer,
 		"",
 		"<skill_resources>",
 	}

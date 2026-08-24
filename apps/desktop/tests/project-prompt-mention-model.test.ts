@@ -15,16 +15,25 @@ import {
   removePromptMentionReference,
 } from "../src/features/projects/project-prompt-mention-model.ts";
 
-test("composer mentions expose one combined file-or-folder action", () => {
+test("composer mentions expose context compaction and local resource actions", () => {
   assert.deepEqual(
     filterPromptMentionActions("").map(({ action, label }) => ({ action, label })),
     [
+      { action: "compact-context", label: "压缩上下文" },
       { action: "select-local", label: "选择文件或文件夹" },
     ],
   );
   assert.deepEqual(
     filterPromptMentionActions("文件夹").map((item) => item.action),
     ["select-local"],
+  );
+  assert.deepEqual(
+    filterPromptMentionActions("compact").map((item) => item.action),
+    ["compact-context"],
+  );
+  assert.deepEqual(
+    filterPromptMentionActions("压缩").map((item) => item.action),
+    ["compact-context"],
   );
 });
 
@@ -58,6 +67,15 @@ test("composer tool mentions include only globally enabled builtin tools", () =>
   assert.equal(isPromptMentionBuiltinTool({ enabled: true, source: "builtin" }), true);
   assert.equal(isPromptMentionBuiltinTool({ enabled: false, source: "builtin" }), false);
   assert.equal(isPromptMentionBuiltinTool({ enabled: true, source: "extension" }), false);
+  assert.equal(
+    isPromptMentionBuiltinTool({
+      enabled: true,
+      name: "aivo_projects_query",
+      source: "extension",
+      sourceId: "aivo.projects",
+    }),
+    true,
+  );
   assert.equal(isPromptMentionBuiltinTool({ enabled: true, source: "mcp" }), false);
 });
 

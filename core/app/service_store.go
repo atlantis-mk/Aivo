@@ -25,6 +25,10 @@ type agentModeDefinitionStore interface {
 	DeleteAgentModeDefinition(context.Context, string, bool) error
 }
 
+type promptRootStore interface {
+	ManagedPromptRoot() (string, error)
+}
+
 type extensionInstallStore interface {
 	ManagedExtensionRoot() (string, error)
 	LegacyManagedExtensionRoot() (string, error)

@@ -123,8 +123,8 @@ export function AssistantResponse({
   return (
     <div className="group/assistant-response relative">
       <Markdown content={responseText} isFinished={Boolean(completedAt)} />
-      <div className="relative h-6">
-        <div className="pointer-events-none absolute left-0 top-0 z-10 flex items-center gap-2 opacity-0 transition-opacity duration-200 ease-out group-hover/assistant-response:pointer-events-auto group-hover/assistant-response:opacity-100 group-focus-within/assistant-response:pointer-events-auto group-focus-within/assistant-response:opacity-100">
+      <div className="relative mb-3 h-6">
+        <div className="absolute left-0 top-0 z-10 flex items-center gap-2">
           <CopyTextButton ariaLabel="复制回复" text={responseText} />
           <Button aria-label="赞" size="icon-sm" type="button" variant="ghost">
             <ThumbsUp />

@@ -108,7 +108,7 @@ func (t *ToolResolveTool) Execute(ctx context.Context, args json.RawMessage, exe
 	if err != nil {
 		return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_resolve_failed", err.Error())
 	}
-	selected := validateToolResolveSelection(candidates, decision.Names, hostExpandedToolLimit)
+	selected := validateToolResolveSelection(candidates, decision.Names)
 	if len(selected) == 0 {
 		if !required {
 			return t.replaceWithNoAutomaticTools(ctx, execCtx, decision.Reason)

@@ -1,0 +1,53 @@
+id: "CHG-2026-038-prompt-management"
+title: "Manage validated file-backed prompts"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-PROMPT-001"
+  - "REQ-AGENT-001"
+  - "REQ-WORKSPACE-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-PROMPT-001"
+  - "AT-AGENT-001"
+  - "AT-WORKSPACE-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0021"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-PROMPT-001 Validated prompt management"
+  - "docs/03-functional-requirements.md#REQ-AGENT-001 Dynamic Agent mode management"
+  - "docs/03-functional-requirements.md#REQ-WORKSPACE-001 Sidebarless chat workspace"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-003-sidebarless-chat-workspace"
+  - "CHG-2026-027-dynamic-agent-modes"
+  - "CHG-2026-035-mcp-description-generation"
+  - "CHG-2026-037-intent-scoped-tool-injection"
+affected_surfaces:
+  - "global prompt management page and project top bar"
+  - "Agent-mode management and runtime prompt resolution"
+  - "auxiliary generation, Host selection, built-in commands, and quick prompts"
+affected_formats:
+  - "aivo.prompt/v1 Markdown"
+  - "schema-v9 Agent-mode prompt references"
+  - "typed local prompt-management RPCs"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Moves editable prompt text behind Core-owned bounded file validation; prompts remain non-authoritative for permissions, credentials, tools, and execution"
+migration: "Schema v8 to v9 backs up SQLite, materializes persisted Agent-mode prompt text as validated Markdown, and replaces stored text with promptId references"
+supersedes: []

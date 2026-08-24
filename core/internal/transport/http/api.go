@@ -51,6 +51,13 @@ func newAPI() (*API, error) {
 		}
 		api.events.emit("session.updated", payload)
 	})
+	api.service.SetSessionEventUpdatedHook(func(event domain.SessionEvent, created bool) {
+		name := "session_event.updated"
+		if created {
+			name = "session_event.created"
+		}
+		api.events.emit(name, map[string]any{"sessionId": event.SessionID, "event": event})
+	})
 	api.service.SetTurnUpdatedHook(func(sessionID string, turn domain.Turn) {
 		name := "turn.started"
 		switch turn.Status {

@@ -27,15 +27,20 @@ context_refs:
 related_changes:
   - "CHG-2026-017-conversational-mcp-registration"
   - "CHG-2026-030-replaceable-session-tool-selection"
+  - "CHG-2026-035-mcp-description-generation"
+  - "CHG-2026-036-visible-precall-tool-selection"
+  - "CHG-2026-037-intent-scoped-tool-injection"
 affected_surfaces:
   - "MCP creation and settings"
   - "Host auxiliary tool-group selection"
   - "session automatic tool-set expansion"
   - "Provider tool declarations and Tool Snapshots"
+  - "desktop four-category resource management and visible pre-call summary"
 affected_formats:
   - "MCP source description"
-  - "Host auxiliary selector prompt and strict JSON response"
+  - "Host auxiliary typed source-ID prompt and strict JSON response"
   - "Provider namespace/function tool declarations"
+  - "typed host_tool_selection resource summaries"
 affected_versions:
   - "0.0.0-development"
 security_impact: "Keeps source-group selection non-authoritative; Host revalidates source readiness and every concrete member before snapshot assembly, and per-tool permission checks remain unchanged"

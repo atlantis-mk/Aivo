@@ -45,10 +45,7 @@ func chatCompletionContentParts(text string, attachments []domain.MessageAttachm
 		parts = append(parts, map[string]any{"type": "text", "text": text})
 	}
 	for _, attachment := range attachments {
-		mimeType := strings.TrimSpace(attachment.MIMEType)
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
+		mimeType := normalizeAttachmentMIME(attachment.MIMEType)
 		data := strings.TrimSpace(attachment.Data)
 		if data == "" {
 			if text := attachment.Text; strings.TrimSpace(text) != "" {
@@ -56,11 +53,18 @@ func chatCompletionContentParts(text string, attachments []domain.MessageAttachm
 			}
 			continue
 		}
-		if strings.HasPrefix(mimeType, "image/") || attachment.Kind == "image" {
+		if !isSupportedBinaryAttachmentMIME(mimeType) {
+			continue
+		}
+		dataURL := dataURLForAttachment(mimeType, data)
+		if dataURL == "" {
+			continue
+		}
+		if isImageAttachmentMIME(mimeType) {
 			parts = append(parts, map[string]any{
 				"type": "image_url",
 				"image_url": map[string]string{
-					"url": dataURLForAttachment(mimeType, data),
+					"url": dataURL,
 				},
 			})
 			continue
@@ -69,7 +73,7 @@ func chatCompletionContentParts(text string, attachments []domain.MessageAttachm
 			"type": "file",
 			"file": map[string]string{
 				"filename":  attachment.Name,
-				"file_data": dataURLForAttachment(mimeType, data),
+				"file_data": dataURL,
 			},
 		})
 	}

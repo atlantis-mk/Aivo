@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	managedWorkspaceRootEnv = "AIVO_WORKSPACES_DIR"
-	managedWorkspaceRootDir = "Aivo Workspaces"
+	managedWorkspaceRootEnv       = "AIVO_WORKSPACES_DIR"
+	managedWorkspaceRootDir       = "Aivo-Workspaces"
+	legacyManagedWorkspaceRootDir = "Aivo Workspaces"
 )
 
 func managedWorkspaceRoot() (string, error) {
@@ -38,15 +39,24 @@ func isManagedWorkspace(path string) bool {
 	if err != nil {
 		return false
 	}
-	root, err = filepath.Abs(root)
-	if err != nil {
-		return false
+	roots := []string{root}
+	if home, homeErr := os.UserHomeDir(); homeErr == nil {
+		roots = append(roots, filepath.Join(home, "Documents", legacyManagedWorkspaceRootDir))
 	}
-	rel, err := filepath.Rel(root, absPath)
-	if err != nil {
-		return false
+	for _, candidateRoot := range roots {
+		candidateRoot, err = filepath.Abs(candidateRoot)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(candidateRoot, absPath)
+		if err != nil {
+			continue
+		}
+		if rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel) {
+			return true
+		}
 	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
+	return false
 }
 
 func ensureInitialWorkspaceDirectory(path string) (string, error) {

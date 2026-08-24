@@ -45,7 +45,7 @@ test("tool activation shows globally enabled tools in their source categories", 
   });
   assert.deepEqual(groups.map((group) => group.section), [
     "tools",
-    "extensions",
+    "tools",
     "extensions",
     "mcp",
   ]);

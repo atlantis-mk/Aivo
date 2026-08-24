@@ -71,10 +71,7 @@ func googleRequestBody(model string, messages []llmChatMessage, tools []domain.T
 func googleAttachmentParts(attachments []domain.MessageAttachment) []map[string]any {
 	parts := []map[string]any{}
 	for _, attachment := range attachments {
-		mimeType := strings.TrimSpace(attachment.MIMEType)
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
+		mimeType := normalizeAttachmentMIME(attachment.MIMEType)
 		data := strings.TrimSpace(attachment.Data)
 		if data == "" {
 			if text := attachment.Text; strings.TrimSpace(text) != "" {
@@ -82,10 +79,17 @@ func googleAttachmentParts(attachments []domain.MessageAttachment) []map[string]
 			}
 			continue
 		}
+		if !isSupportedBinaryAttachmentMIME(mimeType) {
+			continue
+		}
+		payload, embeddedMIME, err := attachmentBase64Payload(data)
+		if err != nil || (embeddedMIME != "" && embeddedMIME != mimeType) {
+			continue
+		}
 		parts = append(parts, map[string]any{
 			"inlineData": map[string]string{
 				"mimeType": mimeType,
-				"data":     data,
+				"data":     payload,
 			},
 		})
 	}

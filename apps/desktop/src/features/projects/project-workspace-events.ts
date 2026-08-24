@@ -7,6 +7,7 @@ import {
   isDelegateTaskToolName,
   mergeRuntimeTurn,
   mergeSingleToolCall,
+  mergeSystemNoteEvent,
   moveOpenResponseTextToAssistantPreambleBeforeTool,
   updatePermissionPauseState,
   upsertSession,
@@ -15,6 +16,7 @@ import type { LoadConversationTurnsOptions } from "@/features/projects/project-c
 import {
   normalizeAssistantDeltaPayload,
   normalizeSessionUpdatedPayload,
+  normalizeSessionEventUpdatedPayload,
   normalizeTodoItemsUpdatedPayload,
   normalizeToolCallUpdatedPayload,
   normalizeTurnUpdatedPayload,
@@ -76,6 +78,21 @@ export function useProjectWorkspaceEvents({
       }
     });
   }, [setSessions]);
+
+  useEffect(() => {
+    if (!hasAppBridge()) return;
+    const handleSessionEvent = (...payloads: unknown[]) => {
+      const event = normalizeSessionEventUpdatedPayload(payloads);
+      if (!event?.id || event.sessionId !== activeSessionIdRef.current) return;
+      setTurns((currentTurns) => mergeSystemNoteEvent(currentTurns, event));
+    };
+    const offCreated = EventsOn("session_event.created", handleSessionEvent);
+    const offUpdated = EventsOn("session_event.updated", handleSessionEvent);
+    return () => {
+      offCreated();
+      offUpdated();
+    };
+  }, [activeSessionIdRef, setTurns]);
 
   useEffect(() => {
     if (!hasAppBridge()) return;

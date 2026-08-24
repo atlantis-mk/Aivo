@@ -2,7 +2,9 @@ package persistence
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +20,7 @@ import (
 	"aivo/core/domain"
 )
 
-const latestSchemaVersion = 8
+const latestSchemaVersion = 9
 
 func (s *Store) migrate(ctx context.Context) error {
 	version, hasVersionTable, err := s.currentSchemaVersion(ctx)
@@ -44,7 +46,11 @@ func (s *Store) migrate(ctx context.Context) error {
 		if !s.db.WithContext(ctx).Migrator().HasTable(&agentModeDefinitionRow{}) {
 			return errors.New("database schema version 6 is missing agent_mode_definitions")
 		}
-		return nil
+		promptRoot, rootErr := s.ManagedPromptRoot()
+		if rootErr != nil {
+			return rootErr
+		}
+		return publishPendingAgentPromptMigration(promptRoot)
 	}
 
 	hasLegacyData := hasVersionTable || s.hasApplicationSchema()
@@ -58,7 +64,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		}
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	migrationErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(&schemaVersionRow{}, &appConfigRow{}, &providerRow{}, &providerModelCacheRow{}, &providerValidationRow{}, &providerHealthRow{}, &providerCallEventRow{}, &projectRow{}, &sessionRow{}); err != nil {
 			return err
 		}
@@ -76,9 +82,172 @@ func (s *Store) migrate(ctx context.Context) error {
 				return err
 			}
 		}
+		if version < 9 {
+			promptRoot, err := s.ManagedPromptRoot()
+			if err != nil {
+				return err
+			}
+			if err := migrateAgentModePrompts(ctx, tx, promptRoot); err != nil {
+				return err
+			}
+		}
 		now := domain.NowString(time.Now())
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&schemaVersionRow{Version: latestSchemaVersion, AppliedAt: now}).Error
 	})
+	if migrationErr != nil {
+		return migrationErr
+	}
+	if version < 9 {
+		promptRoot, err := s.ManagedPromptRoot()
+		if err != nil {
+			return err
+		}
+		return publishPendingAgentPromptMigration(promptRoot)
+	}
+	return nil
+}
+
+func migrateAgentModePrompts(ctx context.Context, tx *gorm.DB, promptRoot string) error {
+	if !tx.WithContext(ctx).Migrator().HasTable(&agentModeDefinitionRow{}) {
+		return nil
+	}
+	var rows []agentModeDefinitionRow
+	if err := tx.WithContext(ctx).Find(&rows).Error; err != nil {
+		return err
+	}
+	pending := map[string]string{}
+	for _, row := range rows {
+		var definition map[string]any
+		if err := json.Unmarshal([]byte(row.Definition), &definition); err != nil {
+			return fmt.Errorf("decode agent mode %s for schema v9: %w", row.ID, err)
+		}
+		modeID, err := domain.NormalizeAgentMode(row.ID)
+		if err != nil {
+			return fmt.Errorf("normalize agent mode %s for schema v9: %w", row.ID, err)
+		}
+		promptID := "agent." + modeID
+		if configured, _ := definition["promptId"].(string); strings.TrimSpace(configured) != "" {
+			promptID = strings.TrimSpace(configured)
+		}
+		body, _ := definition["prompt"].(string)
+		body = strings.TrimSpace(body)
+		if body != "" {
+			title, _ := definition["displayName"].(string)
+			if strings.TrimSpace(title) == "" {
+				title = modeID
+			}
+			revision, err := stageMigratedAgentPrompt(promptRoot, promptID, title, body)
+			if err != nil {
+				return fmt.Errorf("publish agent prompt %s for schema v9: %w", promptID, err)
+			}
+			pending[promptID] = revision
+		}
+		definition["promptId"] = promptID
+		delete(definition, "prompt")
+		raw, err := json.Marshal(definition)
+		if err != nil {
+			return fmt.Errorf("encode agent mode %s for schema v9: %w", row.ID, err)
+		}
+		if err := tx.WithContext(ctx).Model(&agentModeDefinitionRow{}).Where("id = ?", row.ID).Update("definition", string(raw)).Error; err != nil {
+			return err
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(promptMigrationManifest{Version: 1, Prompts: pending})
+	if err != nil {
+		return err
+	}
+	return atomicWriteMigrationFile(filepath.Join(promptRoot, ".state", "migration", "pending.json"), raw)
+}
+
+type promptMigrationManifest struct {
+	Version int               `json:"version"`
+	Prompts map[string]string `json:"prompts"`
+}
+
+func stageMigratedAgentPrompt(promptRoot, promptID, title, body string) (string, error) {
+	titleJSON, _ := json.Marshal(strings.TrimSpace(title))
+	raw := []byte(fmt.Sprintf("---\nschema: aivo.prompt/v1\nid: %s\ncategory: agent\ntitle: %s\nenabled: true\n---\n\n%s\n", promptID, titleJSON, strings.TrimSpace(body)))
+	if len(raw) > 32*1024 {
+		return "", errors.New("agent prompt exceeds 32768 bytes")
+	}
+	hash := sha256.Sum256(raw)
+	revision := hex.EncodeToString(hash[:])
+	validatedPath := filepath.Join(promptRoot, ".state", "migration", revision+".md")
+	if err := atomicWriteMigrationFile(validatedPath, raw); err != nil {
+		return "", err
+	}
+	return revision, nil
+}
+
+func publishPendingAgentPromptMigration(promptRoot string) error {
+	manifestPath := filepath.Join(promptRoot, ".state", "migration", "pending.json")
+	raw, err := os.ReadFile(manifestPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var manifest promptMigrationManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil || manifest.Version != 1 {
+		return errors.New("invalid pending prompt migration manifest")
+	}
+	for promptID, revision := range manifest.Prompts {
+		if !strings.HasPrefix(promptID, "agent.") || strings.ContainsAny(promptID, `/\\`) || len(revision) != 64 {
+			return errors.New("invalid pending prompt migration entry")
+		}
+		staged, err := os.ReadFile(filepath.Join(promptRoot, ".state", "migration", revision+".md"))
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(staged), "\nid: "+promptID+"\n") {
+			return errors.New("pending prompt migration content does not match its id")
+		}
+		if err := atomicWriteMigrationFile(filepath.Join(promptRoot, "overrides", "agent", promptID+".md"), staged); err != nil {
+			return err
+		}
+	}
+	return os.Remove(manifestPath)
+}
+
+func atomicWriteMigrationFile(path string, raw []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(dir, ".migration-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(raw); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func migrateAgentModeToolsets(ctx context.Context, tx *gorm.DB) error {

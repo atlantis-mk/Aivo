@@ -12,9 +12,10 @@ MCP servers and extensions intentionally package related concrete tools behind o
 
 ## Decision
 
-- Each enabled ready MCP or executable extension MUST contribute at most one stable globally unique auxiliary group name and one bounded optional functional description; a missing description MUST remain an empty value rather than suppressing the group or synthesizing content.
-- The auxiliary tool-selection request MUST contain only the user intent and single-line `name：description` group entries. Descriptions MUST be treated as untrusted data and MUST NOT carry authority or instructions.
-- The auxiliary response MUST be a bare strict JSON array of unique exact candidate group names and MUST contain no object wrapper, reason, Markdown, or unknown value.
+- Each enabled ready MCP or executable non-built-in extension MUST contribute at most one typed source candidate identified by its exact Host-owned `mcp` or `extension` ID. Built-in Aivo tools and Skills remain distinct `tool` and `skill` resources and MUST NOT become auxiliary source-selection candidates.
+- Every currently eligible standalone `tool` resource MUST bypass source selection and remain injected as itself; source selection may neither add nor remove it. MCP adapters MUST retain their exact server ID as Registry source identity rather than substituting a generated namespace.
+- The auxiliary tool-selection request MUST contain only the user intent and single-line `kind:id：description` source entries. Descriptions MUST be treated as untrusted data and MUST NOT carry authority or instructions. When an MCP has no functional description, the Host MUST assemble its current eligible tool names and descriptions into the bounded source description; an extension without a Manifest description remains blank.
+- The auxiliary response MUST be one strict classified JSON object whose `sources` array contains only unique exact `{kind,id}` MCP or extension identities. It MUST contain no concrete tool name, reason, Markdown, unknown field, or unknown identity.
 - The Host MUST validate each selected group and expand it to all currently registered, mode-eligible, globally visible concrete tools from that source. A globally hidden or otherwise ineligible member MUST remain excluded.
 - The Host MUST persist and snapshot the expanded concrete canonical tool names and registration identities. Later source catalog changes MUST NOT silently change an existing conversation's automatic set.
 - Provider adapters MAY serialize the selected concrete set as a namespace when supported, but a namespace MUST contain only members of selected groups that survived Host validation.
@@ -23,11 +24,11 @@ MCP servers and extensions intentionally package related concrete tools behind o
 
 ## Rationale
 
-The auxiliary model is best used to choose the capability source named by the user's request, while the local Registry is the only reliable owner of current group membership. A minimal line catalog and strict name array reduce tokens and parsing ambiguity. Persisting the expanded concrete set preserves the stable conversation surface and immutable snapshot guarantees established by ADR-0016.
+The auxiliary model is best used to choose the exact capability source named by the user's request, while the local Registry is the only reliable owner of current membership. A minimal typed-ID catalog and strict source array prevent generated Provider namespaces or concrete members from becoming a second resource taxonomy. Persisting the expanded concrete set preserves the stable conversation surface and immutable snapshot guarantees established by ADR-0016.
 
 ## Consequences
 
-One selected source may expose several concrete schemas to the primary model, so Host-owned member-count and schema-size bounds remain necessary. Source descriptions remain optional bounded hints and blank descriptions reduce semantic routing quality without changing eligibility. Auxiliary selection becomes source-granular, while global visibility, manual activation, execution history, and permission enforcement remain concrete-tool-granular.
+One selected source may expose several concrete schemas to the primary model, so Provider/schema-size bounds remain necessary. MCP fallback descriptions can be larger because they preserve all current member descriptions within the Host input bound. Auxiliary selection is source-granular, while global visibility, manual activation, execution history, and permission enforcement remain concrete-tool-granular.
 
 ## Rejected alternatives
 
@@ -38,4 +39,4 @@ One selected source may expose several concrete schemas to the primary model, so
 
 ## Verification
 
-`AT-TOOL-001` verifies the minimal request and strict array parser. `AT-EXTENSION-001` verifies one candidate per MCP/extension, complete eligible expansion, functional descriptions, and Provider namespace membership. `AT-SESSION-001` verifies stable expanded automatic state and Tool Snapshots. `CT-SECURITY-001` verifies untrusted description handling, unknown-group refusal, hidden-member exclusion, and unchanged call-time authorization.
+`AT-TOOL-001` verifies the minimal typed-ID request, strict source parser, and refusal of concrete-tool selections. `AT-EXTENSION-001` verifies one candidate per MCP/extension, complete eligible expansion, MCP description fallback assembly, and Provider namespace membership. `AT-SESSION-001` verifies stable expanded automatic state and Tool Snapshots. `CT-SECURITY-001` verifies untrusted description handling, unknown-source refusal, hidden-member exclusion, and unchanged call-time authorization.

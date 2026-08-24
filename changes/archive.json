@@ -11,6 +11,15 @@
       }
     },
     {
+      "work_id": "BUG-2026-013-cross-platform-release-blockers",
+      "status": "Verified",
+      "archived_at": "2026-08-24T18:46:45.632Z",
+      "files": {
+        "changes/BUG-2026-013-cross-platform-release-blockers/change.md": "sha256:072115196837c402f645a4b9b0872ddef0bcb66d4b35cd1f6de95b94af678f52",
+        "changes/BUG-2026-013-cross-platform-release-blockers/change.yaml": "sha256:a56ee6903822942d9771025d3f7c89835dd9657a9a64b6ef6a00aa4ce77d0020"
+      }
+    },
+    {
       "work_id": "CHG-2026-001-document-governance",
       "status": "Verified",
       "archived_at": "2026-07-30T21:21:01.997Z",
@@ -195,6 +204,46 @@
       "files": {
         "changes/CHG-2026-031-remove-agent-mcp-source-list-tool/change.md": "sha256:e5c16ab54f47a7bf24e60fd3196ea7f73a8ff637439315ed06062d31dbe0966a",
         "changes/CHG-2026-031-remove-agent-mcp-source-list-tool/change.yaml": "sha256:e659795b606722a6c05c8bd1ea3be3e0c122177235e50a29c86ef0bad433c409"
+      }
+    },
+    {
+      "work_id": "CHG-2026-038-prompt-management",
+      "status": "Verified",
+      "archived_at": "2026-08-23T07:59:22.717Z",
+      "files": {
+        "changes/CHG-2026-038-prompt-management/change.md": "sha256:d016fcb43e3c21ee3193f91b6017c7256305c8d6fe980b1c9d861726ab62a8b1",
+        "changes/CHG-2026-038-prompt-management/change.yaml": "sha256:ae6541557064a9c9a4bc229bf8c6258cbb835f7d53bd7011575debb202d8ea7c",
+        "changes/CHG-2026-038-prompt-management/evidence/prompts-narrow.png": "sha256:f5c6e0526d9036a26af0827fcad17de803465993533d0634bc5fa6e39e57672d",
+        "changes/CHG-2026-038-prompt-management/evidence/prompts-wide.png": "sha256:aa07a9f0e450a803f2b9e8abe3319387f863ffe387d9f1061743140557647b48"
+      }
+    },
+    {
+      "work_id": "CHG-2026-039-single-default-agent",
+      "status": "Verified",
+      "archived_at": "2026-08-23T08:38:07.228Z",
+      "files": {
+        "changes/CHG-2026-039-single-default-agent/change.md": "sha256:c616c6fd9762889a5db4fea904e5f55651bff82131d862bae2445319123611c3",
+        "changes/CHG-2026-039-single-default-agent/change.yaml": "sha256:26474b03424ae444c22292adcfb649d80d56c65b17a514ba3a268dfe4e44575b"
+      }
+    },
+    {
+      "work_id": "CHG-2026-040-agent-subagent-selection-injection",
+      "status": "Verified",
+      "archived_at": "2026-08-23T09:11:19.027Z",
+      "files": {
+        "changes/CHG-2026-040-agent-subagent-selection-injection/change.md": "sha256:70ce87ebf3c1984ca439ee5add757a8cee75b307b702877faac6b5e9216b751a",
+        "changes/CHG-2026-040-agent-subagent-selection-injection/change.yaml": "sha256:d745c090b155ac8ac6f738d68d448179f882852ef24f1a3b276ebe13c7b8e710",
+        "changes/CHG-2026-040-agent-subagent-selection-injection/evidence/agent-subagent-select-narrow.png": "sha256:bb4f14726d2c96edae0d839a6e5599e374a99cb20e8e9e753324c14b5dcab654",
+        "changes/CHG-2026-040-agent-subagent-selection-injection/evidence/agent-subagent-select-wide.png": "sha256:96d4be6a0cb5fd4f52eda9e36f9f1091f1eb4a7a6c2fc6d93e35c574779469de"
+      }
+    },
+    {
+      "work_id": "CHG-2026-043-public-source-release",
+      "status": "Verified",
+      "archived_at": "2026-08-24T19:28:53.241Z",
+      "files": {
+        "changes/CHG-2026-043-public-source-release/change.md": "sha256:eef2d92f9393360d0cc75ca500020b90877bb18d1cbe8ea6c5d2a0d8cfe62e30",
+        "changes/CHG-2026-043-public-source-release/change.yaml": "sha256:1fd4eadb6ba4b8003de0cfe9cdf6ae6843679926de696f94441fbe2b4f82f140"
       }
     }
   ]

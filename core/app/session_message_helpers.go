@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"aivo/core/domain"
 )
@@ -39,23 +41,51 @@ func validateSessionMessageAttachments(attachments []domain.MessageAttachment) e
 			if len([]byte(attachment.Text)) > maxSessionMessageAttachmentBytes {
 				return fmt.Errorf("%s exceeds the 50 MB attachment limit", name)
 			}
+			if !utf8.ValidString(attachment.Text) {
+				return fmt.Errorf("%s is not valid UTF-8 text", name)
+			}
+			if kind == "image" {
+				return fmt.Errorf("%s has text content with image attachment kind", name)
+			}
+			mimeType := effectiveTextAttachmentMIME(attachment.MIMEType, attachment.Name)
+			if !isTextAttachmentMIME(mimeType) {
+				return fmt.Errorf("%s has unsupported text attachment MIME type %q", name, attachment.MIMEType)
+			}
 			continue
 		}
-		encoded := data
-		if strings.HasPrefix(encoded, "data:") {
-			comma := strings.IndexByte(encoded, ',')
-			if comma < 0 || !strings.Contains(strings.ToLower(encoded[:comma]), ";base64") {
-				return fmt.Errorf("%s has invalid attachment data", name)
-			}
-			encoded = encoded[comma+1:]
+		mimeType := normalizeAttachmentMIME(attachment.MIMEType)
+		if !isSupportedBinaryAttachmentMIME(mimeType) {
+			return fmt.Errorf("%s has unsupported binary attachment MIME type %q", name, attachment.MIMEType)
+		}
+		if kind == "image" && !isImageAttachmentMIME(mimeType) {
+			return fmt.Errorf("%s has image attachment kind with non-image MIME type %q", name, attachment.MIMEType)
+		}
+		if kind == "file" && isImageAttachmentMIME(mimeType) {
+			return fmt.Errorf("%s has file attachment kind with image MIME type %q", name, attachment.MIMEType)
+		}
+		encoded, embeddedMIME, err := attachmentBase64Payload(data)
+		if err != nil {
+			return fmt.Errorf("%s has invalid attachment data", name)
+		}
+		if embeddedMIME != "" && embeddedMIME != mimeType {
+			return fmt.Errorf("%s has attachment data MIME type %q that does not match %q", name, embeddedMIME, mimeType)
 		}
 		decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
-		decodedBytes, err := io.Copy(io.Discard, io.LimitReader(decoder, maxSessionMessageAttachmentBytes+1))
+		header := make([]byte, 1024)
+		headerBytes, readErr := io.ReadFull(decoder, header)
+		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+			return fmt.Errorf("%s has invalid base64 attachment data", name)
+		}
+		decodedBytes, err := io.Copy(io.Discard, io.LimitReader(decoder, maxSessionMessageAttachmentBytes+1-int64(headerBytes)))
 		if err != nil {
 			return fmt.Errorf("%s has invalid base64 attachment data", name)
 		}
+		decodedBytes += int64(headerBytes)
 		if decodedBytes > maxSessionMessageAttachmentBytes {
 			return fmt.Errorf("%s exceeds the 50 MB attachment limit", name)
+		}
+		if !attachmentHeaderMatchesMIME(mimeType, header[:headerBytes]) {
+			return fmt.Errorf("%s content does not match declared attachment MIME type %q", name, mimeType)
 		}
 	}
 	return nil
@@ -73,9 +103,11 @@ func normalizeSessionMessageAttachments(attachments []domain.MessageAttachment) 
 		if name == "" {
 			name = "attachment"
 		}
-		mimeType := strings.TrimSpace(attachment.MIMEType)
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
+		mimeType := normalizeAttachmentMIME(attachment.MIMEType)
+		if data == "" {
+			mimeType = effectiveTextAttachmentMIME(mimeType, name)
+		} else if payload, _, err := attachmentBase64Payload(data); err == nil {
+			data = payload
 		}
 		kind := strings.TrimSpace(attachment.Kind)
 		if kind == "" {
@@ -91,6 +123,117 @@ func normalizeSessionMessageAttachments(attachments []domain.MessageAttachment) 
 		})
 	}
 	return out
+}
+
+func normalizeAttachmentMIME(mimeType string) string {
+	mimeType = strings.ToLower(strings.TrimSpace(strings.SplitN(mimeType, ";", 2)[0]))
+	if mimeType == "image/jpg" {
+		return "image/jpeg"
+	}
+	return mimeType
+}
+
+func effectiveTextAttachmentMIME(mimeType string, name string) string {
+	mimeType = normalizeAttachmentMIME(mimeType)
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		if isTextAttachmentName(name) || mimeType == "" {
+			return "text/plain"
+		}
+	}
+	return mimeType
+}
+
+func isTextAttachmentMIME(mimeType string) bool {
+	mimeType = normalizeAttachmentMIME(mimeType)
+	if strings.HasPrefix(mimeType, "text/") {
+		return true
+	}
+	switch mimeType {
+	case "application/json", "application/ld+json", "application/toml", "application/xml", "application/x-httpd-php", "application/x-sh", "application/x-yaml", "application/yaml":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTextAttachmentName(name string) bool {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(name))) {
+	case ".c", ".cc", ".conf", ".cpp", ".cs", ".css", ".env", ".go", ".h", ".hpp", ".htm", ".html", ".ini", ".java", ".js", ".jsx", ".json", ".jsonl", ".kt", ".kts", ".log", ".lua", ".md", ".mjs", ".php", ".pl", ".properties", ".py", ".rb", ".rs", ".sh", ".sql", ".swift", ".toml", ".ts", ".tsx", ".txt", ".vue", ".xml", ".yaml", ".yml":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedBinaryAttachmentMIME(mimeType string) bool {
+	switch normalizeAttachmentMIME(mimeType) {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		return true
+	default:
+		return false
+	}
+}
+
+func isImageAttachmentMIME(mimeType string) bool {
+	switch normalizeAttachmentMIME(mimeType) {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func attachmentHeaderMatchesMIME(mimeType string, header []byte) bool {
+	hasPrefix := func(prefix ...byte) bool {
+		if len(header) < len(prefix) {
+			return false
+		}
+		for index, value := range prefix {
+			if header[index] != value {
+				return false
+			}
+		}
+		return true
+	}
+	switch normalizeAttachmentMIME(mimeType) {
+	case "image/png":
+		return hasPrefix(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+	case "image/jpeg":
+		return hasPrefix(0xff, 0xd8, 0xff)
+	case "image/gif":
+		return string(header)[:min(len(header), 6)] == "GIF87a" || string(header)[:min(len(header), 6)] == "GIF89a"
+	case "image/webp":
+		return len(header) >= 12 && string(header[:4]) == "RIFF" && string(header[8:12]) == "WEBP"
+	case "application/pdf":
+		return strings.Contains(string(header), "%PDF-")
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		return hasPrefix('P', 'K', 0x03, 0x04) || hasPrefix('P', 'K', 0x05, 0x06) || hasPrefix('P', 'K', 0x07, 0x08)
+	default:
+		return false
+	}
+}
+
+func attachmentBase64Payload(data string) (string, string, error) {
+	data = strings.TrimSpace(data)
+	if !strings.HasPrefix(strings.ToLower(data), "data:") {
+		return data, "", nil
+	}
+	comma := strings.IndexByte(data, ',')
+	if comma < 0 {
+		return "", "", fmt.Errorf("missing data URL separator")
+	}
+	header := data[5:comma]
+	segments := strings.Split(header, ";")
+	if len(segments) < 2 || !strings.EqualFold(strings.TrimSpace(segments[len(segments)-1]), "base64") {
+		return "", "", fmt.Errorf("attachment data URL is not base64")
+	}
+	mimeType := normalizeAttachmentMIME(segments[0])
+	if mimeType == "" {
+		return "", "", fmt.Errorf("attachment data URL has no MIME type")
+	}
+	return data[comma+1:], mimeType, nil
 }
 
 func buildSessionMessageEventText(text string, attachments []domain.MessageAttachment) string {

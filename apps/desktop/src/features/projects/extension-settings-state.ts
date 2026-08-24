@@ -216,7 +216,7 @@ export function useExtensionSettingsState({
     }
   }
 
-  function editAgentMode(mode: AgentModeDefinition) {
+  function editAgentMode(mode?: AgentModeDefinition) {
     setEditingAgentMode(mode);
     setAgentModeEditorOpen(true);
   }
@@ -228,11 +228,6 @@ export function useExtensionSettingsState({
     }
     if (section === "skills") {
       void catalog.reload();
-      return;
-    }
-    if (section === "agents") {
-      setEditingAgentMode(undefined);
-      setAgentModeEditorOpen(true);
       return;
     }
     setAddOpen(true);

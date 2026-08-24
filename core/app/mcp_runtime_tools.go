@@ -43,7 +43,7 @@ func (m *MCPManager) registerMCPResourceUtilityTools(ctx context.Context, regist
 	}
 	for i := range utilities {
 		tool := utilities[i]
-		if err := registry.RegisterScoped(&tool, domain.ToolSourceExtension, mcpServerToolPrefix(server), firstNonEmptyApp(server.TimeUpdated, "v1")); err != nil {
+		if err := registry.RegisterScoped(&tool, domain.ToolSourceMCP, server.ID, firstNonEmptyApp(server.TimeUpdated, "v1")); err != nil {
 			m.diagnostic(ctx, server.ID, "error", "MCP resource utility registration failed", map[string]any{"tool": tool.spec.Name, "error": err.Error()})
 		}
 	}

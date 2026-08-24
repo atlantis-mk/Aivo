@@ -104,24 +104,31 @@ func responsesAttachmentPart(attachment domain.MessageAttachment) map[string]str
 		}
 		return map[string]string{"type": "input_text", "text": attachment.Name + "\n" + text}
 	}
-	mimeType := strings.TrimSpace(attachment.MIMEType)
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
+	mimeType := normalizeAttachmentMIME(attachment.MIMEType)
+	if !isSupportedBinaryAttachmentMIME(mimeType) {
+		return nil
 	}
 	dataURL := dataURLForAttachment(mimeType, data)
-	if strings.HasPrefix(mimeType, "image/") || attachment.Kind == "image" {
+	if dataURL == "" {
+		return nil
+	}
+	if isImageAttachmentMIME(mimeType) {
 		return map[string]string{"type": "input_image", "image_url": dataURL}
 	}
 	return map[string]string{"type": "input_file", "filename": attachment.Name, "file_data": dataURL}
 }
 
 func dataURLForAttachment(mimeType string, data string) string {
-	mimeType = strings.TrimSpace(mimeType)
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
+	mimeType = normalizeAttachmentMIME(mimeType)
+	if !isSupportedBinaryAttachmentMIME(mimeType) {
+		return ""
 	}
 	data = strings.TrimSpace(data)
-	if strings.HasPrefix(data, "data:") {
+	if strings.HasPrefix(strings.ToLower(data), "data:") {
+		_, embeddedMIME, err := attachmentBase64Payload(data)
+		if err != nil || embeddedMIME != mimeType {
+			return ""
+		}
 		return data
 	}
 	return "data:" + mimeType + ";base64," + data

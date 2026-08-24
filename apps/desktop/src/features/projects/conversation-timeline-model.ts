@@ -1,4 +1,5 @@
 import type { domain } from "../../../bridge/go/models";
+import type { TurnRuntimeMetrics } from "@/features/projects/project-session-runtime-stats";
 
 export type ConversationTurn = {
   activityVisible: boolean;
@@ -19,6 +20,7 @@ export type ConversationTurn = {
   pauseStartedAt?: number | null;
   responseCompletedAt: Date | null;
   responseVisible: boolean;
+  runtimeMetrics?: TurnRuntimeMetrics;
   stopped: boolean;
   systemNotes?: ConversationSystemNote[];
 };
@@ -41,6 +43,7 @@ export type ConversationAssistantTextPart = {
 export type ConversationSystemNote = {
   id: string;
   content: string;
+  payload?: Record<string, unknown>;
   timeCreated?: string;
 };
 

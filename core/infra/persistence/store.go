@@ -17,6 +17,7 @@ type Store struct {
 	sqlDB                *sql.DB
 	path                 string
 	managedExtensionRoot string
+	managedPromptRoot    string
 	projectBindingMu     sync.Map
 }
 
@@ -29,20 +30,22 @@ func OpenDefault() (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	store, err := Open(filepath.Join(dir, "aivo.db"))
-	if err != nil {
-		return nil, err
-	}
 	managedRoot, err := defaultManagedExtensionRoot()
 	if err != nil {
-		_ = store.Close()
 		return nil, err
 	}
-	store.managedExtensionRoot = managedRoot
-	return store, nil
+	promptRoot, err := defaultManagedPromptRoot()
+	if err != nil {
+		return nil, err
+	}
+	return openStore(filepath.Join(dir, "aivo.db"), managedRoot, promptRoot)
 }
 
 func Open(path string) (*Store, error) {
+	return openStore(path, "", "")
+}
+
+func openStore(path, managedExtensionRoot, managedPromptRoot string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -54,12 +57,33 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{db: db, sqlDB: sqlDB, path: path}
+	store := &Store{db: db, sqlDB: sqlDB, path: path, managedExtensionRoot: managedExtensionRoot, managedPromptRoot: managedPromptRoot}
 	if err := store.migrate(context.Background()); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
 	return store, nil
+}
+
+func (s *Store) ManagedPromptRoot() (string, error) {
+	if s == nil || s.path == "" || s.path == ":memory:" {
+		return "", errors.New("managed prompt storage requires a persistent database path")
+	}
+	root := s.managedPromptRoot
+	if root == "" {
+		root = filepath.Join(filepath.Dir(s.path), "prompts")
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		return "", err
+	}
+	return root, nil
 }
 
 func (s *Store) Close() error {
@@ -103,4 +127,12 @@ func defaultManagedExtensionRoot() (string, error) {
 		return "", err
 	}
 	return filepath.Join(configRoot, "Aivo", "Default", "Extensions"), nil
+}
+
+func defaultManagedPromptRoot() (string, error) {
+	configRoot, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configRoot, "Aivo", "Default", "Prompts"), nil
 }

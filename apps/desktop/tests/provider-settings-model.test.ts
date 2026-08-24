@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  configuredProviderRefreshInput,
   configuredProviders,
+  providerCanRefreshModels,
   providerConnectionMethodLabel,
   providerModelLabel,
+  providerRefreshUnavailableMessage,
   providerReadinessLabel,
 } from "../src/features/providers/provider-settings-model.ts";
 
@@ -30,6 +33,36 @@ test("provider settings lists only configured providers with the default first",
     visible.map((provider) => provider.id),
     ["openai", "anthropic"],
   );
+});
+
+test("provider settings refreshes only refreshable catalogs with a secret-free input", () => {
+  const provider = {
+    id: "team-provider",
+    name: "Team Provider",
+    connected: true,
+    modelRefresh: { refreshable: true },
+  };
+
+  assert.equal(providerCanRefreshModels(provider), true);
+  assert.equal(
+    providerCanRefreshModels({
+      ...provider,
+      modelRefresh: { refreshable: false },
+    }),
+    false,
+  );
+  assert.equal(providerRefreshUnavailableMessage(provider), "");
+  assert.equal(
+    providerRefreshUnavailableMessage({
+      ...provider,
+      modelRefresh: { refreshable: false },
+    }),
+    "Team Provider 暂不支持远程模型刷新，请使用“更新模型目录”获取最新的内置模型列表。",
+  );
+  assert.deepEqual(configuredProviderRefreshInput(provider), {
+    providerId: "team-provider",
+    name: "Team Provider",
+  });
 });
 
 test("provider settings derives safe model, auth, and readiness summaries", () => {

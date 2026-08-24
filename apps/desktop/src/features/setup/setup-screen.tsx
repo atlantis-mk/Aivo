@@ -13,6 +13,7 @@ import {
   ConnectedAccountsBar,
 } from "@/features/setup/setup-connected-accounts";
 import { SetupLoadingSkeleton } from "@/features/setup/setup-loading-skeleton";
+import { hasCompletedInitialization } from "@/features/setup/setup-routing";
 import { ProviderConnectionDialogs } from "@/features/setup/provider-connection-dialogs";
 import type {
   CustomProviderForm,
@@ -32,6 +33,7 @@ import {
 import { type AppConfigWithAuxiliary } from "@/features/setup/setup-provider-models";
 import { SetupStepNavigation } from "@/features/setup/setup-step-navigation";
 import { SetupWorkspaceStep } from "@/features/setup/setup-workspace-step";
+import { resolveSetupWorkspacePath } from "@/features/setup/setup-workspace-path";
 import { completePreviewInitialization } from "@/lib/preview-state";
 import {
   completeInitialization,
@@ -50,11 +52,13 @@ export function SetupScreen() {
 
   useEffect(() => {
     const workspaceConfig = config as AppConfigWithAuxiliary | null;
-    const suggestedPath =
-      workspaceConfig?.initialWorkspacePath ||
-      workspaceConfig?.defaultInitialWorkspacePath;
-    if (suggestedPath)
-      setInitialWorkspacePath((current) => current || suggestedPath);
+    const savedPath = workspaceConfig?.initialWorkspacePath?.trim() ?? "";
+    const suggestedPath = resolveSetupWorkspacePath(workspaceConfig);
+    if (suggestedPath) {
+      setInitialWorkspacePath((current) =>
+        !current || current === savedPath ? suggestedPath : current,
+      );
+    }
   }, [config]);
 
   const {
@@ -74,6 +78,10 @@ export function SetupScreen() {
   });
 
   if (loading) return <SetupLoadingSkeleton />;
+
+  if (hasCompletedInitialization(config)) {
+    return <Navigate to="/projects/chat" replace />;
+  }
 
   if (step === "complete") {
     return <Navigate to="/projects/chat" replace />;

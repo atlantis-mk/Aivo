@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   CodeIcon,
   File01Icon,
@@ -10,7 +11,7 @@ import { ArrowDown, File, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TodoFloatingStatus } from "@/features/projects/project-todo-floating-status";
 import { cn } from "@/lib/utils";
-import type { TodoItem } from "@/services/aivo";
+import { listPromptDocuments, type TodoItem } from "@/services/aivo";
 
 export function ProjectWorkspaceEmptyPrompt({
   onPromptChange,
@@ -19,28 +20,35 @@ export function ProjectWorkspaceEmptyPrompt({
   onPromptChange: (prompt: string) => void;
   showConversationLayout: boolean;
 }) {
-  const quickPrompts = [
-    {
-      icon: File01Icon,
-      label: "整理文件",
-      prompt: "请帮我整理当前项目文件",
-    },
-    {
-      icon: CodeIcon,
-      label: "分析代码",
-      prompt: "请分析当前项目代码",
-    },
-    {
-      icon: PlayIcon,
-      label: "运行任务",
-      prompt: "请运行当前项目任务",
-    },
-    {
-      icon: Search01Icon,
-      label: "搜索资料",
-      prompt: "请搜索并整理相关资料",
-    },
-  ];
+  const [quickPrompts, setQuickPrompts] = useState<
+    Array<{ id: string; label: string; prompt: string }>
+  >([]);
+
+  useEffect(() => {
+    const load = () => {
+      void listPromptDocuments()
+        .then((items) =>
+          setQuickPrompts(
+            items
+              .filter(
+                (item) =>
+                  item.category === "quick_prompt" &&
+                  item.enabled &&
+                  item.status !== "invalid",
+              )
+              .map((item) => ({
+                id: item.id,
+                label: item.title,
+                prompt: item.body,
+              })),
+          ),
+        )
+        .catch(() => setQuickPrompts([]));
+    };
+    load();
+    window.addEventListener("aivo:prompts-changed", load);
+    return () => window.removeEventListener("aivo:prompts-changed", load);
+  }, []);
 
   return (
     <div
@@ -55,22 +63,31 @@ export function ProjectWorkspaceEmptyPrompt({
       <p className="aivo-type-title-3 mt-3 text-muted-foreground">
         描述目标，Aivo 会帮你推进
       </p>
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        {quickPrompts.map((item) => (
-          <Button
-            className="h-8 rounded-full border-border/80 bg-card px-3.5 text-[13px] font-medium shadow-sm shadow-foreground/[0.025]"
-            key={item.label}
-            onClick={() => onPromptChange(item.prompt)}
-            type="button"
-            variant="outline"
-          >
-            <HugeiconsIcon icon={item.icon} strokeWidth={1.8} />
-            {item.label}
-          </Button>
-        ))}
-      </div>
+      {quickPrompts.length > 0 ? (
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          {quickPrompts.map((item) => (
+            <Button
+              className="h-8 rounded-full border-border/80 bg-card px-3.5 text-[13px] font-medium shadow-sm shadow-foreground/[0.025]"
+              key={item.id}
+              onClick={() => onPromptChange(item.prompt)}
+              type="button"
+              variant="outline"
+            >
+              <HugeiconsIcon icon={quickPromptIcon(item.id)} strokeWidth={1.8} />
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function quickPromptIcon(id: string) {
+  if (id.includes("organize")) return File01Icon;
+  if (id.includes("analyze")) return CodeIcon;
+  if (id.includes("run")) return PlayIcon;
+  return Search01Icon;
 }
 
 export function ProjectComposerDropOverlay({

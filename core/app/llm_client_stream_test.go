@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,102 @@ import (
 
 	"aivo/core/domain"
 )
+
+func TestDoLLMRequestSurfacesResponsesFailedEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"The model failed to generate a response.\"}}}\n\n"))
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := doLLMRequest(req, nil, nil)
+	if err == nil {
+		t.Fatalf("response = %#v, want provider failure", resp)
+	}
+	var providerErr *ProviderRequestError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error = %T %v, want ProviderRequestError", err, err)
+	}
+	if providerErr.Class != providerErrorUnavailable || providerErr.Message != "response failed (server_error)" {
+		t.Fatalf("provider error = %#v", providerErr)
+	}
+	if strings.Contains(err.Error(), "did not include text") || strings.Contains(err.Error(), "The model failed") {
+		t.Fatalf("error = %q, want safe structured failure summary", err)
+	}
+}
+
+func TestDoLLMRequestSurfacesResponsesIncompleteEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n"))
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = doLLMRequest(req, nil, nil)
+	var providerErr *ProviderRequestError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error = %T %v, want ProviderRequestError", err, err)
+	}
+	if providerErr.Class != providerErrorContext || providerErr.Message != "response incomplete (max_output_tokens)" {
+		t.Fatalf("provider error = %#v", providerErr)
+	}
+}
+
+func TestDoLLMRequestSurfacesStreamErrorEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"error\",\"code\":\"rate_limit_exceeded\",\"message\":\"unsafe provider detail\"}\n\n"))
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = doLLMRequest(req, nil, nil)
+	var providerErr *ProviderRequestError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error = %T %v, want ProviderRequestError", err, err)
+	}
+	if providerErr.Class != providerErrorRateLimit || providerErr.Message != "stream error (rate_limit_exceeded)" {
+		t.Fatalf("provider error = %#v", providerErr)
+	}
+	if strings.Contains(err.Error(), "unsafe provider detail") {
+		t.Fatalf("error = %q, provider detail must not enter diagnostics", err)
+	}
+}
+
+func TestDoLLMRequestSurfacesJSONProviderFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"failed","error":{"code":"invalid_request_error","message":"unsafe provider detail"}}`))
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = doLLMRequest(req, nil, nil)
+	var providerErr *ProviderRequestError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error = %T %v, want ProviderRequestError", err, err)
+	}
+	if providerErr.Class != providerErrorBadRequest || providerErr.Message != "response failed (invalid_request_error)" {
+		t.Fatalf("provider error = %#v", providerErr)
+	}
+	if strings.Contains(err.Error(), "unsafe provider detail") {
+		t.Fatalf("error = %q, provider detail must not enter diagnostics", err)
+	}
+}
 
 func TestReadLLMEventStreamEmitsResponsesCustomToolDeltas(t *testing.T) {
 	raw := strings.NewReader("event: response.output_item.added\n" +
@@ -232,6 +329,24 @@ func TestReadLLMEventStreamCollectsAnthropicToolDeltas(t *testing.T) {
 	}
 }
 
+func TestReadLLMEventStreamEmitsGeminiToolCallAsModelActivity(t *testing.T) {
+	raw := strings.NewReader("data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"name\":\"read_file\",\"args\":{\"path\":\"README.md\"}}}]}}]}\n\n")
+	var activities []domain.ChatToolCall
+
+	resp, err := readLLMEventStream(raw, nil, func(call domain.ChatToolCall) {
+		activities = append(activities, call)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.ToolCalls) != 1 || len(activities) != 1 {
+		t.Fatalf("response calls = %#v, activities = %#v", resp.ToolCalls, activities)
+	}
+	if activities[0].Name != "read_file" || !strings.Contains(string(activities[0].Arguments), "README.md") {
+		t.Fatalf("activity = %#v", activities[0])
+	}
+}
+
 func TestExtractResponseTextReadsChatCompletionStreamDeltas(t *testing.T) {
 	raw := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"content\":\"!\"},\"finish_reason\":\"stop\"}]}\n\n" +
@@ -265,6 +380,58 @@ func TestExtractChatResponseReadsOpenAIUsage(t *testing.T) {
 	}
 	if resp.Usage.InputTokens != 11 || resp.Usage.OutputTokens != 7 || resp.Usage.TotalTokens != 18 {
 		t.Fatalf("usage = %+v, want 11/7/18", resp.Usage)
+	}
+}
+
+func TestExtractChatResponseNormalizesOpenAICachedInputUsage(t *testing.T) {
+	resp := extractChatResponse([]byte(`{
+		"choices":[{"message":{"content":"ok"}}],
+		"usage":{
+			"prompt_tokens":100,
+			"completion_tokens":7,
+			"total_tokens":107,
+			"prompt_tokens_details":{"cached_tokens":90}
+		}
+	}`))
+	if resp.Usage == nil {
+		t.Fatal("usage is nil")
+	}
+	if resp.Usage.InputTokens != 100 || resp.Usage.CacheReadTokens != 90 || resp.Usage.OutputTokens != 7 {
+		t.Fatalf("usage = %+v, want input/cache/output 100/90/7", resp.Usage)
+	}
+	if !resp.Usage.CacheReadTokensAvailable {
+		t.Fatalf("usage = %+v, want OpenAI cache availability", resp.Usage)
+	}
+}
+
+func TestExtractChatResponseNormalizesAnthropicCacheBuckets(t *testing.T) {
+	resp := extractChatResponse([]byte(`{
+		"content":[{"type":"text","text":"ok"}],
+		"usage":{
+			"input_tokens":10,
+			"output_tokens":5,
+			"cache_read_input_tokens":80,
+			"cache_creation_input_tokens":10
+		}
+	}`))
+	if resp.Usage == nil {
+		t.Fatal("usage is nil")
+	}
+	if resp.Usage.InputTokens != 100 || resp.Usage.CacheReadTokens != 80 || resp.Usage.CacheWriteTokens != 10 || resp.Usage.TotalTokens != 105 {
+		t.Fatalf("usage = %+v, want normalized input/cache-read/cache-write/total 100/80/10/105", resp.Usage)
+	}
+	if !resp.Usage.CacheReadTokensAvailable || !resp.Usage.CacheWriteTokensAvailable {
+		t.Fatalf("usage = %+v, want Anthropic cache bucket availability", resp.Usage)
+	}
+}
+
+func TestMergeTokenUsageKeepsNormalizedInputWithLaterOutput(t *testing.T) {
+	merged := mergeTokenUsage(
+		&domain.TokenUsage{InputTokens: 100, TotalTokens: 100, CacheReadTokens: 80, CacheWriteTokens: 10},
+		&domain.TokenUsage{OutputTokens: 5, TotalTokens: 5},
+	)
+	if merged.InputTokens != 100 || merged.OutputTokens != 5 || merged.TotalTokens != 105 || merged.CacheReadTokens != 80 || merged.CacheWriteTokens != 10 {
+		t.Fatalf("usage = %+v, want merged normalized input/output/total/cache buckets", merged)
 	}
 }
 
@@ -310,5 +477,98 @@ func TestExtractChatResponseReadsGeminiUsageMetadata(t *testing.T) {
 	}
 	if resp.Usage.InputTokens != 13 || resp.Usage.OutputTokens != 5 || resp.Usage.TotalTokens != 18 {
 		t.Fatalf("usage = %+v, want 13/5/18", resp.Usage)
+	}
+}
+
+func TestExtractChatResponseNormalizesCommonProviderUsageShapes(t *testing.T) {
+	tests := []struct {
+		name           string
+		raw            string
+		input          int
+		output         int
+		reasoning      int
+		cacheRead      int
+		cacheWrite     int
+		cacheAvailable bool
+	}{
+		{
+			name:  "OpenAI Responses",
+			raw:   `{"output_text":"ok","usage":{"input_tokens":100,"output_tokens":20,"input_tokens_details":{"cached_tokens":75},"output_tokens_details":{"reasoning_tokens":8}}}`,
+			input: 100, output: 20, reasoning: 8, cacheRead: 75, cacheAvailable: true,
+		},
+		{
+			name:  "Anthropic cache TTL details",
+			raw:   `{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":80,"cache_creation":{"ephemeral_5m_input_tokens":6,"ephemeral_1h_input_tokens":4}}}`,
+			input: 100, output: 5, cacheRead: 80, cacheWrite: 10, cacheAvailable: true,
+		},
+		{
+			name:  "Gemini thoughts and cache",
+			raw:   `{"candidates":[{"content":{"parts":[{"text":"ok"}]}}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":12,"thoughtsTokenCount":8,"cachedContentTokenCount":60,"totalTokenCount":120}}`,
+			input: 100, output: 20, reasoning: 8, cacheRead: 60, cacheAvailable: true,
+		},
+		{
+			name:  "Bedrock Converse",
+			raw:   `{"output":{"message":{"content":[{"text":"ok"}]}},"usage":{"inputTokens":100,"outputTokens":20,"totalTokens":120,"cacheReadInputTokens":70,"cacheWriteInputTokens":10}}`,
+			input: 100, output: 20, cacheRead: 70, cacheWrite: 10, cacheAvailable: true,
+		},
+		{
+			name:  "AI SDK normalized usage",
+			raw:   `{"choices":[{"message":{"content":"ok"}}],"usage":{"inputTokens":100,"outputTokens":20,"totalTokens":120,"inputTokenDetails":{"noCacheTokens":20,"cacheReadTokens":70,"cacheWriteTokens":10},"outputTokenDetails":{"reasoningTokens":8}}}`,
+			input: 100, output: 20, reasoning: 8, cacheRead: 70, cacheWrite: 10, cacheAvailable: true,
+		},
+		{
+			name:  "OpenAI-compatible usage without cache fields",
+			raw:   `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120}}`,
+			input: 100, output: 20, cacheAvailable: false,
+		},
+		{
+			name:  "explicit zero cache hit",
+			raw:   `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":100,"completion_tokens":20,"prompt_tokens_details":{"cached_tokens":0}}}`,
+			input: 100, output: 20, cacheAvailable: true,
+		},
+		{
+			name:  "DeepSeek cache buckets",
+			raw:   `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":100,"completion_tokens":20,"prompt_cache_hit_tokens":75,"prompt_cache_miss_tokens":25}}`,
+			input: 100, output: 20, cacheRead: 75, cacheAvailable: true,
+		},
+		{
+			name:  "Cohere nested token usage",
+			raw:   `{"message":{"content":[{"type":"text","text":"ok"}]},"usage":{"tokens":{"input_tokens":100,"output_tokens":20}}}`,
+			input: 100, output: 20, cacheAvailable: false,
+		},
+		{
+			name:  "Ollama evaluation counts",
+			raw:   `{"message":{"role":"assistant","content":"ok"},"prompt_eval_count":100,"eval_count":20}`,
+			input: 100, output: 20, cacheAvailable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := extractChatResponse([]byte(tt.raw))
+			if response.Usage == nil {
+				t.Fatal("usage is nil")
+			}
+			usage := response.Usage
+			if usage.InputTokens != tt.input || usage.OutputTokens != tt.output || usage.ReasoningTokens != tt.reasoning || usage.CacheReadTokens != tt.cacheRead || usage.CacheWriteTokens != tt.cacheWrite {
+				t.Fatalf("usage = %+v, want input/output/reasoning/cache-read/cache-write %d/%d/%d/%d/%d", usage, tt.input, tt.output, tt.reasoning, tt.cacheRead, tt.cacheWrite)
+			}
+			if usage.CacheReadTokensAvailable != tt.cacheAvailable {
+				t.Fatalf("cache availability = %v, want %v (usage %+v)", usage.CacheReadTokensAvailable, tt.cacheAvailable, usage)
+			}
+		})
+	}
+}
+
+func TestMergeTokenUsageAcceptsExplicitZeroFinalFields(t *testing.T) {
+	merged := mergeTokenUsage(
+		&domain.TokenUsage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 4},
+		&domain.TokenUsage{
+			InputTokens: 10, OutputTokens: 5, CacheReadTokens: 0,
+			InputTokensAvailable: true, OutputTokensAvailable: true, CacheReadTokensAvailable: true,
+		},
+	)
+	if merged.CacheReadTokens != 0 || !merged.CacheReadTokensAvailable {
+		t.Fatalf("usage = %+v, want an explicitly reported zero cache read", merged)
 	}
 }

@@ -13,6 +13,7 @@ import {
 } from "./project-conversation-runtime-turns";
 import { attachSystemNotesToTurns } from "./project-conversation-system-notes";
 import { groupToolCallsByTurnId } from "./project-conversation-tool-calls";
+import { runtimeMetricsFromEventPayload } from "./project-session-runtime-stats";
 
 export function hasRunningTurn(turns: ConversationTurn[]) {
   return turns.some((turn) => !turn.responseCompletedAt && !turn.stopped);
@@ -144,6 +145,7 @@ export function turnsFromEvents(
         event.content ?? "",
       ),
       responseVisible: true,
+      runtimeMetrics: runtimeMetricsFromEventPayload(event.payload),
       thinkingSeconds: Math.max(
         0,
         Math.floor(

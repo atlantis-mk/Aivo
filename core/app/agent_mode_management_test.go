@@ -25,9 +25,12 @@ func TestManagedAgentModesComposePersistAndProtectReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code := findAgentMode(t, modes, domain.AgentModeCode)
-	if !code.BuiltIn || code.Overridden || code.Source != "builtin" {
-		t.Fatalf("fresh code origin = %#v", code)
+	if len(modes) != 1 {
+		t.Fatalf("fresh visible modes = %#v, want Assistant only", modes)
+	}
+	assistant := findAgentMode(t, modes, domain.AgentModeAssistant)
+	if !assistant.BuiltIn || assistant.Overridden || assistant.Source != "builtin" {
+		t.Fatalf("fresh Assistant origin = %#v", assistant)
 	}
 
 	custom, err := service.SaveAgentMode(ctx, domain.AgentModeDefinition{
@@ -71,7 +74,7 @@ func TestManagedAgentModesComposePersistAndProtectReferences(t *testing.T) {
 	if err := service.DeleteAgentMode(ctx, "research"); err == nil || !strings.Contains(err.Error(), "referenced") {
 		t.Fatalf("referenced delete error = %v", err)
 	}
-	if _, err := service.SetSessionAgentMode(ctx, domain.SetSessionAgentModeInput{SessionID: session.ID, Mode: domain.AgentModeCode}); err != nil {
+	if _, err := service.SetSessionAgentMode(ctx, domain.SetSessionAgentModeInput{SessionID: session.ID, Mode: domain.AgentModeAssistant}); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.DeleteAgentMode(ctx, "research"); err != nil {
@@ -81,27 +84,33 @@ func TestManagedAgentModesComposePersistAndProtectReferences(t *testing.T) {
 		t.Fatal("deleted custom mode remained in catalog")
 	}
 
-	code.Prompt = "Customized built-in code prompt."
-	code.Toolsets = []string{"safe"}
-	updated, err := service.SaveAgentMode(ctx, code)
+	assistant.Prompt = "Customized built-in Assistant prompt."
+	assistant.Toolsets = []string{"safe"}
+	updated, err := service.SaveAgentMode(ctx, assistant)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !updated.BuiltIn || !updated.Overridden || updated.Prompt != code.Prompt || len(updated.Toolsets) != 1 || updated.Toolsets[0] != "*" {
+	if !updated.BuiltIn || !updated.Overridden || updated.Prompt != assistant.Prompt || len(updated.Toolsets) != 1 || updated.Toolsets[0] != "*" {
 		t.Fatalf("updated built-in = %#v", updated)
 	}
-	if err := service.DeleteAgentMode(ctx, domain.AgentModeCode); err != nil {
+	if err := service.DeleteAgentMode(ctx, domain.AgentModeAssistant); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := service.GetAgentMode(ctx, domain.AgentModeCode)
+	restored, err := service.GetAgentMode(ctx, domain.AgentModeAssistant)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Overridden || restored.Prompt == code.Prompt {
+	if restored.Overridden || restored.Prompt == assistant.Prompt {
 		t.Fatalf("restored built-in = %#v", restored)
 	}
+	child, err := service.SaveAgentMode(ctx, domain.AgentModeDefinition{
+		ID: "persisted_child", DisplayName: "Persisted child", Prompt: "Handle one bounded task.", Mode: "subagent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := service.SaveAgentMode(ctx, domain.AgentModeDefinition{
-		ID: "persisted", DisplayName: "Persisted", Prompt: "Survive restart.", Toolsets: []string{"coding"}, Mode: "all", Subagents: []string{domain.AgentModeReview},
+		ID: "persisted", DisplayName: "Persisted", Prompt: "Survive restart.", Toolsets: []string{"coding"}, Mode: "all", Subagents: []string{child.ID},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -120,15 +129,51 @@ func TestManagedAgentModesComposePersistAndProtectReferences(t *testing.T) {
 	defer reopened.Close()
 	restarted := NewService(reopened)
 	defer restarted.Shutdown()
-	if _, err := restarted.GetAgentMode(ctx, domain.AgentModeCode); err != nil {
+	if _, err := restarted.GetAgentMode(ctx, domain.AgentModeAssistant); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := restarted.GetAgentMode(ctx, "research"); err == nil {
 		t.Fatal("deleted mode reappeared after restart")
 	}
 	persisted, err := restarted.GetAgentMode(ctx, "persisted")
-	if err != nil || persisted.Prompt != "Survive restart." || len(persisted.Toolsets) != 1 || persisted.Toolsets[0] != "safe" || len(persisted.Subagents) != 1 || persisted.Subagents[0] != domain.AgentModeReview {
+	if err != nil || persisted.Prompt != "Survive restart." || len(persisted.Toolsets) != 1 || persisted.Toolsets[0] != "safe" || len(persisted.Subagents) != 1 || persisted.Subagents[0] != child.ID {
 		t.Fatalf("persisted mode after restart = %#v err = %v", persisted, err)
+	}
+}
+
+func TestCreateAgentPromptPersistsRoleAndSubagentAssociations(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	child, err := service.SaveAgentMode(ctx, domain.AgentModeDefinition{
+		ID: "creation_child", DisplayName: "Creation child", Prompt: "Handle one bounded task.", Mode: "subagent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateAgentPrompt(ctx, domain.CreateAgentPromptInput{
+		ID: "creation_parent", Title: "Creation parent", Body: "Coordinate bounded work.",
+		Mode: "primary", Subagents: []string{child.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Mode != "primary" || len(created.Subagents) != 1 || created.Subagents[0] != child.ID {
+		t.Fatalf("created Agent associations = %#v", created)
+	}
+	if _, err := service.GetPromptDocument(ctx, "agent.creation_parent"); err != nil {
+		t.Fatalf("created Agent prompt missing: %v", err)
+	}
+
+	if _, err := service.CreateAgentPrompt(ctx, domain.CreateAgentPromptInput{
+		ID: "invalid_creation_parent", Title: "Invalid parent", Body: "Invalid association owner.",
+		Mode: "subagent", Subagents: []string{child.ID},
+	}); err == nil || !strings.Contains(err.Error(), "cannot associate") {
+		t.Fatalf("subagent-only association error = %v", err)
+	}
+	if _, err := service.GetPromptDocument(ctx, "agent.invalid_creation_parent"); err == nil {
+		t.Fatal("failed Agent creation left its prompt behind")
 	}
 }
 

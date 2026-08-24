@@ -14,8 +14,6 @@ const (
 	promptInjectionScopeGlobal  promptInjectionScope = "global"
 )
 
-const agentToolProtocolPrompt = `The Host gives this conversation four core execution primitives, any manually enabled tools, and one stable bounded automatic tool set. Treat Skill summaries as availability metadata and injected instructions/context as task context. Use only tools actually present in the request. When the visible tools cannot perform a concrete action required by the current task, call tool_resolve once with a concise description of the missing capability; it replaces the complete automatic tool set for the next model step and does not change manual tools. Do not call it to list hidden tools, speculate about optional capabilities, or accumulate more tools.`
-
 type promptInjection struct {
 	Scope promptInjectionScope
 	Name  string
@@ -23,6 +21,14 @@ type promptInjection struct {
 }
 
 func agentPromptInjections(modeDef domain.AgentModeDefinition) []promptInjection {
+	return agentPromptInjectionsWithSnapshot(modeDef, PromptSnapshot{})
+}
+
+func agentPromptInjectionsWithSnapshot(modeDef domain.AgentModeDefinition, snapshot PromptSnapshot) []promptInjection {
+	toolProtocol := snapshot.Body("protocol.tool")
+	if toolProtocol == "" {
+		toolProtocol = builtinPromptBody("protocol.tool")
+	}
 	injections := []promptInjection{
 		{
 			Scope: promptInjectionScopeDefault,
@@ -32,7 +38,7 @@ func agentPromptInjections(modeDef domain.AgentModeDefinition) []promptInjection
 		{
 			Scope: promptInjectionScopeGlobal,
 			Name:  "tool_protocol",
-			Text:  agentToolProtocolPrompt,
+			Text:  toolProtocol,
 		},
 	}
 	if len(modeDef.Subagents) > 0 {
@@ -40,18 +46,26 @@ func agentPromptInjections(modeDef domain.AgentModeDefinition) []promptInjection
 		for _, subagent := range modeDef.Subagents {
 			quoted = append(quoted, fmt.Sprintf("`%s`", subagent))
 		}
+		subagents := strings.Join(quoted, ", ")
 		injections = append(injections, promptInjection{
 			Scope: promptInjectionScopeDefault,
 			Name:  "associated_subagents",
-			Text: "Associated subagents available to this mode: " + strings.Join(quoted, ", ") +
-				". When the current task has a bounded independent part that benefits from one of these modes, you may call agent_delegate_task and then use its returned result. Decide based on the task; do not delegate routine work or fan out solely because associations exist. Never name an unlisted mode.",
+			Text:  associatedSubagentsInstruction(subagents),
 		})
 	}
 	return injections
 }
 
+func associatedSubagentsInstruction(subagents string) string {
+	return "Associated subagents available to this mode: " + subagents + ". When the current task has a bounded independent part that benefits from one of these modes, you may call agent_delegate_task and then use its returned result. Decide based on the task; do not delegate routine work or fan out solely because associations exist. Never name an unlisted mode."
+}
+
 func buildAgentSystemPrompt(modeDef domain.AgentModeDefinition) string {
-	injections := agentPromptInjections(modeDef)
+	return buildAgentSystemPromptWithSnapshot(modeDef, PromptSnapshot{})
+}
+
+func buildAgentSystemPromptWithSnapshot(modeDef domain.AgentModeDefinition, snapshot PromptSnapshot) string {
+	injections := agentPromptInjectionsWithSnapshot(modeDef, snapshot)
 	parts := make([]string, 0, len(injections))
 	for _, injection := range injections {
 		text := strings.TrimSpace(injection.Text)
@@ -84,7 +98,11 @@ func renderPromptInjection(scope promptInjectionScope, name string, text string)
 }
 
 func prependAgentSystemPrompt(messages []domain.ChatMessage, modeDef domain.AgentModeDefinition) []domain.ChatMessage {
-	prompt := strings.TrimSpace(buildAgentSystemPrompt(modeDef))
+	return prependAgentSystemPromptWithSnapshot(messages, modeDef, PromptSnapshot{})
+}
+
+func prependAgentSystemPromptWithSnapshot(messages []domain.ChatMessage, modeDef domain.AgentModeDefinition, snapshot PromptSnapshot) []domain.ChatMessage {
+	prompt := strings.TrimSpace(buildAgentSystemPromptWithSnapshot(modeDef, snapshot))
 	if prompt == "" {
 		return append([]domain.ChatMessage(nil), messages...)
 	}

@@ -17,6 +17,24 @@ export function listSessionToolCalls(sessionId: string) {
   return invoke<domain.ToolCall[]>("ListSessionToolCalls", sessionId);
 }
 
+export type SessionRuntimeStats = {
+  turns: number;
+  steps: number;
+  llmMs: number;
+  ttftMs?: number;
+  ttftSteps?: number;
+  decodeMs?: number;
+  decodeTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheReadAvailable?: boolean;
+};
+
+export function getSessionRuntimeStats(sessionId: string) {
+  return invoke<SessionRuntimeStats>("GetSessionRuntimeStats", sessionId);
+}
+
 export type ReplaySessionToolCallInput = {
   sessionId?: string;
   toolCallId: string;

@@ -1,8 +1,13 @@
 {
   "name": "@aivo/desktop",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "AI agent desktop application with an Electron shell and local Go runtime.",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atlantis-mk/Aivo.git"
+  },
   "author": "Aivo contributors",
   "type": "module",
   "main": "electron/main.cjs",
@@ -11,16 +16,17 @@
     "start": "electron .",
     "prepare:icons": "node ../../scripts/generate-desktop-icons.mjs",
     "build": "npm run prepare:icons && tsc -b && vite build",
-    "package": "npm run build && electron-builder",
-    "package:mac": "npm run build && electron-builder --mac",
-    "package:win": "npm run build && electron-builder --win",
-    "package:linux": "npm run build && electron-builder --linux",
+    "package": "npm run build && electron-builder --publish never",
+    "package:mac": "npm run build && electron-builder --mac --publish never",
+    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:linux": "npm run build && electron-builder --linux --publish never",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "build": {
     "appId": "dev.aivo.desktop",
     "productName": "Aivo",
+    "executableName": "aivo",
     "asar": true,
     "icon": "build/icon.png",
     "directories": {

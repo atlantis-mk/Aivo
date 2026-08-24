@@ -6,13 +6,14 @@ const ROOT = process.cwd();
 const DOC_DIRS = ['docs', 'specs', 'adr', 'changes', 'releases'];
 const ALLOWED_STATUSES = new Set(['Draft', 'Accepted', 'Implementing', 'Verified', 'Released', 'Rejected']);
 const ALLOWED_TYPES = new Set(['feature', 'bug', 'security', 'dependency', 'migration', 'technical_debt', 'governance']);
-const CURRENT_SPEC_REVISION = '0.1.0-active';
+const CURRENT_SPEC_REVISION = '0.1.1-active';
+const SPEC_REVISION_PATTERN = /^0\.1\.(\d+)-active$/;
 
 function walk(directory) {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const target = path.join(directory, entry.name);
-    return entry.isDirectory() ? walk(target) : [target];
+    return entry.isDirectory() ? walk(target) : [target.split(path.sep).join('/')];
   });
 }
 
@@ -142,8 +143,12 @@ for (const [file, change] of parsedChanges) {
   if (unknownKeys.length > 0) yamlErrors.push(`${file}: unknown fields ${unknownKeys.join(', ')}`);
   if (!ALLOWED_STATUSES.has(change.status)) yamlErrors.push(`${file}: invalid status ${change.status}`);
   if (!ALLOWED_TYPES.has(change.type)) yamlErrors.push(`${file}: invalid type ${change.type}`);
-  if (file !== 'changes/_template/change.yaml' && change.spec_revision !== CURRENT_SPEC_REVISION) {
-    yamlErrors.push(`${file}: spec_revision must be ${CURRENT_SPEC_REVISION}`);
+  if (file !== 'changes/_template/change.yaml') {
+    const revision = SPEC_REVISION_PATTERN.exec(change.spec_revision ?? '');
+    const currentRevision = SPEC_REVISION_PATTERN.exec(CURRENT_SPEC_REVISION);
+    if (!revision || !currentRevision || Number(revision[1]) > Number(currentRevision[1])) {
+      yamlErrors.push(`${file}: spec_revision must be a known revision no newer than ${CURRENT_SPEC_REVISION}`);
+    }
   }
   for (const field of ['requirements', 'tests', 'adrs', 'context_refs', 'related_changes', 'affected_surfaces', 'affected_formats', 'affected_versions', 'supersedes']) {
     if (!Array.isArray(change[field])) yamlErrors.push(`${file}: ${field} must be a list`);

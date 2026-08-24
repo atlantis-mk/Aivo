@@ -185,10 +185,19 @@ type ChatResponse struct {
 }
 
 type TokenUsage struct {
-	InputTokens  int  `json:"inputTokens,omitempty"`
-	OutputTokens int  `json:"outputTokens,omitempty"`
-	TotalTokens  int  `json:"totalTokens,omitempty"`
-	Estimated    bool `json:"estimated,omitempty"`
+	InputTokens               int  `json:"inputTokens,omitempty"`
+	OutputTokens              int  `json:"outputTokens,omitempty"`
+	TotalTokens               int  `json:"totalTokens,omitempty"`
+	CacheReadTokens           int  `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens          int  `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens           int  `json:"reasoningTokens,omitempty"`
+	InputTokensAvailable      bool `json:"inputTokensAvailable,omitempty"`
+	OutputTokensAvailable     bool `json:"outputTokensAvailable,omitempty"`
+	TotalTokensAvailable      bool `json:"totalTokensAvailable,omitempty"`
+	CacheReadTokensAvailable  bool `json:"cacheReadTokensAvailable,omitempty"`
+	CacheWriteTokensAvailable bool `json:"cacheWriteTokensAvailable,omitempty"`
+	ReasoningTokensAvailable  bool `json:"reasoningTokensAvailable,omitempty"`
+	Estimated                 bool `json:"estimated,omitempty"`
 }
 
 type StreamingEvent struct {

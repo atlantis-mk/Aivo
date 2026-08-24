@@ -8,6 +8,7 @@ import type { ConversationSidebarProps } from "@/features/projects/project-conve
 export function ConversationSidebar({
   activeConversationId,
   conversations,
+  onArchiveConversation,
   onSelectConversation,
   pendingPermissionCountsBySessionId,
   runningConversationIds,
@@ -25,6 +26,7 @@ export function ConversationSidebar({
         <ProjectConversationHistoryList
           activeConversationId={activeConversationId}
           conversations={conversations}
+          onArchiveConversation={onArchiveConversation}
           onSelectConversation={onSelectConversation}
           pendingPermissionCountsBySessionId={pendingPermissionCountsBySessionId}
           runningConversationIds={runningConversationIds}

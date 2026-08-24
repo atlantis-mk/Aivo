@@ -11,10 +11,23 @@ import (
 )
 
 var protectedManagedAgentModes = map[string]bool{
-	domain.AgentModePlanner:         true,
 	domain.AgentModeSummary:         true,
 	domain.AgentModeTitle:           true,
 	domain.AgentModeSchedulerWorker: true,
+}
+
+var retiredBuiltInAgentModes = map[string]bool{
+	domain.AgentModeCode:    true,
+	domain.AgentModeBuild:   true,
+	domain.AgentModeExplore: true,
+	domain.AgentModePlan:    true,
+	domain.AgentModePlanner: true,
+	domain.AgentModeReview:  true,
+	domain.AgentModeDebug:   true,
+}
+
+func isRetiredBuiltInAgentMode(id string) bool {
+	return retiredBuiltInAgentModes[strings.TrimSpace(id)]
 }
 
 func (s *Service) globalAgentCatalog(ctx context.Context) (*AgentCatalog, error) {
@@ -25,6 +38,12 @@ func (s *Service) globalAgentCatalog(ctx context.Context) (*AgentCatalog, error)
 			return nil, err
 		}
 		for _, definition := range definitions {
+			if isRetiredBuiltInAgentMode(definition.ID) {
+				continue
+			}
+			if strings.TrimSpace(definition.Prompt) == "" && strings.TrimSpace(definition.PromptID) != "" && s.prompts != nil {
+				definition.Prompt = s.prompts.Snapshot().Body(strings.TrimSpace(definition.PromptID))
+			}
 			normalized, normalizeErr := normalizeManagedAgentMode(definition)
 			if normalizeErr != nil {
 				return nil, errors.New("invalid persisted agent mode " + definition.ID + ": " + normalizeErr.Error())
@@ -33,6 +52,9 @@ func (s *Service) globalAgentCatalog(ctx context.Context) (*AgentCatalog, error)
 		}
 	}
 	catalog := NewAgentCatalogWithDefinitions(persisted)
+	if s.prompts != nil {
+		catalog.ApplyPromptSnapshot(s.prompts.Snapshot())
+	}
 	if err := validateAgentCatalogAssociations(catalog); err != nil {
 		return nil, err
 	}
@@ -55,17 +77,20 @@ func (s *Service) resolveAgentModeForRequest(ctx context.Context, sessionID stri
 	mode := strings.TrimSpace(requested)
 	projectPath := ""
 	parentSessionID := ""
+	legacySessionMode := false
 	if mode == "" && strings.TrimSpace(sessionID) != "" {
 		session, err := s.store.GetRuntimeSession(ctx, sessionID)
 		if err == nil {
 			mode = session.AgentMode
 			projectPath = session.ProjectPath
 			parentSessionID = session.ParentSessionID
+			legacySessionMode = isRetiredBuiltInAgentMode(mode)
 		}
 	} else if strings.TrimSpace(sessionID) != "" {
 		if session, err := s.store.GetRuntimeSession(ctx, sessionID); err == nil {
 			projectPath = session.ProjectPath
 			parentSessionID = session.ParentSessionID
+			legacySessionMode = session.AgentMode == mode && isRetiredBuiltInAgentMode(mode)
 		}
 	}
 	catalog, err := s.agentCatalogForProject(ctx, projectPath)
@@ -73,6 +98,9 @@ func (s *Service) resolveAgentModeForRequest(ctx context.Context, sessionID stri
 		return domain.AgentModeDefinition{}, err
 	}
 	def, err := catalog.Get(mode)
+	if err != nil && legacySessionMode {
+		def, err = catalog.Get(domain.AgentModeAssistant)
+	}
 	if err != nil {
 		return domain.AgentModeDefinition{}, err
 	}
@@ -248,6 +276,9 @@ func (s *Service) SaveAgentMode(ctx context.Context, input domain.AgentModeDefin
 	if !ok {
 		return domain.AgentModeDefinition{}, errors.New("agent mode persistence is unavailable")
 	}
+	if strings.TrimSpace(input.Prompt) == "" && strings.TrimSpace(input.PromptID) != "" && s.prompts != nil {
+		input.Prompt = s.prompts.Snapshot().Body(strings.TrimSpace(input.PromptID))
+	}
 	definition, err := normalizeManagedAgentMode(input)
 	if err != nil {
 		return domain.AgentModeDefinition{}, err
@@ -271,7 +302,20 @@ func (s *Service) SaveAgentMode(ctx context.Context, input domain.AgentModeDefin
 	if err := validateAgentCatalogAssociations(prospective); err != nil {
 		return domain.AgentModeDefinition{}, err
 	}
-	if err := store.SaveAgentModeDefinition(ctx, definition); err != nil {
+	storedDefinition := definition
+	if registry, registryErr := s.promptRegistry(); registryErr == nil {
+		promptID := firstNonEmpty(strings.TrimSpace(definition.PromptID), "agent."+definition.ID)
+		document, saveErr := registry.Save(domain.PromptDocumentInput{ID: promptID, Category: domain.PromptCategoryAgent, Title: definition.DisplayName, Body: definition.Prompt, Enabled: true})
+		if saveErr != nil {
+			return domain.AgentModeDefinition{}, saveErr
+		}
+		if document.Status != "valid" {
+			return domain.AgentModeDefinition{}, errors.New("agent prompt is invalid and was not applied")
+		}
+		storedDefinition.PromptID = promptID
+		storedDefinition.Prompt = ""
+	}
+	if err := store.SaveAgentModeDefinition(ctx, storedDefinition); err != nil {
 		return domain.AgentModeDefinition{}, err
 	}
 	return s.GetAgentMode(ctx, definition.ID)
@@ -293,7 +337,17 @@ func (s *Service) DeleteAgentMode(ctx context.Context, id string) error {
 	if definition, getErr := NewAgentCatalog().Get(normalized); getErr == nil {
 		builtIn = definition.BuiltIn && !definition.Hidden
 	}
-	return store.DeleteAgentModeDefinition(ctx, normalized, !builtIn)
+	if err := store.DeleteAgentModeDefinition(ctx, normalized, !builtIn); err != nil {
+		return err
+	}
+	if !builtIn && s.prompts != nil {
+		if document, getErr := s.prompts.Get("agent." + normalized); getErr == nil && document.Deletable {
+			_ = s.prompts.Delete(document.ID)
+		}
+	} else if builtIn && s.prompts != nil && strings.TrimSpace(s.prompts.Root()) != "" {
+		_, _ = s.prompts.Reset("agent." + normalized)
+	}
+	return nil
 }
 
 func normalizeManagedAgentMode(input domain.AgentModeDefinition) (domain.AgentModeDefinition, error) {
@@ -304,10 +358,14 @@ func normalizeManagedAgentMode(input domain.AgentModeDefinition) (domain.AgentMo
 	if protectedManagedAgentModes[id] {
 		return domain.AgentModeDefinition{}, errors.New("internal agent modes cannot be managed")
 	}
+	if isRetiredBuiltInAgentMode(id) {
+		return domain.AgentModeDefinition{}, errors.New("retired built-in agent modes cannot be managed")
+	}
 	input.ID = id
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.Description = strings.TrimSpace(input.Description)
 	input.Prompt = strings.TrimSpace(input.Prompt)
+	input.PromptID = strings.TrimSpace(input.PromptID)
 	input.PermissionScope = strings.TrimSpace(strings.ToLower(input.PermissionScope))
 	input.Mode = strings.TrimSpace(strings.ToLower(input.Mode))
 	if len(input.Subagents) > 16 {
@@ -339,6 +397,12 @@ func normalizeManagedAgentMode(input domain.AgentModeDefinition) (domain.AgentMo
 	}
 	if input.Prompt == "" || len(input.Prompt) > 32768 {
 		return domain.AgentModeDefinition{}, errors.New("prompt is required and must not exceed 32768 bytes")
+	}
+	if input.PromptID == "" {
+		input.PromptID = "agent." + id
+	}
+	if input.PromptID != "agent."+id {
+		return domain.AgentModeDefinition{}, errors.New("promptId must match the agent mode id")
 	}
 	if input.Mode == "" {
 		input.Mode = "all"

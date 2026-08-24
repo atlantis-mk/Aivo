@@ -184,8 +184,8 @@ func TestListToolCatalogWithoutWorkspaceAdaptsCachedEnabledMCPTools(t *testing.T
 	if names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
 		t.Fatalf("catalog did not expose the namespaced MCP adapters; entries = %#v", entries)
 	}
-	if adapted.Source != domain.ToolSourceExtension || adapted.ActivationPolicy != "auto" || adapted.ImplementationHash == "" {
-		t.Fatalf("MCP adapter identity = %#v, want a frozen auto Extension v1 registration", adapted)
+	if adapted.Source != domain.ToolSourceMCP || adapted.SourceID != "cached-mcp" || adapted.ActivationPolicy != "auto" || adapted.ImplementationHash == "" {
+		t.Fatalf("MCP adapter identity = %#v, want a frozen auto MCP registration with the exact server ID", adapted)
 	}
 }
 

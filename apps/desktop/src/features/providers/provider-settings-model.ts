@@ -7,6 +7,7 @@ export type ProviderSettingsItem = {
   accounts?: Array<{ id: string; method?: string }>;
   auth?: { connected?: boolean; type?: string };
   readiness?: { ready?: boolean; reason?: string };
+  modelRefresh?: { refreshable?: boolean };
 };
 
 export function configuredProviders<T extends ProviderSettingsItem>(
@@ -54,6 +55,24 @@ export function providerReadinessLabel(provider: ProviderSettingsItem) {
   if (provider.readiness?.ready) return "可用";
   if (provider.readiness?.reason?.trim()) return provider.readiness.reason.trim();
   return provider.connected || provider.auth?.connected ? "已连接" : "待连接";
+}
+
+export function providerCanRefreshModels(provider: ProviderSettingsItem) {
+  return provider.modelRefresh?.refreshable !== false;
+}
+
+export function providerRefreshUnavailableMessage(
+  provider: ProviderSettingsItem,
+) {
+  if (providerCanRefreshModels(provider)) return "";
+  return `${provider.name} 暂不支持远程模型刷新，请使用“更新模型目录”获取最新的内置模型列表。`;
+}
+
+export function configuredProviderRefreshInput(provider: ProviderSettingsItem) {
+  return {
+    providerId: provider.id,
+    name: provider.name,
+  };
 }
 
 function connectionMethodLabel(method: string) {

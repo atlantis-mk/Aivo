@@ -7,6 +7,7 @@ import type {
   ToolCatalogEntry,
 } from "@/services/aivo";
 import type { ExtensionSettingsSection } from "@/features/projects/extension-settings-types";
+import { isStandaloneToolResource } from "./tool-injection-resource-model.ts";
 
 export function filterExtensions(items: ExtensionInstall[], query: string) {
   const normalized = normalizeSearch(query);
@@ -36,9 +37,6 @@ export function addButtonLabel(section: ExtensionSettingsSection) {
   }
   if (section === "skills") {
     return "扫描技能";
-  }
-  if (section === "agents") {
-    return "添加 Agent 模式";
   }
   if (section === "mcp" || section === "tools") {
     return "添加 MCP 工具";
@@ -112,23 +110,7 @@ export function filterTools(items: ToolCatalogEntry[], query: string) {
 }
 
 export function isAivoBuiltinTool(tool: ToolCatalogEntry) {
-  if (isMcpRelatedTool(tool)) return false;
-  return (
-    tool.source === "builtin" ||
-    (tool.source === "extension" && tool.sourceId?.startsWith("aivo."))
-  );
-}
-
-function isMcpRelatedTool(tool: ToolCatalogEntry) {
-  return (
-    tool.source === "mcp" ||
-    tool.category === "mcp" ||
-    tool.sourceId?.startsWith("mcp.") ||
-    (tool.toolsets ?? []).some(
-      (toolset) => toolset === "mcp" || toolset.startsWith("mcp:"),
-    ) ||
-    /(^|_)mcp(_|$)/i.test(tool.name)
-  );
+  return isStandaloneToolResource(tool);
 }
 
 export function filterSkills(items: SkillEntry[], query: string) {

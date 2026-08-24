@@ -123,7 +123,7 @@ func (s *Service) prepareSessionResourceReferences(
 			canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: skill.ID, Name: skill.Name})
 		case domain.SessionResourceTool:
 			entry, ok := toolEntries[reference.ID]
-			if !ok || entry.Source != domain.ToolSourceBuiltin {
+			if !ok || !isStandaloneToolCatalogEntry(entry) {
 				return preparedSessionResourceReferences{}, fmt.Errorf("tool reference %q is unavailable", reference.ID)
 			}
 			toolNames[entry.Name] = true

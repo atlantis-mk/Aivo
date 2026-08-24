@@ -441,7 +441,7 @@ func (m *MCPManager) PrepareEnabledCatalogs(ctx context.Context) map[string]bool
 		}
 		probe, probeErr := m.Probe(ctx, domain.MCPProbeInput{ServerID: server.ID})
 		if probeErr != nil || !probe.OK {
-			failed[toolSourceEligibilityKey(domain.ToolSourceExtension, mcpServerToolPrefix(server))] = true
+			failed[toolSourceEligibilityKey(domain.ToolSourceMCP, server.ID)] = true
 		}
 	}
 	return failed
@@ -477,7 +477,7 @@ func (m *MCPManager) registerEnabledTools(ctx context.Context, registry *Registr
 				Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio,
 				ActivationPolicy: "auto", ImplementationHash: mcpAdapterImplementationHash(server, tool),
 			}
-			if registerErr := registry.RegisterScoped(&MCPRuntimeTool{manager: m, server: server, tool: tool, spec: spec}, domain.ToolSourceExtension, mcpServerToolPrefix(server), firstNonEmptyApp(tool.TimeUpdated, server.TimeUpdated, "v1")); registerErr != nil {
+			if registerErr := registry.RegisterScoped(&MCPRuntimeTool{manager: m, server: server, tool: tool, spec: spec}, domain.ToolSourceMCP, server.ID, firstNonEmptyApp(tool.TimeUpdated, server.TimeUpdated, "v1")); registerErr != nil {
 				m.diagnostic(ctx, server.ID, "error", "MCP tool registration failed", map[string]any{"tool": tool.Name, "error": registerErr.Error()})
 			}
 		}

@@ -107,7 +107,7 @@ func (s *Service) submitSessionMessage(
 	if err != nil {
 		return domain.PreparedSessionTurn{}, err
 	}
-	if _, err := s.maybeAutoCompactSessionContext(ctx, input.SessionID); err != nil {
+	if _, err := s.maybeAutoCompactSessionContext(ctx, input.SessionID, input.Model); err != nil {
 		return domain.PreparedSessionTurn{}, err
 	}
 	modeDef, err := s.resolveAgentModeForRequest(ctx, input.SessionID, input.AgentMode)
@@ -146,7 +146,8 @@ func (s *Service) completeSessionTurn(
 	serviceTier string,
 ) (domain.PreparedSessionTurn, error) {
 	emittedText := ""
-	reply, model, err := s.runAssistantAgentLoop(ctx, input, history, turn, reasoningEffort, serviceTier, func(delta string) {
+	runtimeMetrics := sessionRuntimeMetrics{}
+	reply, model, err := s.runAssistantAgentLoop(ctx, input, history, turn, reasoningEffort, serviceTier, &runtimeMetrics, func(delta string) {
 		if s.onAssistantDelta != nil && delta != "" {
 			emittedText += delta
 			s.onAssistantDelta(input.SessionID, turn.ID, delta)
@@ -180,7 +181,14 @@ func (s *Service) completeSessionTurn(
 	if !strings.Contains(emittedText, reply) && s.onAssistantDelta != nil {
 		s.onAssistantDelta(input.SessionID, turn.ID, reply)
 	}
-	assistantEvent, err := s.AppendEvent(ctx, domain.AppendEventRequest{SessionID: input.SessionID, TurnID: turn.ID, Type: domain.EventTypeAssistantMessage, Role: domain.EventRoleAssistant, Visibility: domain.EventVisibilityNormal, Content: reply})
+	assistantPayload := map[string]any{}
+	if metricsPayload := runtimeMetrics.payload(); metricsPayload != nil {
+		assistantPayload["runtimeMetrics"] = metricsPayload
+	}
+	if len(assistantPayload) == 0 {
+		assistantPayload = nil
+	}
+	assistantEvent, err := s.AppendEvent(ctx, domain.AppendEventRequest{SessionID: input.SessionID, TurnID: turn.ID, Type: domain.EventTypeAssistantMessage, Role: domain.EventRoleAssistant, Visibility: domain.EventVisibilityNormal, Content: reply, Payload: assistantPayload})
 	if err != nil {
 		_, _ = s.FailTurn(ctx, domain.FailTurnRequest{TurnID: turn.ID, Error: err.Error()})
 		_, _ = s.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: input.SessionID, TurnID: turn.ID, Status: domain.ExecutionStatusFailed, Reason: err.Error()})

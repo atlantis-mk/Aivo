@@ -53,7 +53,29 @@ type modelsDevModelRecord struct {
 		Context int `json:"context"`
 		Output  int `json:"output"`
 	} `json:"limit"`
-	Cost map[string]float64 `json:"cost"`
+	Cost modelsDevCost `json:"cost"`
+}
+
+// models.dev may include structured pricing metadata such as tier arrays next
+// to its flat input/output prices. Aivo's current ModelInfo contract stores
+// only flat prices, so retain numeric entries without rejecting the catalog
+// when additional structured fields are present.
+type modelsDevCost map[string]json.RawMessage
+
+func (cost modelsDevCost) flatPricing() map[string]float64 {
+	pricing := make(map[string]float64)
+	for key, raw := range cost {
+		var value any
+		if err := json.Unmarshal(raw, &value); err == nil {
+			if numeric, ok := value.(float64); ok {
+				pricing[key] = numeric
+			}
+		}
+	}
+	if len(pricing) == 0 {
+		return nil
+	}
+	return pricing
 }
 
 func (s *Service) RefreshProviderEcosystemCatalog(ctx context.Context, input domain.ProviderEcosystemRefreshInput) (domain.ProviderEcosystemRefreshResult, error) {
@@ -164,7 +186,7 @@ func providerDefinitionsFromEcosystem(cache providerEcosystemCache, base *Provid
 			definition = ProviderDefinition{
 				ID: id, DisplayName: firstNonEmpty(record.Name, id), Transport: transport,
 				AuthTypes: authTypes, DefaultAuthType: defaultAuth, DefaultBaseURL: strings.TrimRight(record.API, "/"),
-				APIKeyEnvVars: nonEmptyTrimmedStrings(record.Env), ModelFetch: ModelFetchStatic, BuiltIn: false,
+				APIKeyEnvVars: nonEmptyTrimmedStrings(record.Env), ModelFetch: modelsDevModelFetch(transport), BuiltIn: false,
 			}
 		} else {
 			definition.DisplayName = firstNonEmpty(record.Name, definition.DisplayName)
@@ -185,6 +207,19 @@ func providerDefinitionsFromEcosystem(cache providerEcosystemCache, base *Provid
 		definitions = append(definitions, definition)
 	}
 	return definitions, unsupported
+}
+
+func modelsDevModelFetch(transport TransportType) ModelFetchStrategy {
+	switch transport {
+	case TransportAnthropicMessages:
+		return ModelFetchAnthropic
+	case TransportGoogleGemini:
+		return ModelFetchGoogle
+	case TransportOpenAICompatible, TransportAzureOpenAI:
+		return ModelFetchOpenAICompatible
+	default:
+		return ModelFetchStatic
+	}
 }
 
 func modelsFromEcosystem(providerID string, records map[string]modelsDevModelRecord, refreshedAt string) []domain.ModelInfo {
@@ -219,7 +254,7 @@ func modelsFromEcosystem(providerID string, records map[string]modelsDevModelRec
 		models = append(models, domain.ModelInfo{
 			ID: id, ProviderID: providerID, Name: firstNonEmpty(record.Name, id), ContextLength: record.Limit.Context,
 			OutputLimit: record.Limit.Output, Capabilities: capabilities, Modalities: modalities, Streaming: true,
-			ToolSupport: record.ToolCall, Pricing: cloneFloatMap(record.Cost), LastRefreshed: refreshedAt,
+			ToolSupport: record.ToolCall, Pricing: record.Cost.flatPricing(), LastRefreshed: refreshedAt,
 		})
 	}
 	return models

@@ -23,6 +23,33 @@ func TestNormalizeSessionMessageAttachmentsPreservesTextFileContent(t *testing.T
 	}
 }
 
+func TestNormalizeSessionMessageAttachmentsNeverDefaultsBinaryToOctetStream(t *testing.T) {
+	attachments := normalizeSessionMessageAttachments([]domain.MessageAttachment{
+		{Name: "README", Kind: "file", Text: "hello"},
+		{Name: "unknown.bin", Kind: "file", Data: "YQ=="},
+	})
+
+	if attachments[0].MIMEType != "text/plain" {
+		t.Fatalf("text MIME type = %q, want text/plain", attachments[0].MIMEType)
+	}
+	if attachments[1].MIMEType != "" {
+		t.Fatalf("binary MIME type = %q, want empty so validation fails closed", attachments[1].MIMEType)
+	}
+}
+
+func TestNormalizeSessionMessageAttachmentsCanonicalizesDataURLPayload(t *testing.T) {
+	attachments := normalizeSessionMessageAttachments([]domain.MessageAttachment{{
+		Name:     "brief.pdf",
+		MIMEType: "application/pdf",
+		Kind:     "file",
+		Data:     "data:application/pdf;base64,cGRm",
+	}})
+
+	if attachments[0].Data != "cGRm" {
+		t.Fatalf("data = %q, want raw base64 payload", attachments[0].Data)
+	}
+}
+
 func TestValidateSessionMessageAttachmentsRejectsUnreadablePayloads(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -36,8 +63,38 @@ func TestValidateSessionMessageAttachmentsRejectsUnreadablePayloads(t *testing.T
 		},
 		{
 			name:       "invalid base64",
-			attachment: domain.MessageAttachment{Name: "brief.pdf", Kind: "file", Data: "%%%"},
+			attachment: domain.MessageAttachment{Name: "brief.pdf", MIMEType: "application/pdf", Kind: "file", Data: "%%%"},
 			want:       "invalid base64 attachment data",
+		},
+		{
+			name:       "generic binary MIME",
+			attachment: domain.MessageAttachment{Name: "archive.zip", MIMEType: "application/octet-stream", Kind: "file", Data: "UEsDBA=="},
+			want:       "unsupported binary attachment MIME type",
+		},
+		{
+			name:       "unsupported binary MIME",
+			attachment: domain.MessageAttachment{Name: "archive.zip", MIMEType: "application/zip", Kind: "file", Data: "UEsDBA=="},
+			want:       "unsupported binary attachment MIME type",
+		},
+		{
+			name:       "data URL MIME mismatch",
+			attachment: domain.MessageAttachment{Name: "brief.pdf", MIMEType: "application/pdf", Kind: "file", Data: "data:application/octet-stream;base64,YQ=="},
+			want:       "does not match",
+		},
+		{
+			name:       "content signature mismatch",
+			attachment: domain.MessageAttachment{Name: "brief.pdf", MIMEType: "application/pdf", Kind: "file", Data: "cGRm"},
+			want:       "content does not match declared attachment MIME type",
+		},
+		{
+			name:       "image kind MIME mismatch",
+			attachment: domain.MessageAttachment{Name: "brief.pdf", MIMEType: "application/pdf", Kind: "image", Data: "YQ=="},
+			want:       "image attachment kind with non-image MIME type",
+		},
+		{
+			name:       "binary MIME with text content",
+			attachment: domain.MessageAttachment{Name: "brief.pdf", MIMEType: "application/pdf", Kind: "file", Text: "not a PDF"},
+			want:       "unsupported text attachment MIME type",
 		},
 		{
 			name:       "declared oversize",
@@ -63,5 +120,29 @@ func TestValidateSessionMessageAttachmentsRejectsUnreadablePayloads(t *testing.T
 				t.Fatalf("error = %v, want substring %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestValidateSessionMessageAttachmentsAcceptsMatchingSupportedDataURL(t *testing.T) {
+	err := validateSessionMessageAttachments([]domain.MessageAttachment{{
+		Name:     "brief.pdf",
+		MIMEType: "application/pdf",
+		Kind:     "file",
+		Data:     "data:application/pdf;base64,JVBERi0xLjc=",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNormalizeChatMessagesRejectsUnsupportedBinaryBeforeProvider(t *testing.T) {
+	_, err := normalizeChatMessages([]domain.ChatMessage{{
+		Role: "user",
+		Attachments: []domain.MessageAttachment{{
+			Name: "archive.zip", MIMEType: "application/octet-stream", Kind: "file", Data: "UEsDBA==",
+		}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported binary attachment MIME type") {
+		t.Fatalf("error = %v, want unsupported MIME refusal", err)
 	}
 }

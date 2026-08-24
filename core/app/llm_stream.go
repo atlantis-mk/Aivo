@@ -35,9 +35,20 @@ func doLLMRequest(req *http.Request, onDelta func(string), onToolDelta func(doma
 	if err != nil {
 		return domain.ChatResponse{}, err
 	}
+	var payload map[string]any
+	if json.Unmarshal(raw, &payload) == nil {
+		if err := extractProviderPayloadError(payload); err != nil {
+			return domain.ChatResponse{}, err
+		}
+	}
 	response := extractChatResponse(raw)
 	if strings.TrimSpace(response.Text) == "" && len(response.ToolCalls) == 0 {
 		return domain.ChatResponse{}, providerResponseError("provider response did not include text")
+	}
+	if onToolDelta != nil {
+		for _, call := range response.ToolCalls {
+			onToolDelta(call)
+		}
 	}
 	if onDelta != nil && strings.TrimSpace(response.Text) != "" && len(response.ToolCalls) == 0 {
 		onDelta(response.Text)
@@ -85,13 +96,23 @@ func readLLMEventStream(reader io.Reader, onDelta func(string), onToolDelta func
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			continue
 		}
+		if err := extractProviderPayloadError(event); err != nil {
+			return domain.ChatResponse{}, err
+		}
 		if nextUsage := extractTokenUsage(event); nextUsage != nil {
 			usage = mergeTokenUsage(usage, nextUsage)
 		}
 		toolCalls = appendUniqueToolCalls(toolCalls, updateResponsesStreamToolCalls(responseTools, event, onToolDelta)...)
 		toolCalls = appendUniqueToolCalls(toolCalls, updateChatCompletionsStreamToolCalls(chatTools, event, onToolDelta)...)
 		toolCalls = appendUniqueToolCalls(toolCalls, updateAnthropicStreamToolCalls(anthropicTools, event, onToolDelta)...)
-		toolCalls = appendUniqueToolCalls(toolCalls, extractGoogleStreamToolCalls(event)...)
+		googleCalls := extractGoogleStreamToolCalls(event)
+		previousToolCount := len(toolCalls)
+		toolCalls = appendUniqueToolCalls(toolCalls, googleCalls...)
+		if onToolDelta != nil {
+			for _, call := range toolCalls[previousToolCount:] {
+				onToolDelta(call)
+			}
+		}
 		if delta := extractResponseDeltaText(event); delta != "" {
 			deltas = append(deltas, delta)
 			if onDelta != nil {

@@ -77,6 +77,24 @@ func TestSubmitSessionMessageRejectsUnreadableAttachmentBeforePersistence(t *tes
 	if len(events) != 0 {
 		t.Fatalf("events = %#v, want no persisted event", events)
 	}
+
+	_, err = service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{
+		SessionID: session.ID,
+		Text:      "inspect this archive",
+		Attachments: []domain.MessageAttachment{{
+			Name: "archive.zip", MIMEType: "application/octet-stream", Kind: "file", Data: "UEsDBA==",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported binary attachment MIME type") {
+		t.Fatalf("error = %v, want unsupported MIME refusal", err)
+	}
+	events, listErr = service.ListEvents(ctx, session.ID, true, 20)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events = %#v, want unsupported attachment rejected before persistence", events)
+	}
 }
 
 func TestUpdateAndDeleteSessionEventAffectVisibleContext(t *testing.T) {

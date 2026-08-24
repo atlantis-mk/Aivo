@@ -32,7 +32,7 @@ func (s *Store) CreateRuntimeSession(ctx context.Context, input domain.CreateSes
 	}
 	agentModeInput := strings.TrimSpace(input.AgentMode)
 	if agentModeInput == "" && sessionType == domain.SessionTypeCoding {
-		agentModeInput = domain.AgentModeCode
+		agentModeInput = domain.AgentModeAssistant
 	}
 	agentMode, err := domain.NormalizeAgentMode(agentModeInput)
 	if err != nil {

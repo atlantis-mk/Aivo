@@ -14,6 +14,10 @@ func (s *Service) SetSessionUpdatedHook(hook func(string, *domain.Session)) {
 	s.onSessionUpdated = hook
 }
 
+func (s *Service) SetSessionEventUpdatedHook(hook func(domain.SessionEvent, bool)) {
+	s.onSessionEventUpdated = hook
+}
+
 func (s *Service) SetTurnUpdatedHook(hook func(string, domain.Turn)) {
 	s.onTurnUpdated = hook
 }

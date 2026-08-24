@@ -1,0 +1,481 @@
+name: Publish tagged release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<SemVer> tag to publish or resume
+        required: true
+        type: string
+      source_run_id:
+        description: Completed source run whose exact artifacts should resume GitHub Release publication
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aivo-release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+
+jobs:
+  verify:
+    name: Verify release source
+    if: ${{ inputs.source_run_id == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.1.1
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - name: Verify tag, source version, and release record
+        run: |
+          version="${RELEASE_TAG#v}"
+          node scripts/release-publication.mjs validate \
+            --root "$GITHUB_WORKSPACE" \
+            --version "$version" \
+            --tag "$RELEASE_TAG"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Resolve documentation archive baseline
+        run: |
+          if baseline="$(git rev-parse HEAD^ 2>/dev/null)"; then
+            echo "AIVO_ARCHIVE_BASE_REF=$baseline" >> "$GITHUB_ENV"
+          else
+            echo "AIVO_ARCHIVE_BASE_REF=0000000000000000000000000000000000000000" >> "$GITHUB_ENV"
+          fi
+      - name: Run release gates
+        run: |
+          pnpm docs:check
+          pnpm scripts:test
+          pnpm test:core
+          pnpm lint
+          pnpm build
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: verify
+    if: ${{ inputs.source_run_id == '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin-aarch64
+            host_platform: darwin
+            host_arch: arm64
+            package_script: package:mac
+          - runner: macos-15-intel
+            platform: darwin-x86_64
+            host_platform: darwin
+            host_arch: x64
+            package_script: package:mac
+          - runner: windows-2025
+            platform: windows-x86_64
+            host_platform: win32
+            host_arch: x64
+            package_script: package:win
+          - runner: ubuntu-24.04
+            platform: linux-x86_64
+            host_platform: linux
+            host_arch: x64
+            package_script: package:linux
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.1.1
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_HOST_PLATFORM: ${{ matrix.host_platform }}
+          EXPECTED_HOST_ARCH: ${{ matrix.host_arch }}
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            const { EXPECTED_HOST_PLATFORM: platform, EXPECTED_HOST_ARCH: arch } = process.env;
+            if (process.platform !== platform || process.arch !== arch) {
+              throw new Error(`Expected ${platform}/${arch}, received ${process.platform}/${process.arch}.`);
+            }
+          '
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libarchive-tools
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Package desktop on the native target
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm ${{ matrix.package_script }}
+      - name: Smoke packaged release
+        env:
+          AIVO_EXPECT_INSTALLERS: "1"
+        run: pnpm smoke:release
+      - name: Normalize release artifacts
+        run: |
+          version="${RELEASE_TAG#v}"
+          node scripts/release-publication.mjs collect \
+            --input "$GITHUB_WORKSPACE/build/desktop" \
+            --output "$RUNNER_TEMP/aivo-release" \
+            --platform "${{ matrix.platform }}" \
+            --version "$version"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aivo-release-${{ matrix.platform }}
+          path: ${{ runner.temp }}/aivo-release
+          if-no-files-found: error
+          retention-days: 14
+
+  publish_r2:
+    name: Publish immutable R2 assets
+    needs: build
+    if: ${{ inputs.source_run_id == '' && always() && !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      R2_PREFIX: ${{ vars.R2_PREFIX }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require successful native builds
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          if [[ "$BUILD_RESULT" != "success" ]]; then
+            echo "One or more native package builds failed; refusing publication." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: aivo-release-*
+          path: ${{ runner.temp }}/aivo-release
+          merge-multiple: true
+      - name: Validate R2 configuration and create publication plan
+        run: |
+          set -euo pipefail
+          : "${AWS_ACCESS_KEY_ID:?Missing R2_ACCESS_KEY_ID secret}"
+          : "${AWS_SECRET_ACCESS_KEY:?Missing R2_SECRET_ACCESS_KEY secret}"
+          : "${R2_ACCOUNT_ID:?Missing R2_ACCOUNT_ID variable}"
+          : "${R2_BUCKET:?Missing R2_BUCKET variable}"
+          : "${R2_PUBLIC_BASE_URL:?Missing R2_PUBLIC_BASE_URL variable}"
+          prefix="${R2_PREFIX:-aivo}"
+          version="${RELEASE_TAG#v}"
+          published_at="$(git show -s --format=%cI "$RELEASE_TAG^{commit}")"
+          node scripts/release-publication.mjs plan \
+            --input "$RUNNER_TEMP/aivo-release" \
+            --output "$RUNNER_TEMP/aivo-publication" \
+            --version "$version" \
+            --base-url "$R2_PUBLIC_BASE_URL" \
+            --prefix "$prefix" \
+            --published-at "$published_at"
+      - name: Install isolated R2 upload client
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/aivo-awscli"
+          "$RUNNER_TEMP/aivo-awscli/bin/pip" install \
+            --disable-pip-version-check \
+            --quiet \
+            awscli==1.44.87
+          echo "$RUNNER_TEMP/aivo-awscli/bin" >> "$GITHUB_PATH"
+      - name: Publish immutable version objects
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          while IFS=$'\t' read -r source key content_type sha256; do
+            [[ -n "$source" && -n "$key" && -n "$content_type" && -n "$sha256" ]]
+            existing_sha256="$(aws s3api head-object \
+              --endpoint-url "$endpoint" \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --query 'Metadata.sha256' \
+              --output text 2>/dev/null || true)"
+            if [[ "$existing_sha256" == "None" ]]; then
+              echo "Refusing to overwrite an object without digest metadata: $key" >&2
+              exit 1
+            elif [[ -n "$existing_sha256" ]]; then
+              if [[ "$existing_sha256" != "$sha256" ]]; then
+                echo "Refusing to overwrite an immutable object with different content: $key" >&2
+                exit 1
+              fi
+              echo "Immutable object already matches; skipping: $key"
+              continue
+            fi
+            aws s3 cp "$source" "s3://${R2_BUCKET}/${key}" \
+              --endpoint-url "$endpoint" \
+              --content-type "$content_type" \
+              --cache-control "public, max-age=31536000, immutable" \
+              --metadata "sha256=$sha256" \
+              --no-progress
+          done < "$RUNNER_TEMP/aivo-publication/immutable.tsv"
+      - name: Publish stable manifest last and verify R2 readback
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          prefix="${R2_PREFIX:-aivo}"
+          manifest_key="${prefix}/channels/stable/latest.json"
+          source="$RUNNER_TEMP/aivo-publication/latest.json"
+          aws s3 cp "$source" "s3://${R2_BUCKET}/${manifest_key}" \
+            --endpoint-url "$endpoint" \
+            --content-type "application/json" \
+            --cache-control "no-store, max-age=0" \
+            --no-progress
+          downloaded="$RUNNER_TEMP/published-latest.json"
+          aws s3 cp "s3://${R2_BUCKET}/${manifest_key}" "$downloaded" \
+            --endpoint-url "$endpoint" \
+            --no-progress
+          cmp "$source" "$downloaded"
+          while IFS=$'\t' read -r source_path key content_type expected_sha256; do
+            actual_sha256="$(aws s3api head-object \
+              --endpoint-url "$endpoint" \
+              --bucket "$R2_BUCKET" \
+              --key "$key" \
+              --query 'Metadata.sha256' \
+              --output text)"
+            [[ "$actual_sha256" == "$expected_sha256" ]]
+          done < "$RUNNER_TEMP/aivo-publication/immutable.tsv"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aivo-release-publication
+          path: |
+            ${{ runner.temp }}/aivo-publication/SHA256SUMS
+            ${{ runner.temp }}/aivo-publication/latest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  github_release:
+    name: Publish GitHub Release assets
+    needs: [build, publish_r2]
+    if: ${{ inputs.source_run_id == '' && always() && !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require completed build and R2 publication
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          R2_RESULT: ${{ needs.publish_r2.result }}
+        run: |
+          if [[ "$BUILD_RESULT" != "success" || "$R2_RESULT" != "success" ]]; then
+            echo "Build or R2 publication is incomplete; refusing GitHub Release publication." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: aivo-release-*
+          path: ${{ runner.temp }}/aivo-github-release
+          merge-multiple: true
+      - name: Create or resume release and upload digest-bound assets
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          version="${tag#v}"
+          asset_directory="$RUNNER_TEMP/aivo-github-release"
+          mapfile -t assets < <(find "$asset_directory" -maxdepth 1 -type f \
+            \( -name 'Aivo_*' -o -name 'SHA256SUMS' \) -print | sort)
+          if [[ "${#assets[@]}" -ne 7 ]]; then
+            echo "Expected six platform packages plus SHA256SUMS, found ${#assets[@]}." >&2
+            exit 1
+          fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            arguments=(
+              "$tag"
+              --repo "$GITHUB_REPOSITORY"
+              --verify-tag
+              --title "Aivo ${version}"
+              --notes-file "releases/${tag}.md"
+              --draft
+            )
+            if [[ "$version" == *-* ]]; then
+              arguments+=(--prerelease)
+            fi
+            gh release create "${arguments[@]}"
+          fi
+          release_id="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+          for asset_path in "${assets[@]}"; do
+            asset_name="$(basename "$asset_path")"
+            local_digest="sha256:$(sha256sum "$asset_path" | awk '{print $1}')"
+            remote_count="$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)] | length' <<< "$release_json")"
+            remote_digest="$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)][0].digest // empty' <<< "$release_json")"
+            if [[ "$remote_count" != "0" ]]; then
+              if [[ -z "$remote_digest" ]]; then
+                echo "Refusing to reuse GitHub asset without digest evidence: $asset_name" >&2
+                exit 1
+              fi
+              if [[ "$remote_digest" != "$local_digest" ]]; then
+                echo "Refusing to replace GitHub asset with different content: $asset_name" >&2
+                exit 1
+              fi
+              echo "GitHub asset already matches; skipping: $asset_name"
+              continue
+            fi
+            gh release upload "$tag" "$asset_path" --repo "$GITHUB_REPOSITORY"
+          done
+          if [[ "$(jq -r '.draft' <<< "$release_json")" == "true" ]]; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+          fi
+          final_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+          [[ "$(jq '[.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length' <<< "$final_json")" == "7" ]]
+          jq -e '.draft == false' <<< "$final_json" >/dev/null
+
+  recover_github_release:
+    name: Recover GitHub Release from verified artifacts
+    if: ${{ inputs.source_run_id != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Verify source run belongs to the immutable release tag
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          expected_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          actual_sha="$(jq -r '.head_sha' <<< "$run_json")"
+          [[ "$actual_sha" == "$expected_sha" ]]
+          jobs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/jobs?per_page=100")"
+          required_jobs=(
+            "Verify release source"
+            "Build darwin-aarch64"
+            "Build darwin-x86_64"
+            "Build windows-x86_64"
+            "Build linux-x86_64"
+            "Publish immutable R2 assets"
+          )
+          for job_name in "${required_jobs[@]}"; do
+            successful_count="$(jq --arg name "$job_name" \
+              '[.jobs[] | select(.name == $name and .conclusion == "success")] | length' <<< "$jobs_json")"
+            if [[ "$successful_count" != "1" ]]; then
+              echo "Source run lacks exactly one successful required job: $job_name" >&2
+              exit 1
+            fi
+          done
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: aivo-release-*
+          path: ${{ runner.temp }}/aivo-github-release
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+      - name: Resume draft release with the verified original assets
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          asset_directory="$RUNNER_TEMP/aivo-github-release"
+          mapfile -t assets < <(find "$asset_directory" -maxdepth 1 -type f \
+            \( -name 'Aivo_*' -o -name 'SHA256SUMS' \) -print | sort)
+          if [[ "${#assets[@]}" -ne 7 ]]; then
+            echo "Expected six platform packages plus SHA256SUMS, found ${#assets[@]}." >&2
+            exit 1
+          fi
+          release_id="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+          for asset_path in "${assets[@]}"; do
+            asset_name="$(basename "$asset_path")"
+            local_digest="sha256:$(sha256sum "$asset_path" | awk '{print $1}')"
+            remote_count="$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)] | length' <<< "$release_json")"
+            remote_digest="$(jq -r --arg name "$asset_name" \
+              '[.assets[] | select(.name == $name)][0].digest // empty' <<< "$release_json")"
+            if [[ "$remote_count" != "0" ]]; then
+              if [[ -z "$remote_digest" || "$remote_digest" != "$local_digest" ]]; then
+                echo "Refusing to reuse a GitHub asset without the exact digest: $asset_name" >&2
+                exit 1
+              fi
+              continue
+            fi
+            gh release upload "$tag" "$asset_path" --repo "$GITHUB_REPOSITORY"
+          done
+          if [[ "$(jq -r '.draft' <<< "$release_json")" == "true" ]]; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+          fi
+          final_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+          [[ "$(jq '[.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length' <<< "$final_json")" == "7" ]]
+          jq -e '.draft == false' <<< "$final_json" >/dev/null

@@ -1,0 +1,47 @@
+id: "CHG-2026-037-intent-scoped-tool-injection"
+title: "Distinguish one-request tool inspection from conversation tool use"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0020"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-030-replaceable-session-tool-selection"
+  - "CHG-2026-034-source-group-tool-selection"
+  - "CHG-2026-036-visible-precall-tool-selection"
+affected_surfaces:
+  - "Host pre-call auxiliary tool selection"
+  - "session automatic tool-set initialization"
+  - "Provider tool declarations and Tool Snapshots"
+  - "visible pre-call selection event"
+  - "desktop pre-call selection disclosure lifetime label"
+affected_formats:
+  - "Host auxiliary selector strict typed source-ID JSON response"
+  - "typed host_tool_selection system-note payload"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "The Host may expose the complete currently eligible tool catalog without a Host-owned concrete-tool count cap to one primary Provider request only after auxiliary inspection classification; auxiliary output remains limited to typed MCP/extension IDs, schemas remain snapshot-bound, and no authority, credentials, hidden tools, or later-request visibility is granted"
+migration: "none; request-scoped selections are not persisted as automatic names and the existing initialization marker records an empty durable automatic set"
+supersedes: []

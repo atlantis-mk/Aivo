@@ -60,11 +60,39 @@ func (s *Service) UpdateSessionEvent(ctx context.Context, input domain.UpdateSes
 	if event.Type != domain.EventTypeUserMessage && event.Type != domain.EventTypeAssistantMessage {
 		return domain.SessionEvent{}, errors.New("only user and assistant messages can be edited")
 	}
-	updated, err := s.store.UpdateSessionEvent(ctx, input)
+	updated, err := s.store.UpdateSessionEvent(ctx, domain.UpdateSessionEventRequest{EventID: input.EventID, Content: input.Content})
 	if err == nil && s.onSessionUpdated != nil {
 		s.onSessionUpdated(updated.SessionID, nil)
 	}
 	return updated, err
+}
+
+func (s *Service) updateSystemNoteEvent(ctx context.Context, eventID, content string, payload map[string]any) (domain.SessionEvent, error) {
+	event, err := s.store.GetSessionEvent(ctx, strings.TrimSpace(eventID))
+	if err != nil {
+		return domain.SessionEvent{}, err
+	}
+	if event.Type != domain.EventTypeSystemNote || event.Visibility != domain.EventVisibilityNormal {
+		return domain.SessionEvent{}, errors.New("event is not a visible system note")
+	}
+	updated, err := s.store.UpdateSessionEvent(ctx, domain.UpdateSessionEventRequest{
+		EventID: event.ID,
+		Content: strings.TrimSpace(content),
+		Payload: payload,
+	})
+	if err != nil {
+		return domain.SessionEvent{}, err
+	}
+	if s.onSessionEventUpdated != nil {
+		s.onSessionEventUpdated(updated, false)
+	}
+	return updated, nil
+}
+
+func (s *Service) emitCreatedSystemNote(event domain.SessionEvent) {
+	if s.onSessionEventUpdated != nil && event.Type == domain.EventTypeSystemNote && event.Visibility == domain.EventVisibilityNormal {
+		s.onSessionEventUpdated(event, true)
+	}
 }
 
 func (s *Service) DeleteSessionEvent(ctx context.Context, input domain.DeleteSessionEventRequest) (domain.SessionEvent, error) {

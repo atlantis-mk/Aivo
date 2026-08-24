@@ -19,6 +19,7 @@ import type {
 type PromptComposerTextareaProps = Pick<
   PromptComposerProps,
   | "onAddAttachments"
+  | "onCompactContext"
   | "onPromptChange"
   | "onPromptMentionRemove"
   | "onPromptMentionSelect"
@@ -35,6 +36,7 @@ type PromptComposerTextareaProps = Pick<
 
 export function PromptComposerTextarea({
   onAddAttachments,
+  onCompactContext,
   onPromptChange,
   onPromptMentionRemove,
   onPromptMentionSelect,
@@ -96,6 +98,19 @@ export function PromptComposerTextarea({
     setMentionDismissed(true);
     if (item.action === "select-local") {
       void selectLocalComposerResource(next.caret);
+    } else if (item.action === "compact-context") {
+      void compactComposerContext(next.caret);
+    }
+  }
+
+  async function compactComposerContext(nextCaret: number) {
+    try {
+      await onCompactContext();
+    } finally {
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+      });
     }
   }
 

@@ -61,11 +61,36 @@ export async function readComposerAttachmentFiles(
   const attachments: ComposerAttachment[] = [];
   const rejections: string[] = [];
   for (const file of files) {
-    const mimeType = file.type || mimeTypeFromName(file.name);
-    const kind = mimeType.startsWith("image/") ? "image" : "file";
-    const isText = isTextComposerAttachment(mimeType, file.name);
     if (file.size > MAX_COMPOSER_ATTACHMENT_BYTES) {
       rejections.push(`${file.name} 超过 50 MB，不能作为模型附件发送。`);
+      continue;
+    }
+    let mimeType = resolveComposerAttachmentMimeType(file.type, file.name);
+    let kind: ComposerAttachment["kind"] = mimeType.startsWith("image/")
+      ? "image"
+      : "file";
+    let isText = isTextComposerAttachment(mimeType, file.name);
+    let text: string | undefined;
+    if (isText || mimeType === "application/octet-stream") {
+      try {
+        const decoded = await readFileAsUTF8Text(file);
+        if (isText || looksLikeTextContent(decoded)) {
+          isText = true;
+          kind = "file";
+          text = decoded;
+          if (mimeType === "application/octet-stream") {
+            mimeType = "text/plain";
+          }
+        }
+      } catch {
+        if (isText) {
+          rejections.push(`${file.name} 不是有效的 UTF-8 文本文件。`);
+          continue;
+        }
+      }
+    }
+    if (!isText && !isSupportedBinaryComposerAttachment(mimeType)) {
+      rejections.push(unsupportedAttachmentTypeMessage(file.name));
       continue;
     }
     if (
@@ -85,7 +110,7 @@ export async function readComposerAttachmentFiles(
         size: file.size,
         kind,
         data,
-        text: isText ? await readFileAsUTF8Text(file) : undefined,
+        text,
         previewUrl: kind === "image" ? `data:${mimeType};base64,${data}` : undefined,
       });
     } catch {
@@ -100,45 +125,64 @@ export function readNativeComposerAttachment(
   modelRef: domain.ModelRef | null | undefined,
   modelInfo: ModelInfo | undefined,
 ) {
-  const kind = file.mimeType.startsWith("image/") ? "image" : "file";
-  const isText = isTextComposerAttachment(file.mimeType, file.name);
+  let mimeType = resolveComposerAttachmentMimeType(file.mimeType, file.name);
+  let kind: ComposerAttachment["kind"] = mimeType.startsWith("image/")
+    ? "image"
+    : "file";
+  let isText = isTextComposerAttachment(mimeType, file.name);
+  let text: string | undefined;
+  if (isText || mimeType === "application/octet-stream") {
+    try {
+      const decoded = decodeBase64Text(file.data);
+      if (isText || looksLikeTextContent(decoded)) {
+        isText = true;
+        kind = "file";
+        text = decoded;
+        if (mimeType === "application/octet-stream") {
+          mimeType = "text/plain";
+        }
+      }
+    } catch {
+      if (isText) {
+        return {
+          attachments: [] as ComposerAttachment[],
+          rejections: [`${file.name} 不是有效的 UTF-8 文本文件。`],
+        };
+      }
+    }
+  }
+  if (!isText && !isSupportedBinaryComposerAttachment(mimeType)) {
+    return {
+      attachments: [] as ComposerAttachment[],
+      rejections: [unsupportedAttachmentTypeMessage(file.name)],
+    };
+  }
   if (
     !modelSupportsAttachment(
       modelRef,
       modelInfo,
       kind,
-      file.mimeType,
+      mimeType,
       file.name,
     )
   ) {
     return {
       attachments: [] as ComposerAttachment[],
       rejections: [
-        `当前模型不支持${attachmentKindLabel(kind, file.mimeType)}：${file.name}`,
+        `当前模型不支持${attachmentKindLabel(kind, mimeType)}：${file.name}`,
       ],
     };
-  }
-  let text: string | undefined;
-  if (isText) {
-    try {
-      text = decodeBase64Text(file.data);
-    } catch {
-      return {
-        attachments: [] as ComposerAttachment[],
-        rejections: [`${file.name} 不是有效的 UTF-8 文本文件。`],
-      };
-    }
   }
   const attachment: ComposerAttachment = {
     id: crypto.randomUUID(),
     name: file.name,
-    mimeType: file.mimeType,
+    mimeType,
     size: file.size,
     kind,
     data: isText ? "" : file.data,
     text,
     previewUrl: kind === "image"
-      ? `data:${file.mimeType};base64,${file.data}`
+      ? `data:${mimeType};base64,${file.data}`
       : undefined,
   };
   return { attachments: [attachment], rejections: [] as string[] };
@@ -309,9 +353,58 @@ function mimeTypeFromName(name: string) {
       return "application/yaml";
     case "toml":
       return "application/toml";
+    case "c":
+    case "cc":
+    case "conf":
+    case "cpp":
+    case "cs":
+    case "env":
+    case "go":
+    case "h":
+    case "hpp":
+    case "ini":
+    case "java":
+    case "jsonl":
+    case "kt":
+    case "kts":
+    case "log":
+    case "lua":
+    case "php":
+    case "pl":
+    case "properties":
+    case "py":
+    case "rb":
+    case "rs":
+    case "sh":
+    case "sql":
+    case "swift":
+    case "vue":
+      return "text/plain";
     default:
       return "application/octet-stream";
   }
+}
+
+function resolveComposerAttachmentMimeType(mimeType: string, name: string) {
+  const normalized = mimeType.toLowerCase().split(";", 1)[0].trim();
+  if (normalized === "image/jpg") return "image/jpeg";
+  if (normalized && normalized !== "application/octet-stream") {
+    return normalized;
+  }
+  return mimeTypeFromName(name);
+}
+
+export function isSupportedBinaryComposerAttachment(mimeType: string) {
+  return [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ].includes(mimeType.toLowerCase().split(";", 1)[0].trim());
 }
 
 export function isTextComposerAttachment(mimeType: string, name: string) {
@@ -340,6 +433,26 @@ function decodeBase64Text(data: string) {
   const decoded = atob(data);
   const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0));
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+function looksLikeTextContent(text: string) {
+  if (text.length === 0) return false;
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (
+      codePoint <= 0x1f
+      && codePoint !== 0x09
+      && codePoint !== 0x0a
+      && codePoint !== 0x0d
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function unsupportedAttachmentTypeMessage(name: string) {
+  return `${name} 的文件类型不受支持，不能作为模型附件发送。`;
 }
 
 function defaultAttachmentName(kind: ComposerAttachment["kind"], mimeType: string) {

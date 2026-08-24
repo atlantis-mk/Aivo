@@ -1,0 +1,39 @@
+id: "CHG-2026-040-agent-subagent-selection-injection"
+title: "Configure subagent injection from Agent creation"
+type: "feature"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-AGENT-001"
+  - "REQ-PROMPT-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-AGENT-001"
+  - "AT-PROMPT-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0015"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-AGENT-001 Dynamic Agent mode management"
+  - "docs/03-functional-requirements.md#REQ-PROMPT-001 Validated prompt management"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+  - "docs/runtime-configuration.md"
+related_changes:
+  - "CHG-2026-029-agent-mode-subagent-associations"
+  - "CHG-2026-038-prompt-management"
+affected_surfaces:
+  - "Prompt-management Agent creation dialog"
+  - "Extensions and MCP Agent-mode editor"
+  - "Core Agent prompt injection"
+  - "Managed prompt catalog"
+affected_formats:
+  - "CreateAgentPrompt typed local RPC input"
+  - "Embedded prompt catalog identifiers"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Delegation authority remains limited to Core-validated associated subagent IDs; renderer selection and generated prompt text do not grant authority"
+migration: "none; an existing protocol.subagents override becomes inactive and remains recoverable on disk"
+supersedes: []

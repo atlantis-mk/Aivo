@@ -2,11 +2,11 @@
 
 ## Problem or goal
 
-When a coding conversation has no selected project, Aivo currently creates a new date/session directory under `Documents/Aivo Workspaces` and may recreate that directory after deletion. Initialization does not establish where unscoped work runs. Replace that implicit lifecycle with one explicit, persisted initial workspace confirmed during setup, with the existing managed root offered as the default.
+When a coding conversation has no selected project, Aivo currently creates a new date/session directory under `Documents/Aivo Workspaces` and may recreate that directory after deletion. Initialization does not establish where unscoped work runs. Replace that implicit lifecycle with one explicit, persisted initial workspace confirmed during setup, with a whitespace-free hyphenated managed root offered as the default.
 
 ## Expected behavior
 
-`REQ-PROJECT-002` requires initialization to offer `~/Documents/Aivo Workspaces` as a default, let the user accept it or select another local directory, and finish only after confirming that path. Every temporary or otherwise projectless coding conversation uses that same directory as its tool/runtime workspace while remaining unscoped in project navigation. Aivo must not create a per-conversation directory. If the configured root is missing, Aivo recreates that root at the same path; a non-directory or unconfigured path produces an actionable error.
+`REQ-PROJECT-002` requires initialization to offer `~/Documents/Aivo-Workspaces` as a default, using a hyphen instead of whitespace so the default is straightforward to enter and search in terminal workflows. When setup encounters the exact former built-in default ending in `Aivo Workspaces`, it presents the new whitespace-free default for confirmation; a user-selected custom path remains unchanged. The user can accept the presented path or select another local directory, and initialization finishes only after confirming that path. Every temporary or otherwise projectless coding conversation uses that same directory as its tool/runtime workspace while remaining unscoped in project navigation. Aivo must not create a per-conversation directory. If the configured root is missing, Aivo recreates that root at the same path; a non-directory or unconfigured path produces an actionable error.
 
 ## Non-goals
 
@@ -47,6 +47,16 @@ Automated evidence recorded on 2026-08-03:
 - `pnpm test:core` passed, including default-path suggestion/confirmation, initial-workspace creation/recreation, unscoped/project separation, explicit-project precedence, and schema-v1 backup/migration cases.
 - `pnpm lint` passed with non-blocking Fast Refresh warnings in shared UI/route files.
 - `pnpm build` passed with non-blocking large-barrel and chunk-size advisory warnings.
+
+Incremental evidence recorded on 2026-08-24 for the whitespace-free default-directory update:
+
+- Focused Core regression tests passed for the `Aivo-Workspaces` default and current/legacy managed-root recognition; the desktop setup-path regression tests passed for fresh, former-default, custom, macOS/Linux, and Windows path cases.
+- `pnpm docs:check`, `pnpm test:core`, `pnpm lint`, and `pnpm build` passed; lint and build retained only the existing non-blocking advisory warnings.
+
+Incremental evidence recorded on 2026-08-24 for one-time setup routing:
+
+- Desktop routing regressions passed for fresh setup, completed initialization, and upgraded initialized state that still lacks a confirmed workspace. The application entry and direct `/setup` route now both redirect completed initialization to `/projects/chat`.
+- `pnpm docs:check`, `pnpm scripts:test`, `pnpm lint`, and `pnpm build` passed; lint and build retained only the existing non-blocking advisory warnings. The current full Core run remains blocked by the unrelated `TestResolveCompactionPressureUsesProviderContextAtDefaultEightyPercent` failure in concurrent context-compaction work; no Core code changed in this increment.
 
 Per the user's verification preference, wide/narrow setup acceptance remains pending. This Work therefore remains `Implementing`; it may move to `Verified` and be sealed only after that acceptance is recorded.
 

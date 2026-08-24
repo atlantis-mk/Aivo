@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"aivo/core/domain"
@@ -14,6 +15,73 @@ func extractChatResponse(raw []byte) domain.ChatResponse {
 		return domain.ChatResponse{Text: extractResponseStreamText(raw)}
 	}
 	return domain.ChatResponse{Text: extractResponsePayloadText(payload), ToolCalls: extractResponseToolCalls(payload), Usage: extractTokenUsage(payload)}
+}
+
+func extractProviderPayloadError(payload map[string]any) error {
+	if payload == nil {
+		return nil
+	}
+	eventType := strings.TrimSpace(firstString(payload, "type"))
+	response := mapValue(payload, "response")
+	if response == nil {
+		response = payload
+	}
+	status := strings.TrimSpace(firstString(response, "status"))
+	switch {
+	case eventType == "error":
+		code := providerErrorCode(payload)
+		return providerPayloadStatusError("stream error", code)
+	case eventType == "response.failed" || status == "failed":
+		code := providerErrorCode(response)
+		return providerPayloadStatusError("response failed", code)
+	case eventType == "response.incomplete" || status == "incomplete":
+		reason := firstString(mapValue(response, "incomplete_details"), "reason")
+		return providerPayloadStatusError("response incomplete", reason)
+	default:
+		return nil
+	}
+}
+
+func providerErrorCode(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	if code := firstString(payload, "code"); code != "" {
+		return code
+	}
+	if details := mapValue(payload, "error"); details != nil {
+		return firstString(details, "code", "type")
+	}
+	return ""
+}
+
+func providerPayloadStatusError(summary string, code string) error {
+	code = strings.TrimSpace(code)
+	message := summary
+	if code != "" {
+		message += " (" + code + ")"
+	}
+	return &ProviderRequestError{Class: providerPayloadErrorClass(code), Message: message}
+}
+
+func providerPayloadErrorClass(code string) string {
+	normalized := strings.ToLower(strings.TrimSpace(code))
+	switch {
+	case strings.Contains(normalized, "rate_limit") || strings.Contains(normalized, "quota"):
+		return providerErrorRateLimit
+	case strings.Contains(normalized, "auth") || strings.Contains(normalized, "permission") || strings.Contains(normalized, "forbidden"):
+		return providerErrorAuth
+	case strings.Contains(normalized, "timeout"):
+		return providerErrorTimeout
+	case strings.Contains(normalized, "server") || strings.Contains(normalized, "overload") || strings.Contains(normalized, "unavailable"):
+		return providerErrorUnavailable
+	case strings.Contains(normalized, "max_output_tokens") || strings.Contains(normalized, "context"):
+		return providerErrorContext
+	case strings.Contains(normalized, "invalid") || strings.Contains(normalized, "bad_request"):
+		return providerErrorBadRequest
+	default:
+		return providerErrorUnknown
+	}
 }
 
 func extractResponseText(raw []byte) string {
@@ -147,6 +215,9 @@ func extractTokenUsage(payload map[string]any) *domain.TokenUsage {
 	if usage := tokenUsageFromMap(mapValue(payload, "usageMetadata", "usage_metadata")); usage != nil {
 		return usage
 	}
+	if usage := tokenUsageFromMap(payload); usage != nil {
+		return usage
+	}
 	if response := mapValue(payload, "response"); response != nil {
 		if usage := extractTokenUsage(response); usage != nil {
 			return usage
@@ -159,16 +230,110 @@ func tokenUsageFromMap(usage map[string]any) *domain.TokenUsage {
 	if usage == nil {
 		return nil
 	}
-	input := firstUsageInt(usage, "input_tokens", "prompt_tokens", "promptTokenCount", "inputTokenCount", "inputTokens", "cache_read_input_tokens")
-	output := firstUsageInt(usage, "output_tokens", "completion_tokens", "candidatesTokenCount", "outputTokenCount", "outputTokens")
-	total := firstUsageInt(usage, "total_tokens", "totalTokenCount", "totalTokens")
-	if total == 0 && (input > 0 || output > 0) {
-		total = input + output
+	input, inputAvailable := firstUsageInt(usage,
+		"input_tokens", "prompt_tokens", "promptTokenCount", "inputTokenCount", "inputTokens", "prompt_eval_count", "tokens_evaluated",
+	)
+	output, outputAvailable := firstUsageInt(usage,
+		"output_tokens", "completion_tokens", "outputTokenCount", "outputTokens", "eval_count", "tokens_predicted",
+	)
+	reasoning, reasoningAvailable := firstUsageInt(usage, "reasoning_tokens", "reasoningTokens", "thoughtsTokenCount")
+	if candidates, available := firstUsageInt(usage, "candidatesTokenCount"); available && !outputAvailable {
+		output = candidates + reasoning
+		outputAvailable = true
 	}
-	if input == 0 && output == 0 && total == 0 {
+
+	cacheRead, cacheReadAvailable := firstUsageInt(usage,
+		"cache_read_input_tokens", "cacheReadInputTokens", "cachedContentTokenCount", "cacheReadTokens", "cachedInputTokens",
+		"prompt_cache_hit_tokens", "promptCacheHitTokens",
+	)
+	cacheWrite, cacheWriteAvailable := firstUsageInt(usage,
+		"cache_creation_input_tokens", "cacheCreationInputTokens", "cache_write_input_tokens", "cacheWriteInputTokens", "cacheWriteTokens",
+	)
+	noCacheInput, noCacheInputAvailable := firstUsageInt(usage,
+		"uncached_input_tokens", "uncachedInputTokens", "prompt_cache_miss_tokens", "promptCacheMissTokens", "noCacheTokens",
+	)
+	for _, detailsKey := range []string{"input_tokens_details", "prompt_tokens_details", "inputTokensDetails", "promptTokensDetails", "inputTokenDetails"} {
+		if details := mapValue(usage, detailsKey); details != nil {
+			if value, available := firstUsageInt(details, "cached_tokens", "cachedTokens", "cache_read_tokens", "cacheReadTokens"); available {
+				cacheRead = max(cacheRead, value)
+				cacheReadAvailable = true
+			}
+			if value, available := firstUsageInt(details, "cache_write_tokens", "cacheWriteTokens"); available {
+				cacheWrite = max(cacheWrite, value)
+				cacheWriteAvailable = true
+			}
+			if value, available := firstUsageInt(details, "no_cache_tokens", "noCacheTokens"); available {
+				noCacheInput = value
+				noCacheInputAvailable = true
+			}
+		}
+	}
+	for _, detailsKey := range []string{"output_tokens_details", "completion_tokens_details", "outputTokensDetails", "completionTokensDetails", "outputTokenDetails"} {
+		if details := mapValue(usage, detailsKey); details != nil {
+			if value, available := firstUsageInt(details, "reasoning_tokens", "reasoningTokens"); available {
+				reasoning = max(reasoning, value)
+				reasoningAvailable = true
+			}
+		}
+	}
+	if !cacheWriteAvailable {
+		if creation := mapValue(usage, "cache_creation", "cacheCreation"); creation != nil {
+			fiveMinutes, fiveMinutesAvailable := firstUsageInt(creation, "ephemeral_5m_input_tokens", "ephemeral5mInputTokens")
+			oneHour, oneHourAvailable := firstUsageInt(creation, "ephemeral_1h_input_tokens", "ephemeral1hInputTokens")
+			if fiveMinutesAvailable || oneHourAvailable {
+				cacheWrite = fiveMinutes + oneHour
+				cacheWriteAvailable = true
+			}
+		}
+	}
+
+	_, anthropicRead := usage["cache_read_input_tokens"]
+	_, anthropicWrite := usage["cache_creation_input_tokens"]
+	_, anthropicCreation := usage["cache_creation"]
+	if _, anthropicInput := usage["input_tokens"]; anthropicInput && (anthropicRead || anthropicWrite || anthropicCreation) {
+		input += cacheRead + cacheWrite
+		inputAvailable = true
+	} else if !inputAvailable && noCacheInputAvailable {
+		input = noCacheInput + cacheRead + cacheWrite
+		inputAvailable = true
+	} else if !inputAvailable && (cacheReadAvailable || cacheWriteAvailable) {
+		input = cacheRead + cacheWrite
+		inputAvailable = true
+	}
+	if cacheRead+cacheWrite > input {
+		input = cacheRead + cacheWrite
+		inputAvailable = true
+	}
+	cacheRead = min(cacheRead, input)
+	cacheWrite = min(cacheWrite, input-cacheRead)
+
+	total, totalAvailable := firstUsageInt(usage, "total_tokens", "totalTokenCount", "totalTokens")
+	if combined := input + output; (inputAvailable || outputAvailable) && combined > total {
+		total = combined
+		totalAvailable = true
+	}
+	if !inputAvailable && !outputAvailable && !totalAvailable && !cacheReadAvailable && !cacheWriteAvailable && !reasoningAvailable {
+		for _, nestedKey := range []string{"tokens", "billed_units", "billedUnits"} {
+			if nested := tokenUsageFromMap(mapValue(usage, nestedKey)); nested != nil {
+				return nested
+			}
+		}
 		return nil
 	}
-	return &domain.TokenUsage{InputTokens: input, OutputTokens: output, TotalTokens: total}
+	return &domain.TokenUsage{
+		InputTokens:               input,
+		OutputTokens:              output,
+		TotalTokens:               total,
+		CacheReadTokens:           cacheRead,
+		CacheWriteTokens:          cacheWrite,
+		ReasoningTokens:           reasoning,
+		InputTokensAvailable:      inputAvailable,
+		OutputTokensAvailable:     outputAvailable,
+		TotalTokensAvailable:      totalAvailable,
+		CacheReadTokensAvailable:  cacheReadAvailable,
+		CacheWriteTokensAvailable: cacheWriteAvailable,
+		ReasoningTokensAvailable:  reasoningAvailable,
+	}
 }
 
 func mapValue(payload map[string]any, keys ...string) map[string]any {
@@ -180,13 +345,36 @@ func mapValue(payload map[string]any, keys ...string) map[string]any {
 	return nil
 }
 
-func firstUsageInt(payload map[string]any, keys ...string) int {
+func firstUsageInt(payload map[string]any, keys ...string) (int, bool) {
 	for _, key := range keys {
-		if value, ok := numberAsInt(payload[key]); ok && value > 0 {
-			return value
+		if value, ok := nonNegativeUsageInt(payload[key]); ok {
+			return value, true
 		}
 	}
-	return 0
+	return 0, false
+}
+
+func nonNegativeUsageInt(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, typed >= 0
+	case int64:
+		if typed < 0 || int64(int(typed)) != typed {
+			return 0, false
+		}
+		return int(typed), true
+	case float64:
+		if typed < 0 || math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed {
+			return 0, false
+		}
+		converted := int(typed)
+		if float64(converted) != typed {
+			return 0, false
+		}
+		return converted, true
+	default:
+		return 0, false
+	}
 }
 
 func mergeTokenUsage(primary *domain.TokenUsage, next *domain.TokenUsage) *domain.TokenUsage {
@@ -196,14 +384,33 @@ func mergeTokenUsage(primary *domain.TokenUsage, next *domain.TokenUsage) *domai
 	if next == nil {
 		return primary
 	}
-	if next.InputTokens > 0 {
+	if next.InputTokensAvailable || next.InputTokens > 0 {
 		primary.InputTokens = next.InputTokens
+		primary.InputTokensAvailable = true
 	}
-	if next.OutputTokens > 0 {
+	if next.OutputTokensAvailable || next.OutputTokens > 0 {
 		primary.OutputTokens = next.OutputTokens
+		primary.OutputTokensAvailable = true
 	}
-	if next.TotalTokens > 0 {
+	if next.TotalTokensAvailable || next.TotalTokens > 0 {
 		primary.TotalTokens = next.TotalTokens
+		primary.TotalTokensAvailable = true
+	}
+	if next.CacheReadTokensAvailable || next.CacheReadTokens > 0 {
+		primary.CacheReadTokens = next.CacheReadTokens
+		primary.CacheReadTokensAvailable = true
+	}
+	if next.CacheWriteTokensAvailable || next.CacheWriteTokens > 0 {
+		primary.CacheWriteTokens = next.CacheWriteTokens
+		primary.CacheWriteTokensAvailable = true
+	}
+	if next.ReasoningTokensAvailable || next.ReasoningTokens > 0 {
+		primary.ReasoningTokens = next.ReasoningTokens
+		primary.ReasoningTokensAvailable = true
+	}
+	if combined := primary.InputTokens + primary.OutputTokens; combined > primary.TotalTokens {
+		primary.TotalTokens = combined
+		primary.TotalTokensAvailable = true
 	}
 	primary.Estimated = primary.Estimated && next.Estimated
 	return primary

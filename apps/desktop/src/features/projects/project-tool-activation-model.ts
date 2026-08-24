@@ -5,6 +5,7 @@ import type {
   MCPServerListItem,
   ToolCatalogEntry,
 } from "@/services/aivo";
+import { isStandaloneToolResource } from "./tool-injection-resource-model.ts";
 
 type ToolActivationSourceMetadata = {
   description?: string;
@@ -165,6 +166,7 @@ function toolActivationSection(
   ) {
     return "mcp";
   }
+  if (isStandaloneToolResource(tool)) return "tools";
   if (metadata) return metadata.section;
   if (
     tool.source === "extension" ||

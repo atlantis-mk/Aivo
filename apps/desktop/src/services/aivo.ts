@@ -6,6 +6,7 @@ export * from "@/services/aivo/interaction-service";
 export * from "@/services/aivo/mcp-service";
 export * from "@/services/aivo/project-service";
 export * from "@/services/aivo/provider-service";
+export * from "@/services/aivo/prompt-service";
 export * from "@/services/aivo/session-event-service";
 export * from "@/services/aivo/session-service";
 export * from "@/services/aivo/skill-service";

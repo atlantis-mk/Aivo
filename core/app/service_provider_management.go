@@ -146,7 +146,11 @@ func providerReadiness(provider domain.ProviderInfo, def ProviderDefinition, aut
 }
 
 func (s *Service) RefreshProviderModels(ctx context.Context, input domain.ProviderConnectInput) (domain.CatalogState, error) {
-	provider, _, err := s.providerConfigFromInput(input)
+	providerInput := input
+	if providerRefreshUsesPersistedConfig(input) {
+		providerInput = s.persistedProviderRefreshInput(ctx, input)
+	}
+	provider, _, err := s.providerConfigFromInput(providerInput)
 	if err != nil {
 		return domain.CatalogState{}, err
 	}
@@ -156,6 +160,40 @@ func (s *Service) RefreshProviderModels(ctx context.Context, input domain.Provid
 	}
 	s.rememberRefreshedModels(ctx, provider, input.Name, models, defaultModel)
 	return s.Catalog(ctx)
+}
+
+func providerRefreshUsesPersistedConfig(input domain.ProviderConnectInput) bool {
+	return strings.TrimSpace(input.ProviderID) != "" &&
+		strings.TrimSpace(input.Type) == "" &&
+		strings.TrimSpace(input.BaseURL) == "" &&
+		strings.TrimSpace(input.APIKey) == "" &&
+		strings.TrimSpace(input.APIKeyEnv) == "" &&
+		strings.TrimSpace(input.ModelID) == "" &&
+		strings.TrimSpace(input.Method) == "" &&
+		len(input.Headers) == 0 &&
+		len(input.RequestParams) == 0
+}
+
+func (s *Service) persistedProviderRefreshInput(ctx context.Context, input domain.ProviderConnectInput) domain.ProviderConnectInput {
+	providerID := s.normalizeProviderID(input.ProviderID)
+	providers, err := s.store.ListProviders(ctx)
+	if err != nil {
+		return input
+	}
+	for _, saved := range providers {
+		if s.normalizeProviderID(saved.ID) != providerID {
+			continue
+		}
+		input.ProviderID = saved.ID
+		input.Type = saved.Type
+		input.BaseURL = saved.BaseURL
+		input.APIKeyEnv = saved.APIKeyEnv
+		input.ModelID = saved.Model
+		input.Headers = cloneStringMap(saved.Headers)
+		input.RequestParams = cloneAnyMap(saved.RequestParams)
+		return input
+	}
+	return input
 }
 
 func (s *Service) ListProviderCallEvents(ctx context.Context, input domain.ProviderCallEventsInput) ([]domain.ProviderCallEvent, error) {

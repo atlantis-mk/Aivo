@@ -180,7 +180,7 @@ func TestCreateRuntimeSessionWithoutProjectPathUsesConfiguredInitialWorkspace(t 
 	}
 }
 
-func TestCreateCodingSessionDefaultsToCodeAgent(t *testing.T) {
+func TestCreateCodingSessionDefaultsToAssistantAgent(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -188,8 +188,8 @@ func TestCreateCodingSessionDefaultsToCodeAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.AgentMode != domain.AgentModeCode {
-		t.Fatalf("agent mode = %q, want %q", session.AgentMode, domain.AgentModeCode)
+	if session.AgentMode != domain.AgentModeAssistant {
+		t.Fatalf("agent mode = %q, want %q", session.AgentMode, domain.AgentModeAssistant)
 	}
 }
 
@@ -466,7 +466,7 @@ func TestSubmitSessionMessageSendsTextAttachmentToProvider(t *testing.T) {
 		for _, message := range body.Messages {
 			content, _ := message.Content.(string)
 			if message.Role == domain.EventRoleSystem && contains(content, "Host tool-group selector") {
-				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"sources\":[]}"}}]}`))
 				return
 			}
 		}
@@ -522,8 +522,11 @@ func TestAgentPromptBuilderSeparatesDefaultAndGlobalInjections(t *testing.T) {
 	if !contains(prompt, `<default name="agent_mode">`) || !contains(prompt, "Default mode behavior.") {
 		t.Fatalf("prompt missing default mode injection: %q", prompt)
 	}
-	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "stable bounded automatic tool set") {
+	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "stable automatic tool set") || !contains(prompt, "every eligible request-only tool") {
 		t.Fatalf("prompt missing global tool protocol injection: %q", prompt)
+	}
+	if !contains(prompt, "request-only tool") || !contains(prompt, "not persisted") {
+		t.Fatalf("agent prompt is missing temporary inspection lifetime guidance: %q", prompt)
 	}
 	if contains(prompt, "call the skill tool") || !contains(prompt, "call tool_resolve") {
 		t.Fatalf("agent prompt is missing the replaceable selection control: %q", prompt)

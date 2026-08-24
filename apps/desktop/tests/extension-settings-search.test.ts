@@ -37,7 +37,7 @@ test("tools tab shows only Aivo built-in tools", () => {
 
   assert.deepEqual(
     visible.map((tool) => tool.name),
-    ["read", "bash", "aivo_projects_query"],
+    ["read", "bash", "aivo_projects_query", "aivo_tools_register_mcp"],
   );
 });
 

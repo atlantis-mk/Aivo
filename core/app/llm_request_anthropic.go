@@ -89,10 +89,7 @@ func anthropicContentParts(text string, attachments []domain.MessageAttachment) 
 func anthropicAttachmentParts(attachments []domain.MessageAttachment) []map[string]any {
 	parts := []map[string]any{}
 	for _, attachment := range attachments {
-		mimeType := strings.TrimSpace(attachment.MIMEType)
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
+		mimeType := normalizeAttachmentMIME(attachment.MIMEType)
 		data := strings.TrimSpace(attachment.Data)
 		if data == "" {
 			if text := attachment.Text; strings.TrimSpace(text) != "" {
@@ -101,7 +98,7 @@ func anthropicAttachmentParts(attachments []domain.MessageAttachment) []map[stri
 			continue
 		}
 		switch {
-		case strings.HasPrefix(mimeType, "image/") || attachment.Kind == "image":
+		case isImageAttachmentMIME(mimeType):
 			parts = append(parts, map[string]any{
 				"type": "image",
 				"source": map[string]string{

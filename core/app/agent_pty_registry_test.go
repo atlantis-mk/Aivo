@@ -121,6 +121,21 @@ func TestAgentPTYUserOnceAndAgentAlwaysLeases(t *testing.T) {
 	}
 }
 
+func TestAgentPTYWriteDoesNotClearNextInputRequest(t *testing.T) {
+	resolved := &AgentPTYInputRequest{ID: "one"}
+	session := &agentPTYSession{inputRequest: &AgentPTYInputRequest{ID: "two"}}
+
+	session.clearInputRequestLocked(resolved)
+
+	if session.inputRequest == nil || session.inputRequest.ID != "two" {
+		t.Fatalf("next input request = %#v, want request two preserved", session.inputRequest)
+	}
+	session.clearInputRequestLocked(session.inputRequest)
+	if session.inputRequest != nil {
+		t.Fatalf("matching input request was not cleared: %#v", session.inputRequest)
+	}
+}
+
 func TestAgentPTYAttachmentReplaysAndStreamsWithoutOwningLifecycle(t *testing.T) {
 	registry := NewAgentPTYRegistry()
 	defer registry.Shutdown()

@@ -17,7 +17,7 @@ func TestProviderEcosystemRefreshCachesSupportedCatalogForOfflineStartup(t *test
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-  "acme": {"id":"acme","name":"Acme AI","api":"https://api.acme.test/v1","npm":"@ai-sdk/openai-compatible","env":["ACME_API_KEY"],"models":{"acme-pro":{"id":"acme-pro","name":"Acme Pro","tool_call":true,"reasoning":true,"modalities":{"input":["text","image"],"output":["text"]},"limit":{"context":131072,"output":8192},"cost":{"input":0.2,"output":0.8}}}},
+  "acme": {"id":"acme","name":"Acme AI","api":"https://api.acme.test/v1","npm":"@ai-sdk/openai-compatible","env":["ACME_API_KEY"],"models":{"acme-pro":{"id":"acme-pro","name":"Acme Pro","tool_call":true,"reasoning":true,"modalities":{"input":["text","image"],"output":["text"]},"limit":{"context":131072,"output":8192},"cost":{"input":0.2,"output":0.8,"cache_read":null,"tiers":[{"input":0.4,"output":1.6,"tier":{"type":"context","size":200000}}],"context_over_200k":{"input":0.4,"output":1.6}}}}},
   "anthropic": {"id":"anthropic","name":"Anthropic","api":"https://api.anthropic.com/v1","npm":"@ai-sdk/anthropic","env":["ANTHROPIC_API_KEY"],"models":{"claude-test":{"id":"claude-test","name":"Claude Test","tool_call":true,"limit":{"context":200000,"output":8192}}}},
   "cohere-only": {"id":"cohere-only","name":"Cohere Only","api":"https://api.cohere.test","npm":"@ai-sdk/cohere","models":{"command":{"id":"command","name":"Command"}}}
 }`))
@@ -32,11 +32,11 @@ func TestProviderEcosystemRefreshCachesSupportedCatalogForOfflineStartup(t *test
 		t.Fatalf("refresh result = %#v", result)
 	}
 	definition, ok := service.providerDefinition("acme")
-	if !ok || definition.Transport != TransportOpenAICompatible || definition.DefaultBaseURL != "https://api.acme.test/v1" || len(definition.Models) != 1 {
+	if !ok || definition.Transport != TransportOpenAICompatible || definition.ModelFetch != ModelFetchOpenAICompatible || !providerModelRefreshable(definition) || definition.DefaultBaseURL != "https://api.acme.test/v1" || len(definition.Models) != 1 {
 		t.Fatalf("dynamic definition = %#v ok = %v", definition, ok)
 	}
 	model := definition.Models[0]
-	if model.ContextLength != 131072 || model.OutputLimit != 8192 || !model.ToolSupport || model.Pricing["output"] != 0.8 {
+	if model.ContextLength != 131072 || model.OutputLimit != 8192 || !model.ToolSupport || model.Pricing["input"] != 0.2 || model.Pricing["output"] != 0.8 || len(model.Pricing) != 2 {
 		t.Fatalf("dynamic model = %#v", model)
 	}
 	anthropic, ok := service.providerDefinition("anthropic")

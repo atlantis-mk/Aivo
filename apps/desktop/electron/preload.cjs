@@ -55,6 +55,19 @@ contextBridge.exposeInMainWorld('aivo', {
   focusWindow: () => ipcRenderer.invoke('aivo:focus-window'),
   toggleMaximize: () => ipcRenderer.invoke('aivo:toggle-maximize'),
   exportDiagnostics: () => ipcRenderer.invoke('aivo:export-diagnostics'),
+  updates: Object.freeze({
+    getState: () => ipcRenderer.invoke('aivo:update:get-state'),
+    check: () => ipcRenderer.invoke('aivo:update:check'),
+    download: () => ipcRenderer.invoke('aivo:update:download'),
+    install: () => ipcRenderer.invoke('aivo:update:install'),
+    cancel: () => ipcRenderer.invoke('aivo:update:cancel'),
+    onState: (listener) => {
+      if (typeof listener !== 'function') return () => {}
+      const handler = (_event, payload) => listener(payload)
+      ipcRenderer.on('aivo:update:state', handler)
+      return () => ipcRenderer.removeListener('aivo:update:state', handler)
+    },
+  }),
   openExtensionView: (input) => ipcRenderer.invoke('aivo:open-extension-view', input),
   mountEmbeddedExtensionView: (input) => ipcRenderer.invoke('aivo:mount-embedded-extension-view', input),
   updateEmbeddedExtensionViewBounds: (input) => ipcRenderer.invoke('aivo:update-embedded-extension-view-bounds', input),

@@ -5,6 +5,7 @@ import {
   Delete02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -47,9 +48,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { ProviderIcon } from "@/features/providers/provider-icon";
 import {
+  configuredProviderRefreshInput,
   configuredProviders,
+  providerCanRefreshModels,
   providerConnectionMethodLabel,
   providerModelLabel,
+  providerRefreshUnavailableMessage,
   providerReadinessLabel,
 } from "@/features/providers/provider-settings-model";
 import type { ProviderChoice } from "@/features/providers/provider-types";
@@ -67,7 +71,13 @@ import {
 import { hasAppBridge, useAppConfig } from "@/lib/app-config";
 import { deletePreviewProvider } from "@/lib/preview-state";
 import type { ProviderInfo } from "@/lib/provider-catalog";
-import { deleteProvider, getAppConfig } from "@/services/aivo";
+import {
+  deleteProvider,
+  getAppConfig,
+  getProviderCatalog,
+  refreshProviderEcosystemCatalog,
+  refreshProviderModels,
+} from "@/services/aivo";
 
 export function ProviderSettingsScreen() {
   const {
@@ -81,6 +91,8 @@ export function ProviderSettingsScreen() {
   } = useAppConfig();
   const [saving, setSaving] = useState(false);
   const [deletingProviderId, setDeletingProviderId] = useState("");
+  const [refreshingCatalog, setRefreshingCatalog] = useState(false);
+  const [refreshingProviderId, setRefreshingProviderId] = useState("");
   const [providerValidated, setProviderValidated] = useState(false);
 
   const actions = useSetupProviderActions({
@@ -111,7 +123,7 @@ export function ProviderSettingsScreen() {
   );
 
   async function removeProvider(provider: ProviderInfo) {
-    if (deletingProviderId) return;
+    if (deletingProviderId || refreshingCatalog || refreshingProviderId) return;
     setDeletingProviderId(provider.id);
     setError("");
     try {
@@ -130,6 +142,70 @@ export function ProviderSettingsScreen() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeletingProviderId("");
+    }
+  }
+
+  async function refreshEcosystemCatalog() {
+    if (refreshingCatalog || refreshingProviderId || deletingProviderId || saving) {
+      return;
+    }
+    if (!hasAppBridge()) {
+      setError("更新模型目录需要连接本地 Aivo Core。");
+      return;
+    }
+    setRefreshingCatalog(true);
+    setError("");
+    try {
+      const result = await refreshProviderEcosystemCatalog();
+      const nextCatalog = await getProviderCatalog();
+      setCatalog(nextCatalog);
+      toast.success(
+        `已更新 ${result.providerCount} 个 Provider、${result.modelCount} 个模型`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`更新模型目录失败：${message}`);
+    } finally {
+      setRefreshingCatalog(false);
+    }
+  }
+
+  async function refreshConfiguredProvider(provider: ProviderInfo) {
+    if (refreshingProviderId || refreshingCatalog || deletingProviderId || saving) {
+      return;
+    }
+    const unavailableMessage = providerRefreshUnavailableMessage(provider);
+    if (unavailableMessage) {
+      setError(unavailableMessage);
+      toast.error(unavailableMessage);
+      return;
+    }
+    if (!hasAppBridge()) {
+      const message = "刷新模型需要连接本地 Aivo Core。";
+      setError(message);
+      toast.error(message);
+      return;
+    }
+    setRefreshingProviderId(provider.id);
+    setError("");
+    try {
+      const nextCatalog = await refreshProviderModels(
+        configuredProviderRefreshInput(provider),
+      );
+      setCatalog(nextCatalog);
+      const refreshed = nextCatalog.providers.find(
+        (candidate) => candidate.id === provider.id,
+      );
+      toast.success(
+        `已刷新 ${provider.name}，获取 ${refreshed?.models.length ?? 0} 个模型`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const failureMessage = `刷新 ${provider.name} 模型失败，已保留原模型列表：${message}`;
+      setError(failureMessage);
+      toast.error(failureMessage);
+    } finally {
+      setRefreshingProviderId("");
     }
   }
 
@@ -177,10 +253,17 @@ export function ProviderSettingsScreen() {
               {providers.map((provider) => (
                 <ProviderSettingsCard
                   deleting={deletingProviderId === provider.id}
-                  disabled={Boolean(deletingProviderId) || saving}
+                  disabled={
+                    Boolean(deletingProviderId) ||
+                    refreshingCatalog ||
+                    Boolean(refreshingProviderId) ||
+                    saving
+                  }
                   key={provider.id}
                   onDelete={() => void removeProvider(provider)}
+                  onRefresh={() => void refreshConfiguredProvider(provider)}
                   provider={provider}
+                  refreshing={refreshingProviderId === provider.id}
                 />
               ))}
             </div>
@@ -201,16 +284,37 @@ export function ProviderSettingsScreen() {
         </section>
 
         <section aria-labelledby="add-provider-heading" className="flex flex-col gap-aivo-4 pb-aivo-6">
-          <div className="flex flex-col gap-aivo-1">
-            <h2
-              className="aivo-type-title-3 font-semibold text-foreground"
-              id="add-provider-heading"
+          <div className="flex flex-col gap-aivo-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-aivo-1">
+              <h2
+                className="aivo-type-title-3 font-semibold text-foreground"
+                id="add-provider-heading"
+              >
+                添加 Provider
+              </h2>
+              <p className="aivo-type-footnote text-muted-foreground">
+                API Key 只在连接请求中临时使用，不会写入渲染器存储。
+              </p>
+            </div>
+            <Button
+              className="self-start sm:self-auto"
+              disabled={
+                loading ||
+                refreshingCatalog ||
+                Boolean(refreshingProviderId) ||
+                Boolean(deletingProviderId) ||
+                saving
+              }
+              onClick={() => void refreshEcosystemCatalog()}
+              variant="outline"
             >
-              添加 Provider
-            </h2>
-            <p className="aivo-type-footnote text-muted-foreground">
-              API Key 只在连接请求中临时使用，不会写入渲染器存储。
-            </p>
+              {refreshingCatalog ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RefreshCw data-icon="inline-start" />
+              )}
+              更新模型目录
+            </Button>
           </div>
           <ProviderChoiceGrid
             activeProviderId={connection.activeProvider?.id}
@@ -263,14 +367,19 @@ function ProviderSettingsCard({
   deleting,
   disabled,
   onDelete,
+  onRefresh,
   provider,
+  refreshing,
 }: {
   deleting: boolean;
   disabled: boolean;
   onDelete: () => void;
+  onRefresh: () => void;
   provider: ProviderInfo;
+  refreshing: boolean;
 }) {
   const accountCount = provider.accounts?.length ?? 0;
+  const refreshable = providerCanRefreshModels(provider);
   return (
     <Card>
       <CardHeader>
@@ -304,6 +413,19 @@ function ProviderSettingsCard({
         </dl>
       </CardContent>
       <CardFooter className="justify-end gap-aivo-2 border-t">
+        <Button
+          disabled={disabled}
+          onClick={onRefresh}
+          title={refreshable ? undefined : "点击查看该 Provider 的模型更新方式"}
+          variant="ghost"
+        >
+          {refreshing ? (
+            <Spinner data-icon="inline-start" />
+          ) : (
+            <RefreshCw data-icon="inline-start" />
+          )}
+          刷新模型
+        </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button disabled={disabled} variant="ghost">

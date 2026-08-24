@@ -13,6 +13,7 @@ The provider backend is the production control plane for model providers. The de
 ## Main RPC Methods
 
 - `GetProviderCatalog`: list providers, models, readiness, health, accounts, model refresh state, and profile metadata.
+- `RefreshProviderEcosystemCatalog`: refresh and persist Aivo's shared public Provider/model directory used by Provider pickers and connection model options.
 - `SaveProvider`: save or update a provider without switching the active default model.
 - `ConnectProvider`: save a provider and make it the active/default provider.
 - `DeleteProvider`: remove provider config, auth, cached model metadata, validation, and health. Call events are retained for audit.
@@ -72,4 +73,3 @@ cd /Users/atlan/Documents/Aivo/core
 go test ./...
 go run ./cmd/aivo-core provider-smoke --provider <configured-provider>
 ```
-

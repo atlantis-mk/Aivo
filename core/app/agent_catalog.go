@@ -19,81 +19,13 @@ type AgentCatalog struct {
 func NewAgentCatalog() *AgentCatalog {
 	items := []domain.AgentModeDefinition{
 		{
-			ID:                   domain.AgentModeCode,
-			DisplayName:          "Code",
-			Description:          "Default primary coding agent with full workspace tools gated by runtime permissions.",
-			Prompt:               "You are running as the primary coding agent. Use read for exact files, bash for repository search, Git, tests, builds, formatting, diagnostics, and other foreground CLI work, edit for exact atomic replacements, and write for complete file creation or overwrite. Optional capabilities appear only when the Host activates an extension before a model call. Be concise, direct, and to the point. Before a meaningful batch of tool calls, give one short progress update under 24 Chinese characters or 12 English words. Do not narrate routine reads, searches, or trivial edits. Answers should normally be fewer than 4 lines unless the work needs more detail. Inspect relevant files before answering, keep changes scoped, and report verification clearly.",
-			Toolsets:             []string{"*"},
-			FileWriteAccess:      true,
-			CommandAccess:        true,
-			NetworkAccess:        true,
-			BackgroundTaskAccess: false,
-		},
-		{
 			ID:                   domain.AgentModeAssistant,
 			DisplayName:          "Assistant",
-			Description:          "General conversational mode with coding tools available when explicitly useful.",
-			Prompt:               "You are running in assistant mode. Use read, bash, edit, and write according to runtime permissions; ordinary Git, search, test, build, formatting, and diagnostic work uses bash. Optional capabilities appear only when the Host activates an extension. Do not store secrets, credentials, transient chat, or raw private tool content.",
-			Toolsets:             []string{"safe", "coding", "git", "web"},
+			Description:          "Default general Agent with full workspace tools gated by runtime permissions.",
+			PromptID:             "agent.assistant",
+			Prompt:               builtinPromptBody("agent.assistant"),
+			Toolsets:             []string{"*"},
 			FileWriteAccess:      true,
-			CommandAccess:        false,
-			NetworkAccess:        true,
-			BackgroundTaskAccess: false,
-		},
-		{
-			ID:                   domain.AgentModeBuild,
-			DisplayName:          "Build",
-			Description:          "Implements code changes, edits files, and runs approved project commands.",
-			Prompt:               "You are running in build mode. Inspect with read and bash, make focused exact changes with edit or complete writes with write, and run the smallest useful verification through bash. Optional capabilities appear only when the Host activates an extension. Respect runtime permissions and avoid unrelated refactors.",
-			Toolsets:             []string{"safe", "coding", "git", "web"},
-			FileWriteAccess:      true,
-			CommandAccess:        true,
-			NetworkAccess:        true,
-			BackgroundTaskAccess: false,
-		},
-		{
-			ID:                   domain.AgentModeExplore,
-			DisplayName:          "Explore",
-			Description:          "Reads code and answers questions without mutating files or running commands.",
-			Prompt:               "You are running in explore mode. Investigate the repository, explain how things work, compare options, and surface risks. Do not mutate files, run shell commands, run tests, or create scheduled jobs. Use update_plan only when the investigation has multiple concrete steps.",
-			Toolsets:             []string{"safe", "git", "web"},
-			NetworkAccess:        true,
-			BackgroundTaskAccess: false,
-		},
-		{
-			ID:                   domain.AgentModePlan,
-			DisplayName:          "Plan",
-			Description:          "Plans implementation work without mutating files or running shell commands.",
-			Prompt:               "You are running in plan mode. Inspect the repository, then produce concrete implementation plans. Use update_plan for multi-step planning work so the user can see progress; keep at most one step in_progress and do not batch completion updates. Do not mutate files, run shell commands, or create scheduler jobs.",
-			Toolsets:             []string{"safe", "git", "web"},
-			NetworkAccess:        true,
-			BackgroundTaskAccess: false,
-		},
-		{
-			ID:                   domain.AgentModePlanner,
-			DisplayName:          "Planner",
-			Description:          "Compatibility alias for Plan.",
-			Prompt:               "You are running in planner mode. Inspect the repository, then produce concrete implementation plans. Use update_plan for multi-step planning work so the user can see progress; keep at most one step in_progress and do not batch completion updates. Do not mutate files, run shell commands, or create scheduler jobs.",
-			Toolsets:             []string{"safe", "git", "web"},
-			NetworkAccess:        true,
-			Hidden:               true,
-			BackgroundTaskAccess: false,
-		},
-		{
-			ID:                   domain.AgentModeReview,
-			DisplayName:          "Review",
-			Description:          "Reviews code for bugs, regressions, risks, and missing tests without changing files.",
-			Prompt:               "You are running in review mode. Take a code-review stance: prioritize concrete bugs, behavioral regressions, security or data-loss risks, and missing tests. Findings should come first, ordered by severity, with file and line references when available. Do not mutate files, run shell commands, run tests, or create scheduled jobs.",
-			Toolsets:             []string{"safe", "git", "web"},
-			NetworkAccess:        true,
-			BackgroundTaskAccess: false,
-		},
-		{
-			ID:                   domain.AgentModeDebug,
-			DisplayName:          "Debug",
-			Description:          "Investigates failures and may run approved diagnostics, but cannot edit files.",
-			Prompt:               "You are running in debug mode. Diagnose failures with read and approved foreground bash commands. Do not mutate files or create scheduled jobs. When you identify a likely fix, explain it clearly and switch to build mode only if the user wants implementation.",
-			Toolsets:             []string{"safe", "coding", "git", "web"},
 			CommandAccess:        true,
 			NetworkAccess:        true,
 			BackgroundTaskAccess: false,
@@ -102,7 +34,8 @@ func NewAgentCatalog() *AgentCatalog {
 			ID:                   domain.AgentModeSummary,
 			DisplayName:          "Summary",
 			Description:          "Hidden worker mode for conversation summaries and compaction.",
-			Prompt:               "You are running in summary mode. Produce concise durable summaries, open tasks, decisions, facts, and changed files from the provided conversation context. Do not mutate files, run shell commands, or create scheduled jobs.",
+			PromptID:             "agent.summary",
+			Prompt:               builtinPromptBody("agent.summary"),
 			Toolsets:             []string{"safe"},
 			Hidden:               true,
 			BackgroundTaskAccess: true,
@@ -111,7 +44,8 @@ func NewAgentCatalog() *AgentCatalog {
 			ID:                   domain.AgentModeTitle,
 			DisplayName:          "Title",
 			Description:          "Hidden worker mode for session title generation.",
-			Prompt:               "You are running in title mode. Generate a short single-line title for the session from the provided context. Do not use tools unless safe reads are explicitly needed. Do not mutate files, run shell commands, create scheduled jobs, or write memories.",
+			PromptID:             "agent.title",
+			Prompt:               builtinPromptBody("agent.title"),
 			Toolsets:             []string{"safe"},
 			Hidden:               true,
 			BackgroundTaskAccess: true,
@@ -120,7 +54,8 @@ func NewAgentCatalog() *AgentCatalog {
 			ID:                   domain.AgentModeSchedulerWorker,
 			DisplayName:          "Scheduler Worker",
 			Description:          "Hidden worker mode for scheduled jobs with bounded permissions.",
-			Prompt:               "You are running in scheduler worker mode. Execute only the scheduled job prompt with the job's declared toolsets and permission scope. Keep context bounded and report concise results.",
+			PromptID:             "agent.scheduler_worker",
+			Prompt:               builtinPromptBody("agent.scheduler_worker"),
 			Toolsets:             []string{"safe", "personal", "web"},
 			NetworkAccess:        true,
 			Hidden:               true,
@@ -153,6 +88,9 @@ func NewAgentCatalogWithDefinitions(definitions []domain.AgentModeDefinition) *A
 		if err != nil {
 			continue
 		}
+		if isRetiredBuiltInAgentMode(id) {
+			continue
+		}
 		builtInDefinition, builtIn := catalog.modes[id]
 		definition.ID = id
 		if builtIn {
@@ -176,6 +114,26 @@ func NewAgentCatalogWithDefinitions(definitions []domain.AgentModeDefinition) *A
 		catalog.modes[id] = definition
 	}
 	return catalog
+}
+
+func (catalog *AgentCatalog) ApplyPromptSnapshot(snapshot PromptSnapshot) {
+	if catalog == nil {
+		return
+	}
+	for id, definition := range catalog.modes {
+		promptID := strings.TrimSpace(definition.PromptID)
+		if promptID == "" {
+			promptID = "agent." + id
+		}
+		if body := snapshot.Body(promptID); body != "" {
+			definition.PromptID = promptID
+			definition.Prompt = body
+			if !definition.BuiltIn {
+				definition.Revision = agentModeRevision(definition)
+			}
+			catalog.modes[id] = definition
+		}
+	}
 }
 
 func (catalog *AgentCatalog) ApplyRuntime(runtime domain.RuntimeConfig) {

@@ -1,0 +1,41 @@
+id: "CHG-2026-044-desktop-auto-update"
+title: "Add trusted desktop automatic updates"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.1-active"
+target_release: null
+requirements:
+  - "REQ-UPDATE-001"
+  - "NFR-RELEASE-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-UPDATE-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0022"
+context_refs:
+  - "docs/02-scope-matrix.md#Platform scope"
+  - "docs/03-functional-requirements.md#REQ-UPDATE-001 Trusted desktop automatic updates"
+  - "docs/04-architecture.md#Desktop update boundary"
+  - "docs/06-security-privacy.md#Desktop update trust"
+  - "docs/07-test-release-plan.md#Work verification"
+  - "docs/08-traceability.md"
+  - "docs/release-quality.md#Desktop update channel"
+related_changes: []
+affected_surfaces:
+  - "electron-main"
+  - "electron-preload"
+  - "renderer-settings"
+  - "release-channel"
+affected_formats:
+  - "desktop-update-ipc-v1"
+  - "r2-stable-manifest-v1"
+  - "github-release-api"
+affected_versions:
+  - "desktop-next"
+security_impact: "Adds a privileged network, download, integrity-verification, and OS installer-handoff boundary."
+migration: "none"
+supersedes: []

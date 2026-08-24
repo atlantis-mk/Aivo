@@ -9,8 +9,6 @@ import (
 	"aivo/core/domain"
 )
 
-const projectDescriptionSystemPrompt = `You describe software projects for a project picker. Output exactly one factual sentence, in the same language as the supplied project material. State what the project does, not implementation details. Do not use markdown, labels, quotes, or more than 160 characters.`
-
 func (s *Service) refineProjectDescription(projectPath string) {
 	models := s.configuredAuxiliaryModels(context.Background())
 	if len(models) == 0 {
@@ -20,10 +18,15 @@ func (s *Service) refineProjectDescription(projectPath string) {
 	if contextText == "" {
 		return
 	}
+	systemPrompt, systemErr := s.renderManagedPrompt("auxiliary.project_description.system", nil)
+	userPrompt, userErr := s.renderManagedPrompt("auxiliary.project_description.user", map[string]string{"project_path": projectPath, "content": contextText})
+	if systemErr != nil || userErr != nil {
+		return
+	}
 	for _, model := range models {
 		description, _, err := s.GenerateChatReply(context.Background(), []domain.ChatMessage{
-			{Role: "system", Text: projectDescriptionSystemPrompt},
-			{Role: "user", Text: "Project path: " + projectPath + "\n\nProject material:\n" + contextText},
+			{Role: "system", Text: systemPrompt},
+			{Role: "user", Text: userPrompt},
 		}, &model, "low", "default")
 		description = cleanProjectDescription(description)
 		if err == nil && description != "" {

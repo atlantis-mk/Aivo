@@ -37,6 +37,7 @@ export function ProjectWorkspaceComposerFrame({
   onHeightChange,
   onHideCompletedTodoPlan,
   onModelSelect,
+  onCompactContext,
   onOpenToolActivationDialog,
   onPermissionModeSelect,
   onProjectAdd,
@@ -58,6 +59,7 @@ export function ProjectWorkspaceComposerFrame({
   projectPath,
   projects,
   reasoningEffort,
+  runtimeStatsLine,
   serviceTier,
   shouldShowTodoFloatingStatus,
   showConversationLayout,
@@ -85,6 +87,7 @@ export function ProjectWorkspaceComposerFrame({
   onHeightChange: (height: number) => void;
   onHideCompletedTodoPlan: () => void;
   onModelSelect: (option: ModelOption) => void;
+  onCompactContext: () => Promise<void>;
   onOpenToolActivationDialog: () => void;
   onPermissionModeSelect: (mode: PermissionMode) => void;
   onProjectAdd: (rootPath?: string) => void;
@@ -106,6 +109,7 @@ export function ProjectWorkspaceComposerFrame({
   projectPath: string;
   projects: domain.AssistantProject[];
   reasoningEffort: string;
+  runtimeStatsLine: string;
   serviceTier: string;
   shouldShowTodoFloatingStatus: boolean;
   showConversationLayout: boolean;
@@ -144,6 +148,7 @@ export function ProjectWorkspaceComposerFrame({
         />
       ) : (
         <PromptComposer
+          onCompactContext={onCompactContext}
           onHeightChange={onHeightChange}
           onPromptChange={onPromptChange}
           onPromptMentionRemove={onPromptMentionRemove}
@@ -176,6 +181,7 @@ export function ProjectWorkspaceComposerFrame({
           agentModes={agentModes}
           attachments={attachments}
           reasoningEffort={reasoningEffort}
+          runtimeStatsLine={runtimeStatsLine}
           serviceTier={serviceTier}
           showProjectPicker={showProjectPicker}
           showServiceTier={showServiceTier}

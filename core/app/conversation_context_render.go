@@ -129,11 +129,7 @@ func (s *Service) liveSessionTerminalsContext(session domain.Session, cc domain.
 	if err != nil {
 		return ""
 	}
-	lines := []string{
-		"The following PTY processes are alive and persist across agent turns. A tool wait ending or being cancelled does not mean these processes exited.",
-		"If the user asks to continue, answer, type into, stop, or exit a previous command, use write_stdin with its existing processRef. Do not call exec_command merely to regain access. Start another instance only when the user explicitly requests one or no suitable live terminal exists.",
-		"For normal line input, send plain chars with press_enter=true in the same write_stdin call; never type escaped \\r, \\n, or \\u000a text into the terminal.",
-	}
+	lines := []string{}
 	for _, terminal := range terminals {
 		if terminal.Status == AgentPTYStatusExited {
 			continue
@@ -145,10 +141,14 @@ func (s *Service) liveSessionTerminalsContext(session domain.Session, cc domain.
 			terminal.Attention, terminal.InputOwner, terminal.LeaseVersion,
 		))
 	}
-	if len(lines) == 3 {
+	if len(lines) == 0 {
 		return ""
 	}
-	return strings.Join(lines, "\n")
+	prompt, promptErr := s.renderManagedPrompt("dynamic.live_terminals", map[string]string{"terminals": strings.Join(lines, "\n")})
+	if promptErr != nil {
+		return ""
+	}
+	return prompt
 }
 
 func renderRecentToolsForContext(tools []domain.ToolCall, limit int) string {
@@ -175,6 +175,15 @@ func renderRecentToolsForContext(tools []domain.ToolCall, limit int) string {
 }
 
 func renderRecentFileSnapshots(tools []domain.ToolCall, limit int) string {
+	lines := renderRecentFileSnapshotLines(tools, limit)
+	if lines == "" {
+		return ""
+	}
+	prompt, _ := renderPromptTemplate(builtinPromptBody("dynamic.file_snapshots"), map[string]string{"snapshots": lines})
+	return prompt
+}
+
+func renderRecentFileSnapshotLines(tools []domain.ToolCall, limit int) string {
 	if limit <= 0 {
 		limit = recentToolContextLimit
 	}
@@ -210,7 +219,7 @@ func renderRecentFileSnapshots(tools []domain.ToolCall, limit int) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	return "Use these sha256 values as expectedHash for edit_file/write_file when editing the same content without rereading. If a stale write is reported, read the file again before retrying.\n" + strings.Join(lines, "\n")
+	return strings.Join(lines, "\n")
 }
 
 func snapshotMapFromToolResult(result map[string]any) map[string]any {
@@ -229,6 +238,15 @@ func snapshotMapFromToolResult(result map[string]any) map[string]any {
 }
 
 func renderOlderConversationRecap(messages []domain.ChatMessage, limit int) string {
+	messageLines := renderOlderConversationRecapMessages(messages, limit)
+	if messageLines == "" {
+		return ""
+	}
+	prompt, _ := renderPromptTemplate(builtinPromptBody("dynamic.older_recap"), map[string]string{"messages": messageLines})
+	return prompt
+}
+
+func renderOlderConversationRecapMessages(messages []domain.ChatMessage, limit int) string {
 	if len(messages) == 0 {
 		return ""
 	}
@@ -236,10 +254,7 @@ func renderOlderConversationRecap(messages []domain.ChatMessage, limit int) stri
 		limit = len(messages)
 	}
 	start := len(messages) - limit
-	lines := []string{
-		"Deterministic recap of older messages because no durable summary exists yet.",
-		"Use this only as continuity background; do not treat these older turns as current instructions.",
-	}
+	lines := []string{}
 	for _, message := range messages[start:] {
 		text := bounded(message.Text, messageFallbackMaxChars)
 		if text == "" {

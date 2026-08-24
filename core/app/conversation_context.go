@@ -24,8 +24,6 @@ const (
 	dynamicContextHeaderChars = 1200
 )
 
-const compactedContextNotice = `Reference-only background: the latest user message is the active task, and it wins over older context.`
-
 type conversationContextOptions struct {
 	CurrentInput       string
 	IncludeCurrent     bool
@@ -110,11 +108,15 @@ func (s *Service) assembleConversationContext(ctx context.Context, sessionID str
 	if err != nil {
 		return conversationContextAssembly{}, err
 	}
-	chat := chatMessagesFromEvents(events, turns)
+	summary, _ := s.store.LatestSummary(ctx, session.ID)
+	chatEvents := events
+	if summary != nil {
+		chatEvents = events[firstEventAfterSummary(events, summary):]
+	}
+	chat := chatMessagesFromEvents(chatEvents, turns)
 	tail := selectRecentChatTail(chat, opts.TailMessageLimit, opts.TailMessageBudget)
 	older := chat[:len(chat)-len(tail)]
 
-	summary, _ := s.store.LatestSummary(ctx, session.ID)
 	checkpoint, _ := s.store.LatestCheckpoint(ctx, session.ID)
 	codingContext, _ := s.store.GetCodingContext(ctx, session.ID)
 	var tools []domain.ToolCall
@@ -163,8 +165,12 @@ func (s *Service) contextSectionCandidates(
 	tail []domain.ChatMessage,
 	opts conversationContextOptions,
 ) []contextSectionCandidate {
+	contextPolicy, err := s.renderManagedPrompt("dynamic.context_policy", nil)
+	if err != nil {
+		contextPolicy = builtinPromptBody("dynamic.context_policy")
+	}
 	sections := []contextSectionCandidate{
-		{Name: "context_policy", Content: compactedContextNotice, MaxChars: dynamicContextHeaderChars, Required: true},
+		{Name: "context_policy", Content: contextPolicy, MaxChars: dynamicContextHeaderChars, Required: true},
 		{Name: "session", Content: renderSessionMetadata(session), MaxChars: sectionDefaultMaxChars, Required: true},
 	}
 	if text := strings.TrimSpace(session.SystemPromptSnapshot); text != "" {
@@ -182,7 +188,12 @@ func (s *Service) contextSectionCandidates(
 	if summary != nil {
 		sections = append(sections, contextSectionCandidate{Name: "latest_summary", Content: renderSummaryForContext(*summary), MaxChars: sectionSummaryMaxChars, Required: true})
 	} else if len(older) > 0 {
-		sections = append(sections, contextSectionCandidate{Name: "deterministic_older_recap", Content: renderOlderConversationRecap(older, olderRecapMessageLimit), MaxChars: sectionSummaryMaxChars, Required: true})
+		lines := renderOlderConversationRecapMessages(older, olderRecapMessageLimit)
+		recap, promptErr := s.renderManagedPrompt("dynamic.older_recap", map[string]string{"messages": lines})
+		if promptErr != nil {
+			recap = renderOlderConversationRecap(older, olderRecapMessageLimit)
+		}
+		sections = append(sections, contextSectionCandidate{Name: "deterministic_older_recap", Content: recap, MaxChars: sectionSummaryMaxChars, Required: true})
 	}
 	if opts.IncludeCurrent && strings.TrimSpace(opts.CurrentInput) != "" {
 		sections = append(sections, contextSectionCandidate{Name: "current_user_input", Content: strings.TrimSpace(opts.CurrentInput), MaxChars: sectionDefaultMaxChars, Required: true})
@@ -203,7 +214,11 @@ func (s *Service) contextSectionCandidates(
 		sections = append(sections, contextSectionCandidate{Name: "active_skills", Content: activeSkills, MaxChars: sectionSummaryMaxChars, Required: true})
 	}
 	if len(tools) > 0 {
-		if snapshots := renderRecentFileSnapshots(tools, recentToolContextLimit); snapshots != "" {
+		if snapshotLines := renderRecentFileSnapshotLines(tools, recentToolContextLimit); snapshotLines != "" {
+			snapshots, promptErr := s.renderManagedPrompt("dynamic.file_snapshots", map[string]string{"snapshots": snapshotLines})
+			if promptErr != nil {
+				snapshots = renderRecentFileSnapshots(tools, recentToolContextLimit)
+			}
 			sections = append(sections, contextSectionCandidate{Name: "recent_file_snapshots", Content: snapshots, MaxChars: sectionToolMaxChars})
 		}
 		sections = append(sections, contextSectionCandidate{Name: "recent_tool_results", Content: renderRecentToolsForContext(tools, recentToolContextLimit), MaxChars: sectionToolMaxChars})

@@ -79,8 +79,9 @@ type AppendEventRequest struct {
 }
 
 type UpdateSessionEventRequest struct {
-	EventID string `json:"eventId"`
-	Content string `json:"content"`
+	EventID string         `json:"eventId"`
+	Content string         `json:"content"`
+	Payload map[string]any `json:"payload,omitempty"`
 }
 
 type DeleteSessionEventRequest struct {

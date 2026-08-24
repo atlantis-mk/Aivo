@@ -478,16 +478,21 @@ func TestSchemaV7MigrationCreatesBackupAndPreservesAgentModePayloads(t *testing.
 	if err := store.db.Model(&schemaVersionRow{}).Select("MAX(version)").Scan(&version).Error; err != nil {
 		t.Fatal(err)
 	}
-	if version != 8 {
-		t.Fatalf("schema version = %d, want 8", version)
+	if version != 9 {
+		t.Fatalf("schema version = %d, want 9", version)
 	}
 	var definition string
 	if err := store.db.Model(&agentModeDefinitionRow{}).Where("id = ?", "research").Pluck("definition", &definition).Error; err != nil {
 		t.Fatal(err)
 	}
-	const expected = `{"id":"research","displayName":"Research","description":"Read-only research","prompt":"Investigate carefully.","permissionScope":"read_only","mode":"all"}`
+	const expected = `{"description":"Read-only research","displayName":"Research","id":"research","mode":"all","permissionScope":"read_only","promptId":"agent.research"}`
 	if definition != expected {
-		t.Fatalf("schema v8 rewrote compatible payload: %s", definition)
+		t.Fatalf("schema v9 agent prompt migration payload = %s", definition)
+	}
+	promptPath := filepath.Join(filepath.Dir(dbPath), "prompts", "overrides", "agent", "agent.research.md")
+	prompt, err := os.ReadFile(promptPath)
+	if err != nil || !strings.Contains(string(prompt), "Investigate carefully.") {
+		t.Fatalf("schema v9 prompt extraction failed: %v %q", err, prompt)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)

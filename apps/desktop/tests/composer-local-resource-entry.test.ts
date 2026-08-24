@@ -22,6 +22,27 @@ test("plus and mention actions use the same local resource callback", async () =
   assert.match(textarea, /await onSelectLocalResource\(\)/);
 });
 
+test("the compact mention is a local action instead of submitted prompt text", async () => {
+  const textarea = await readFile(
+    new URL(
+      "../src/features/projects/project-prompt-composer-textarea.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const workspace = await readFile(
+    new URL(
+      "../src/features/projects/project-workspace-chat-content.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(textarea, /consumePromptMentionQuery/);
+  assert.match(textarea, /await onCompactContext\(\)/);
+  assert.match(workspace, /await compactSessionContext\(activeSessionId\)/);
+});
+
 test("dropped files are resolved in preload and inspected by Electron main", async () => {
   const preload = await readFile(
     new URL("../electron/preload.cjs", import.meta.url),

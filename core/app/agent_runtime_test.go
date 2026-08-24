@@ -26,9 +26,16 @@ func TestConfiguredAgentOverridesAreResolvedPerProject(t *testing.T) {
       "prompt": "Inspect this project carefully.",
       "toolsets": ["safe"],
       "permissionScope": "read_only",
-      "subagents": ["review"],
+      "subagents": ["reviewer"],
       "maxSteps": 3,
       "model": {"providerId": "openai", "modelId": "gpt-5.5"}
+    },
+    "reviewer": {
+      "description": "Project reviewer",
+      "prompt": "Review one bounded question.",
+      "toolsets": ["safe"],
+      "permissionScope": "read_only",
+      "mode": "subagent"
     }
   }
 }`)
@@ -40,7 +47,7 @@ func TestConfiguredAgentOverridesAreResolvedPerProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if definition.Prompt != "Inspect this project carefully." || definition.MaxSteps != 3 || definition.PermissionScope != "read_only" || len(definition.Subagents) != 1 || definition.Subagents[0] != domain.AgentModeReview || definition.Model == nil || definition.Revision == "" {
+	if definition.Prompt != "Inspect this project carefully." || definition.MaxSteps != 3 || definition.PermissionScope != "read_only" || len(definition.Subagents) != 1 || definition.Subagents[0] != "reviewer" || definition.Model == nil || definition.Revision == "" {
 		t.Fatalf("definition = %#v", definition)
 	}
 	updated, err := service.SetSessionAgentMode(ctx, domain.SetSessionAgentModeInput{SessionID: session.ID, Mode: "researcher"})
@@ -95,55 +102,27 @@ func (t agentSpecTool) Execute(context.Context, json.RawMessage, domain.ToolExec
 func TestAgentCatalogDefaults(t *testing.T) {
 	catalog := NewAgentCatalog()
 	modes := catalog.List(false)
-	if len(modes) == 0 {
-		t.Fatal("expected visible modes")
+	if len(modes) != 1 || modes[0].ID != domain.AgentModeAssistant {
+		t.Fatalf("visible modes = %#v, want Assistant only", modes)
 	}
-	if _, err := catalog.Get(domain.AgentModeAssistant); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := catalog.Get(domain.AgentModeCode); err != nil {
-		t.Fatal(err)
-	}
-	code, err := catalog.Get(domain.AgentModeCode)
+	assistant, err := catalog.Get(domain.AgentModeAssistant)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !strings.Contains(code.Prompt, "Before a meaningful batch of tool calls") {
-		t.Fatalf("code prompt does not request provider-returned tool progress text: %q", code.Prompt)
 	}
 	for _, required := range []string{
-		"Be concise, direct, and to the point",
-		"under 24 Chinese characters or 12 English words",
-		"Do not narrate routine reads, searches",
-		"normally be fewer than 4 lines",
-		"Use read for exact files",
-		"bash for repository search, Git, tests, builds, formatting, diagnostics",
-		"edit for exact atomic replacements",
-		"write for complete file creation or overwrite",
-		"Host activates an extension before a model call",
+		"assistant mode",
+		"Use read, bash, edit, and write",
+		"runtime permissions",
+		"Host activates an extension",
 	} {
-		if !strings.Contains(code.Prompt, required) {
-			t.Fatalf("code prompt missing concise opencode-style rule %q: %q", required, code.Prompt)
+		if !strings.Contains(assistant.Prompt, required) {
+			t.Fatalf("assistant prompt missing rule %q: %q", required, assistant.Prompt)
 		}
 	}
-	build, err := catalog.Get(domain.AgentModeBuild)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(build.Prompt, "Inspect with read and bash") ||
-		!strings.Contains(build.Prompt, "exact changes with edit") ||
-		!strings.Contains(build.Prompt, "complete writes with write") {
-		t.Fatalf("build prompt should describe the four primitives: %q", build.Prompt)
-	}
-	debug, err := catalog.Get(domain.AgentModeDebug)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(debug.Prompt, "read and approved foreground bash commands") {
-		t.Fatalf("debug prompt should use the minimal read/bash surface: %q", debug.Prompt)
-	}
-	if _, err := catalog.Get(domain.AgentModePlan); err != nil {
-		t.Fatal(err)
+	for _, retired := range []string{domain.AgentModeCode, domain.AgentModeBuild, domain.AgentModeExplore, domain.AgentModePlan, domain.AgentModePlanner, domain.AgentModeReview, domain.AgentModeDebug} {
+		if _, err := catalog.Get(retired); err == nil {
+			t.Fatalf("retired built-in %q remained configured", retired)
+		}
 	}
 	if _, err := catalog.Get("unknown"); err == nil {
 		t.Fatal("unknown mode should not be configured")
@@ -159,9 +138,35 @@ func TestAgentCatalogDefaults(t *testing.T) {
 	}
 }
 
-func TestCodeModeWildcardToolsetsExposeAllTools(t *testing.T) {
+func TestRetiredBuiltInSessionModeResolvesThroughAssistant(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{
+		Type: domain.SessionTypeCoding, AgentMode: domain.AgentModeCode, ProjectPath: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := service.resolveAgentModeForRequest(ctx, session.ID, "")
+	if err != nil || resolved.ID != domain.AgentModeAssistant {
+		t.Fatalf("legacy session resolved = %#v, err = %v", resolved, err)
+	}
+	resolved, err = service.resolveAgentModeForRequest(ctx, session.ID, domain.AgentModeCode)
+	if err != nil || resolved.ID != domain.AgentModeAssistant {
+		t.Fatalf("legacy submitted mode resolved = %#v, err = %v", resolved, err)
+	}
+	if _, err := service.resolveAgentModeForRequest(ctx, session.ID, domain.AgentModeBuild); err == nil {
+		t.Fatal("unrelated retired mode was accepted as a new selection")
+	}
+	if _, err := service.resolveAgentModeForRequest(ctx, session.ID, "unknown"); err == nil {
+		t.Fatal("unknown mode was accepted")
+	}
+}
+
+func TestAssistantModeWildcardToolsetsExposeAllTools(t *testing.T) {
 	catalog := NewAgentCatalog()
-	code, err := catalog.Get(domain.AgentModeCode)
+	assistant, err := catalog.Get(domain.AgentModeAssistant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,9 +181,9 @@ func TestCodeModeWildcardToolsetsExposeAllTools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	specs := visibleToolSpecsForMode(code.ID, registry.SpecsForToolsets(code.Toolsets))
+	specs := visibleToolSpecsForMode(assistant.ID, registry.SpecsForToolsets(assistant.Toolsets))
 	if len(specs) != 4 {
-		t.Fatalf("code visible tools = %#v, want all registered tools", specs)
+		t.Fatalf("assistant visible tools = %#v, want all registered tools", specs)
 	}
 }
 
@@ -234,7 +239,11 @@ func TestDelegateTaskRejectsUnassociatedModeBeforeCreatingChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assistant.Subagents = []string{domain.AgentModeReview}
+	child, err := service.SaveAgentMode(ctx, domain.AgentModeDefinition{ID: "review_child", DisplayName: "Review child", Prompt: "Review one bounded task.", Mode: "subagent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant.Subagents = []string{child.ID}
 	if _, err := service.SaveAgentMode(ctx, assistant); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +251,7 @@ func TestDelegateTaskRejectsUnassociatedModeBeforeCreatingChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := service.delegateTaskToolNamed(ctx, json.RawMessage(`{"mode":"explore","prompt":"inspect"}`), domain.ToolExecutionContext{
+	result := service.delegateTaskToolNamed(ctx, json.RawMessage(`{"mode":"forged_child","prompt":"inspect"}`), domain.ToolExecutionContext{
 		SessionID: session.ID, AgentMode: domain.AgentModeAssistant,
 	}, "agent_delegate_task")
 	if result.OK || !strings.Contains(result.Error, "not associated") {
@@ -435,7 +444,7 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 		requestCount++
 		switch requestCount {
 		case 1:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_delegate","type":"function","function":{"name":"agent_delegate","arguments":"{\"mode\":\"plan\",\"prompt\":\"delegate demo\",\"title\":\"delegate demo\"}"}}]}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_delegate","type":"function","function":{"name":"agent_delegate","arguments":"{\"mode\":\"plan_child\",\"prompt\":\"delegate demo\",\"title\":\"delegate demo\"}"}}]}}]}`))
 		case 2:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"child done"}}]}`))
 		default:
@@ -450,7 +459,11 @@ func TestDelegateTaskCompletedRunIsNotMarkedCancelledByCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assistant.Subagents = []string{domain.AgentModePlan}
+	child, err := service.SaveAgentMode(ctx, domain.AgentModeDefinition{ID: "plan_child", DisplayName: "Plan child", Prompt: "Plan one bounded task.", Mode: "subagent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant.Subagents = []string{child.ID}
 	if _, err := service.SaveAgentMode(ctx, assistant); err != nil {
 		t.Fatal(err)
 	}

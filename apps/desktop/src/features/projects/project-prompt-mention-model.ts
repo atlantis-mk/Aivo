@@ -1,8 +1,13 @@
+import {
+  isStandaloneToolResource,
+  type ToolInjectionResourceKind,
+} from "./tool-injection-resource-model.ts";
+
 export type PromptMentionRange = { query: string; start: number };
 
 export type PromptMentionReference = {
   id: string;
-  kind: "project" | "skill" | "tool" | "extension" | "mcp";
+  kind: "project" | ToolInjectionResourceKind;
   rootPath?: string;
   token: string;
 };
@@ -17,7 +22,7 @@ export type PromptMentionItem = {
 };
 
 export type PromptMentionAction = {
-  action: "select-local";
+  action: "compact-context" | "select-local";
   detail: string;
   id: string;
   label: string;
@@ -38,6 +43,12 @@ const promptMentionGroupOrder: PromptMentionItem["type"][] = [
 ];
 
 const promptMentionActions: PromptMentionAction[] = [
+  {
+    action: "compact-context",
+    detail: "@compact · 默认 80% 自动触发",
+    id: "action:compact-context",
+    label: "压缩上下文",
+  },
   {
     action: "select-local",
     detail: "文件或文件夹",
@@ -83,10 +94,14 @@ export function groupPromptMentionItems(items: PromptMentionItem[]) {
 }
 
 export function isPromptMentionBuiltinTool(tool: {
+  category?: string;
   enabled: boolean;
+  name?: string;
   source: string;
+  sourceId?: string;
+  toolsets?: string[];
 }) {
-  return tool.enabled && tool.source === "builtin";
+  return tool.enabled && isStandaloneToolResource(tool);
 }
 
 export function promptMentionProjectItems(

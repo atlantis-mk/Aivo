@@ -3,15 +3,16 @@ import { Link } from "@tanstack/react-router";
 import {
   Add01Icon,
   HistoryIcon,
-  Plug01Icon,
-  Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Archive,
   Ellipsis,
+  FilePenLine,
   FileText,
   Pin,
+  Plug,
+  Settings,
 } from "lucide-react";
 
 import { AnimatedTitle } from "@/components/animated-title";
@@ -112,11 +113,16 @@ export function ProjectTopBar({
         data-app-no-drag
       >
         <ProjectTopBarIconButton aria-label="打开扩展" onClick={onOpenExtensions}>
-          <HugeiconsIcon icon={Plug01Icon} strokeWidth={1.8} />
+          <Plug />
+        </ProjectTopBarIconButton>
+        <ProjectTopBarIconButton asChild aria-label="管理提示词">
+          <Link to="/prompts">
+            <FilePenLine />
+          </Link>
         </ProjectTopBarIconButton>
         <ProjectTopBarIconButton asChild aria-label="打开设置">
           <Link to="/settings">
-            <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.8} />
+            <Settings />
           </Link>
         </ProjectTopBarIconButton>
       </div>

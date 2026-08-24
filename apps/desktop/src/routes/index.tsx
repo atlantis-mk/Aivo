@@ -2,6 +2,7 @@
 
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { SetupLoadingSkeleton } from '@/features/setup/setup-loading-skeleton'
+import { startupRouteFor } from '@/features/setup/setup-routing'
 import { useAppConfig } from '@/lib/app-config'
 
 export const Route = createFileRoute('/')({
@@ -9,11 +10,11 @@ export const Route = createFileRoute('/')({
 })
 
 function IndexRedirect() {
-  const { loading } = useAppConfig()
+  const { config, loading } = useAppConfig()
 
   if (loading) {
     return <SetupLoadingSkeleton />
   }
 
-  return <Navigate to="/setup" replace />
+  return <Navigate to={startupRouteFor(config)} replace />
 }

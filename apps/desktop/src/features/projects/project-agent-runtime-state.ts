@@ -32,7 +32,7 @@ export function useProjectAgentRuntimeState({
   ) => void;
 }) {
   const [agentModes, setAgentModes] = useState<AgentModeDefinition[]>([]);
-  const [agentMode, setAgentMode] = useState<AgentModeId>("code");
+  const [agentMode, setAgentMode] = useState<AgentModeId>("assistant");
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [todoItems, setTodoItems] = useState<TodoItem[]>([]);
   const [visibleTodoPlanItems, setVisibleTodoPlanItems] = useState<TodoItem[]>(
@@ -81,7 +81,7 @@ export function useProjectAgentRuntimeState({
       ((
         activeSession as
           (domain.Session & { agentMode?: AgentModeId }) | undefined
-      )?.agentMode as AgentModeId | undefined) || "code";
+      )?.agentMode as AgentModeId | undefined) || "assistant";
     setAgentMode(sessionMode);
   }, [activeSession]);
 

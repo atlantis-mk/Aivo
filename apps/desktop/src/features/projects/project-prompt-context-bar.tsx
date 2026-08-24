@@ -1,4 +1,4 @@
-import { GitBranch, Laptop } from "lucide-react";
+import { GitBranch } from "lucide-react";
 
 import { ProjectPicker } from "@/features/projects/project-picker-popover";
 import type { PromptComposerProps } from "@/features/projects/project-prompt-composer-types";
@@ -41,11 +41,6 @@ export function PromptContextBar({
           projectPath={projectPath}
           projects={projects}
         />
-
-        <div className="flex shrink-0 items-center gap-2 px-2.5 text-xs font-medium">
-          <Laptop aria-hidden="true" className="size-4" />
-          <span>本地</span>
-        </div>
 
         {branchLabel ? (
           <div

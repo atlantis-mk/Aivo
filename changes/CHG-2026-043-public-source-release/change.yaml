@@ -1,0 +1,36 @@
+id: "CHG-2026-043-public-source-release"
+title: "重建 Public 源码仓库并自动发布安装包"
+type: "governance"
+status: "Verified"
+spec_revision: "0.1.1-active"
+target_release: "v0.1.0"
+requirements:
+  - "NFR-RELEASE-001"
+tests:
+  - "CT-LICENSE-001"
+  - "CT-RELEASE-001"
+  - "CT-REPOSITORY-001"
+adrs: []
+context_refs:
+  - "docs/00-spec-index.md#Current baseline"
+  - "docs/02-scope-matrix.md#Platform scope"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/07-test-release-plan.md#Release gates"
+  - "docs/09-document-governance.md"
+  - "docs/release-quality.md"
+related_changes:
+  - "BUG-2026-013-cross-platform-release-blockers"
+affected_surfaces:
+  - "source licensing and repository metadata"
+  - "GitHub repository identity and history"
+  - "GitHub Actions release packaging"
+  - "Cloudflare R2 and GitHub Release assets"
+affected_formats:
+  - "PolyForm-Noncommercial-1.0.0"
+  - "release asset manifest"
+affected_versions:
+  - "public source repository"
+  - "desktop release artifacts"
+security_impact: "The Public repository exposes the selected source snapshot and replaces repository-scoped security configuration. Release publication uses repository secrets without printing them, refuses conflicting immutable R2 objects, and restores GitHub secret scanning, push protection, and private vulnerability reporting."
+migration: "The private atlantis-mk/Aivo repository is backed up outside the workspace, deleted, and recreated at the same URL as a Public repository with a new identity and a new root main history. Existing GitHub refs, Actions history, and repository-scoped settings are not migrated. Tagged releases publish immutable assets to an Aivo R2 prefix and GitHub Releases."
+supersedes: []

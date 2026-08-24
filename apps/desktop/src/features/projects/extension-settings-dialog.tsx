@@ -1,4 +1,5 @@
-import { Plug, TriangleAlert } from "lucide-react";
+import { useState } from "react";
+import { Plus, Plug, TriangleAlert } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -7,15 +8,25 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs } from "@/components/ui/tabs";
-import { Dialog } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ExtensionInstallDialog } from "@/features/projects/extension-install-dialog";
 import { AddToolDialog } from "@/features/projects/extension-settings-add-dialog";
 import type { ExtensionSettingsSection } from "@/features/projects/extension-settings-model";
 import { useExtensionSettingsState } from "@/features/projects/extension-settings-state";
 import { ExtensionSettingsTabPanels } from "@/features/projects/extension-settings-tab-panels";
 import { ExtensionSettingsToolbar } from "@/features/projects/extension-settings-toolbar";
-import { AgentModeEditorDialog } from "@/features/projects/extension-settings-agent-modes";
+import {
+  AgentModeEditorDialog,
+  AgentModeManagementGroup,
+} from "@/features/projects/extension-settings-agent-modes";
 import { cn } from "@/lib/utils";
 
 type ExtensionSettingsDialogProps = {
@@ -63,6 +74,7 @@ export function ExtensionSettingsContent({
   surface = "page",
   workspaceRoot,
 }: ExtensionSettingsContentProps) {
+  const [agentModeManagerOpen, setAgentModeManagerOpen] = useState(false);
   const {
     agentModeEditorOpen,
     agentModes,
@@ -95,7 +107,6 @@ export function ExtensionSettingsContent({
     skills,
     toggleSkillEnabled,
     toggleTool,
-    visibleAgentModes,
     visibleAllTools,
     visibleExtensions,
     visibleServers,
@@ -133,6 +144,37 @@ export function ExtensionSettingsContent({
           providerCatalog={providerCatalog}
         />
       </Dialog>
+      <Dialog open={agentModeManagerOpen} onOpenChange={setAgentModeManagerOpen}>
+        <DialogContent className="flex max-h-[min(80vh,720px)] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="flex-row items-center justify-between border-b px-5 py-4">
+            <DialogTitle>Agent 模式</DialogTitle>
+            <Button
+              aria-label="添加 Agent 模式"
+              onClick={() => {
+                setAgentModeManagerOpen(false);
+                editAgentMode(undefined);
+              }}
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
+              <Plus />
+            </Button>
+          </DialogHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="p-4">
+              <AgentModeManagementGroup
+                disabled={loading}
+                modes={agentModes}
+                onEdit={(mode) => {
+                  setAgentModeManagerOpen(false);
+                  editAgentMode(mode);
+                }}
+              />
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
       {surface === "dialog" ? (
         <SheetHeader className="border-b px-5 py-4">
           <SheetTitle className="flex items-center gap-2 text-base">
@@ -148,10 +190,10 @@ export function ExtensionSettingsContent({
         className="min-h-0 flex-1 gap-0"
       >
         <ExtensionSettingsToolbar
-          agentModeCount={agentModes.length}
           extensionCount={extensions.length}
           loading={loading}
           onAdd={openAddDialog}
+          onManageAgentModes={() => setAgentModeManagerOpen(true)}
           onQueryChange={setQuery}
           onReload={() => void reload()}
           query={query}
@@ -174,7 +216,6 @@ export function ExtensionSettingsContent({
         <ExtensionSettingsTabPanels
           activeToolSet={activeToolSet}
           loading={loading}
-          onEditAgentMode={editAgentMode}
           onDeleteSkill={deleteSkill}
           onIgnoreSkillCandidate={ignoreSkillCandidate}
           onImportSkillCandidate={importSkillCandidate}
@@ -184,7 +225,6 @@ export function ExtensionSettingsContent({
           query={query}
           sessionId={sessionId}
           visibleAllTools={visibleAllTools}
-          visibleAgentModes={visibleAgentModes}
           visibleExtensions={visibleExtensions}
           visibleServers={visibleServers}
           visibleSkillCandidates={visibleSkillCandidates}

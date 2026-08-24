@@ -101,7 +101,7 @@ function currentTimestamp() {
 function normalizePreviewConfig(config?: domain.AppConfig | null): PreviewAppConfig {
   return {
     initialized: false,
-    defaultInitialWorkspacePath: "~/Documents/Aivo Workspaces",
+    defaultInitialWorkspacePath: "~/Documents/Aivo-Workspaces",
     providers: { custom: {}, disabled: [] },
     ...(config ?? {}),
   } as unknown as PreviewAppConfig;

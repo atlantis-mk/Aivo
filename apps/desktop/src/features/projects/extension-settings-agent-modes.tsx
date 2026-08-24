@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Bot, ExternalLink, Pencil, RotateCcw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardAction,
@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { AgentSubagentSelect } from "@/features/agents/agent-subagent-select";
 import {
   agentModeModelsForProvider,
   agentModeSubagentCandidates,
@@ -220,6 +221,24 @@ export function AgentModeEditorDialog({
   const deleteLabel = mode?.builtIn ? "重置" : "删除";
   const canDelete = Boolean(mode && (!mode.builtIn || mode.overridden));
 
+  if (!mode) {
+    return (
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>添加 Agent 模式</DialogTitle>
+          <DialogDescription>
+            新建 Agent 需要同时创建并校验对应提示词，请从提示词管理页开始。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button asChild>
+            <Link to="/prompts"><ExternalLink />前往提示词管理</Link>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    );
+  }
+
   return (
     <DialogContent className="flex h-[min(90vh,50rem)] flex-col overflow-hidden sm:max-w-3xl">
       <DialogHeader>
@@ -257,14 +276,22 @@ export function AgentModeEditorDialog({
             />
           </Field>
 
-          <Field label="系统提示词">
-            <Textarea
-              className="min-h-40 resize-y"
-              onChange={(event) => updateDraft(setDraft, "prompt", event.target.value)}
-              placeholder="定义 Agent 的工作方式和边界"
-              value={draft.prompt}
-            />
-          </Field>
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Label>提示词文档</Label>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  {mode.promptId || `agent.${mode.id}`}
+                </p>
+              </div>
+              <Button asChild size="sm" variant="outline">
+                <Link to="/prompts"><ExternalLink />管理提示词</Link>
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              正文、校验诊断和生效版本由 Core 提示词目录统一管理。
+            </p>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="角色">
@@ -319,59 +346,18 @@ export function AgentModeEditorDialog({
               <div>
                 <Label>关联子 Agent</Label>
                 <p className="mt-1 text-xs text-muted-foreground" id="agent-subagents-help">
-                  模型会按任务自行判断是否委派，只能调用这里选中的子 Agent。
+                  最多可选 16 个；模型会按任务自行判断是否委派，只能调用这里选中的子 Agent。
                 </p>
               </div>
-              <ScrollArea
-                aria-describedby="agent-subagents-help"
-                className="h-44 rounded-lg border bg-muted/20"
-              >
-                {subagentCandidates.length ? (
-                  <div className="grid gap-1 p-2 pr-3">
-                    {subagentCandidates.map((candidate, index) => {
-                      const checkboxId = `agent-subagent-${index}`;
-                      return (
-                        <label
-                          className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted"
-                          htmlFor={checkboxId}
-                          key={candidate.id}
-                        >
-                          <Checkbox
-                            checked={draft.subagents.includes(candidate.id)}
-                            className="mt-0.5"
-                            disabled={disabled}
-                            id={checkboxId}
-                            onCheckedChange={(checked) =>
-                              setDraft((current) => ({
-                                ...current,
-                                subagents:
-                                  checked === true
-                                    ? [...current.subagents, candidate.id]
-                                    : current.subagents.filter((id) => id !== candidate.id),
-                              }))
-                            }
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2 text-sm font-medium">
-                              <span className="truncate">{candidate.displayName}</span>
-                              <span className="shrink-0 font-mono text-[11px] font-normal text-muted-foreground">
-                                {candidate.id}
-                              </span>
-                            </span>
-                            <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
-                              {candidate.description || candidate.prompt}
-                            </span>
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                    暂无可关联的子 Agent 模式
-                  </div>
-                )}
-              </ScrollArea>
+              <AgentSubagentSelect
+                candidates={subagentCandidates}
+                describedBy="agent-subagents-help"
+                disabled={disabled}
+                onChange={(subagents) =>
+                  setDraft((current) => ({ ...current, subagents }))
+                }
+                value={draft.subagents}
+              />
             </div>
           ) : (
             <p className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">

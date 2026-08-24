@@ -49,3 +49,11 @@ Documentation and governance checks:
 pnpm docs:check
 pnpm scripts:test
 ```
+
+## 许可证
+
+当前版本中由授权方拥有或有权许可的 Aivo 源代码按 [PolyForm Noncommercial License 1.0.0](LICENSE) 提供，SPDX 标识为 `PolyForm-Noncommercial-1.0.0`，仅允许该许可证定义的非商业用途。本项目是 source-available 软件，不是 OSI 认可的开源软件。
+
+商业使用需要另行取得书面授权，联系 `atlantis-mk <atlanxg@gmail.com>`。完整权利边界见 [LICENSING.md](LICENSING.md)，商业授权入口见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)，贡献规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+Required Notice: Copyright 2026 atlantis-mk <atlanxg@gmail.com>

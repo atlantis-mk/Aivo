@@ -40,7 +40,8 @@ type AgentModeDefinition struct {
 	ID                   string         `json:"id"`
 	DisplayName          string         `json:"displayName"`
 	Description          string         `json:"description"`
-	Prompt               string         `json:"prompt"`
+	PromptID             string         `json:"promptId"`
+	Prompt               string         `json:"prompt,omitempty"`
 	Toolsets             []string       `json:"-"`
 	DefaultPermissions   []string       `json:"defaultPermissions,omitempty"`
 	FileWriteAccess      bool           `json:"fileWriteAccess"`

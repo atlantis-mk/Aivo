@@ -2,6 +2,7 @@ export {
   hasRunningTurn,
   turnsFromEvents,
 } from "./project-conversation-event-turns";
+export { mergeSystemNoteEvent } from "./project-conversation-system-notes";
 export {
   mergeRuntimeTurn,
   mergeSingleToolCall,
