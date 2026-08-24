@@ -4,13 +4,22 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<SemVer> tag to publish or resume
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: aivo-release-${{ github.ref_name }}
+  group: aivo-release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   verify:
@@ -24,6 +33,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
       - uses: pnpm/action-setup@v6
         with:
           version: 11.1.1
@@ -38,11 +48,11 @@ jobs:
           cache-dependency-path: core/go.sum
       - name: Verify tag, source version, and release record
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           node scripts/release-publication.mjs validate \
             --root "$GITHUB_WORKSPACE" \
             --version "$version" \
-            --tag "$GITHUB_REF_NAME"
+            --tag "$RELEASE_TAG"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Resolve documentation archive baseline
@@ -96,6 +106,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
       - uses: pnpm/action-setup@v6
         with:
           version: 11.1.1
@@ -144,7 +155,7 @@ jobs:
         run: pnpm smoke:release
       - name: Normalize release artifacts
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           node scripts/release-publication.mjs collect \
             --input "$GITHUB_WORKSPACE/build/desktop" \
             --output "$RUNNER_TEMP/aivo-release" \
@@ -186,6 +197,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -203,8 +215,8 @@ jobs:
           : "${R2_BUCKET:?Missing R2_BUCKET variable}"
           : "${R2_PUBLIC_BASE_URL:?Missing R2_PUBLIC_BASE_URL variable}"
           prefix="${R2_PREFIX:-aivo}"
-          version="${GITHUB_REF_NAME#v}"
-          published_at="$(git show -s --format=%cI "$GITHUB_SHA")"
+          version="${RELEASE_TAG#v}"
+          published_at="$(git show -s --format=%cI "$RELEASE_TAG")"
           node scripts/release-publication.mjs plan \
             --input "$RUNNER_TEMP/aivo-release" \
             --output "$RUNNER_TEMP/aivo-publication" \
@@ -312,6 +324,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v8
         with:
           pattern: aivo-release-*
@@ -320,7 +333,7 @@ jobs:
       - name: Create or resume release and upload digest-bound assets
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
+          tag="$RELEASE_TAG"
           version="${tag#v}"
           asset_directory="$RUNNER_TEMP/aivo-github-release"
           mapfile -t assets < <(find "$asset_directory" -maxdepth 1 -type f \
@@ -343,7 +356,8 @@ jobs:
             fi
             gh release create "${arguments[@]}"
           fi
-          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
+          release_id="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json databaseId --jq '.databaseId')"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
           for asset_path in "${assets[@]}"; do
             asset_name="$(basename "$asset_path")"
             local_digest="sha256:$(sha256sum "$asset_path" | awk '{print $1}')"
@@ -368,6 +382,6 @@ jobs:
           if [[ "$(jq -r '.draft' <<< "$release_json")" == "true" ]]; then
             gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
           fi
-          final_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")"
+          final_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
           [[ "$(jq '[.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length' <<< "$final_json")" == "7" ]]
           jq -e '.draft == false' <<< "$final_json" >/dev/null

@@ -126,6 +126,10 @@ test('CT-RELEASE-001 keeps R2-first GitHub publication resumable and digest-boun
 
   assert.match(workflow, /needs: \[build, publish_r2\]/)
   assert.match(workflow, /--notes-file "releases\/\$\{tag\}\.md"/)
+  assert.match(workflow, /workflow_dispatch:/)
+  assert.match(workflow, /RELEASE_TAG: \$\{\{ inputs\.release_tag \|\| github\.ref_name \}\}/)
+  assert.match(workflow, /--json databaseId --jq '\.databaseId'/)
+  assert.match(workflow, /releases\/\$\{release_id\}/)
   assert.match(workflow, /Refusing to reuse GitHub asset without digest evidence/)
   assert.match(workflow, /if \[\[ "\$\(jq -r '\.draft'/)
   assert.ok(workflow.indexOf('Publish stable manifest last') < workflow.indexOf('Publish GitHub Release assets'))
