@@ -1,9 +1,9 @@
 id: "CHG-2026-044-desktop-auto-update"
 title: "Add trusted desktop automatic updates"
 type: "feature"
-status: "Implementing"
+status: "Verified"
 spec_revision: "0.1.1-active"
-target_release: null
+target_release: "v0.1.1"
 requirements:
   - "REQ-UPDATE-001"
   - "NFR-RELEASE-001"

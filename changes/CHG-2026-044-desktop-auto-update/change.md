@@ -27,7 +27,7 @@ The renderer MUST NOT provide an update URL, file path, digest, version, or comm
 | UPDATE-01 | REQ-UPDATE-001 | Accepted Requirement, ADR, security, release, and Traceability contract | AT-UPDATE-001 | Complete |
 | UPDATE-02 | REQ-UPDATE-001 | Main/preload update coordinator with fixed-source validation, download, and handoff | AT-UPDATE-001, CT-SECURITY-001, CT-RELIABILITY-001 | Complete |
 | UPDATE-03 | REQ-UPDATE-001, NFR-UI-001 | Responsive Settings state/action surface and startup notification | AT-UPDATE-001, AT-UI-001 | Complete |
-| UPDATE-04 | NFR-RELEASE-001 | Focused tests and applicable full gates | AT-UPDATE-001 | In progress: target-OS handoff evidence pending |
+| UPDATE-04 | NFR-RELEASE-001 | Focused tests and applicable full gates | AT-UPDATE-001 | Complete |
 
 ## Acceptance and evidence
 
@@ -48,7 +48,8 @@ Implementation evidence on 2026-08-25:
 - `pnpm smoke:release`: passed packaged-core startup and `/health` readiness.
 - Responsive ready-state evidence: `evidence/desktop-update-ready-wide.png` at 1440×900 and `evidence/desktop-update-ready-narrow.png` at 390×844. The narrow pass also found and fixed a footer overflow before release.
 - Native release acceptance now requires the OS to mount and inspect the DMG plus verify the ZIP, silently install the NSIS package into a temporary directory, or extract and inspect the AppImage on the matching GitHub-hosted runner.
-- Pending before `Verified`: one successful four-target native release-quality run. The packages remain unsigned and are presented with explicit trust warnings rather than signing/notarization claims.
+- [Release quality run 32773146961](https://github.com/atlantis-mk/Aivo/actions/runs/32773146961) passed on macOS Apple Silicon, macOS Intel, Windows x64, and Linux x64. Each native runner completed packaging, packaged-core smoke, installer handoff verification, and artifact upload.
+- The accepted packages remain unsigned and are presented with explicit trust warnings rather than signing/notarization claims.
 
 ## Security and data lifecycle
 
