@@ -9,6 +9,7 @@ import {
   createPublication,
   validateReleaseSource,
 } from './release-publication.mjs'
+import { macAppCandidates } from './smoke-release.mjs'
 
 async function temporaryDirectory(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivo-release-test-'))
@@ -104,4 +105,15 @@ test('CT-RELEASE-001 keeps packaging names safe and disables implicit publicatio
   for (const name of ['package', 'package:mac', 'package:win', 'package:linux']) {
     assert.match(desktop.scripts?.[name] ?? '', /--publish never(?:\s|$)/, `${name} may publish implicitly`)
   }
+})
+
+test('CT-RELEASE-001 smokes native macOS output directories', () => {
+  assert.deepEqual(
+    macAppCandidates('/build/desktop'),
+    [
+      path.join('/build/desktop', 'mac', 'Aivo.app'),
+      path.join('/build/desktop', 'mac-arm64', 'Aivo.app'),
+      path.join('/build/desktop', 'mac-x64', 'Aivo.app'),
+    ],
+  )
 })

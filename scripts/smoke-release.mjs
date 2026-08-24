@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
 const rootDir = process.cwd()
 const coreExecutable = process.platform === 'win32' ? 'aivo-core.exe' : 'aivo-core'
@@ -10,6 +11,12 @@ const corePath = path.join(rootDir, 'build', 'aivo-core', coreExecutable)
 const desktopOutputDir = path.join(rootDir, 'build', 'desktop')
 const expectInstallers = process.env.AIVO_EXPECT_INSTALLERS === '1'
 let healthUrl = ''
+
+export function macAppCandidates(outputDirectory) {
+  return ['mac', 'mac-arm64', 'mac-x64'].map((directory) =>
+    path.join(outputDirectory, directory, 'Aivo.app'),
+  )
+}
 
 function assertFile(filePath, label) {
   if (!fs.existsSync(filePath)) {
@@ -84,20 +91,16 @@ async function main() {
   assertFile(path.join(rootDir, 'apps', 'desktop', 'electron', 'preload.cjs'), 'electron preload')
   assertFile(corePath, 'core binary')
 
-  const macResourceCore = path.join(
-    desktopOutputDir,
-    'mac',
-    'Aivo.app',
-    'Contents',
-    'Resources',
-    'aivo-core',
-    coreExecutable,
+  const macApps = macAppCandidates(desktopOutputDir)
+  const macResourceCores = macApps.map((app) =>
+    path.join(app, 'Contents', 'Resources', 'aivo-core', coreExecutable),
   )
   const linuxResourceCore = path.join(desktopOutputDir, 'linux-unpacked', 'resources', 'aivo-core', coreExecutable)
   const winResourceCore = path.join(desktopOutputDir, 'win-unpacked', 'resources', 'aivo-core', coreExecutable)
 
-  if (process.platform === 'darwin' && fs.existsSync(path.join(desktopOutputDir, 'mac', 'Aivo.app'))) {
-    assertFile(macResourceCore, 'packaged mac core binary')
+  const macAppIndex = macApps.findIndex((candidate) => fs.existsSync(candidate))
+  if (process.platform === 'darwin' && macAppIndex >= 0) {
+    assertFile(macResourceCores[macAppIndex], 'packaged mac core binary')
     assertArtifact((entry) => entry.endsWith('.dmg'), 'mac DMG artifact')
     assertArtifact((entry) => entry.endsWith('-mac.zip'), 'mac zip artifact')
   } else if (process.platform === 'linux' && fs.existsSync(path.join(desktopOutputDir, 'linux-unpacked'))) {
@@ -107,7 +110,7 @@ async function main() {
     assertFile(winResourceCore, 'packaged windows core binary')
     assertArtifact((entry) => entry.endsWith('.exe'), 'windows installer artifact')
   } else if (expectInstallers) {
-    assertAnyFile([macResourceCore, linuxResourceCore, winResourceCore], 'packaged app core binary')
+    assertAnyFile([...macResourceCores, linuxResourceCore, winResourceCore], 'packaged app core binary')
   }
 
   const port = await freeLoopbackPort()
@@ -134,7 +137,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
-})
+if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? '')) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  })
+}
