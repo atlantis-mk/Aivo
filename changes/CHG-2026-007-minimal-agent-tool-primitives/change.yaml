@@ -1,0 +1,46 @@
+id: "CHG-2026-007-minimal-agent-tool-primitives"
+title: "Reduce Agent tools to four primitives with extensible activation"
+type: "security"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-TOOL-001"
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-TOOL-001"
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/04-architecture.md"
+  - "docs/06-security-privacy.md"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes: []
+affected_surfaces:
+  - "Agent-visible tool contract"
+  - "Go tool registry, resolver, and execution runtime"
+  - "extension discovery, trust, activation, and lifecycle"
+  - "MCP, plugin, skill, automation, and subagent integrations"
+  - "extension Web Service UI and renderer isolation"
+  - "persisted tool-call history and contextual tool detail rendering"
+affected_formats:
+  - "tool JSON schemas and result envelope"
+  - "extension manifest v1"
+  - "extension protocol v1"
+  - "tool catalog, registration identity, and snapshot"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Primitive tools and extensions use the Aivo process user's authority; process containment moves to an explicit external Execution Environment while extension trust, renderer isolation, secret ownership, validation, bounds, cancellation, and atomic mutation remain enforced"
+migration: "Replace the default built-in registry with read, bash, edit, and write; remove apply_patch directly; move or remove other built-ins; preserve historical tool-call rendering without advertising legacy execution aliases"
+supersedes: []

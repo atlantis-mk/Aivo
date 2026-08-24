@@ -1,0 +1,25 @@
+id: "CHG-2026-001-document-governance"
+title: "Adopt AI document governance"
+type: "governance"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements: []
+tests: []
+adrs: []
+context_refs:
+  - "docs/09-document-governance.md"
+  - "openspec/changes/aivo-v2/README.md"
+related_changes: []
+affected_surfaces:
+  - "documentation"
+  - "repository automation"
+  - "CI"
+affected_formats:
+  - "Work YAML"
+  - "archive manifest v1"
+affected_versions:
+  - "0.1.0-active specification"
+security_impact: "Adds tamper detection for sealed Work; no product secret flow changes"
+migration: "Preserve openspec/changes/aivo-v2 as preparation evidence and establish current primary specifications"
+supersedes: []

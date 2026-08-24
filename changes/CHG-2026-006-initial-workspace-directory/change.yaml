@@ -1,0 +1,40 @@
+id: "CHG-2026-006-initial-workspace-directory"
+title: "Configure one initial workspace for unscoped conversations"
+type: "migration"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-PROJECT-002"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-PROJECT-002"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0001"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-PROJECT-002 Initial workspace for unscoped conversations"
+  - "docs/05-data-model.md"
+  - "docs/06-security-privacy.md"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-002-desktop-hig-theme"
+affected_surfaces:
+  - "desktop initialization flow"
+  - "unscoped coding conversation creation"
+  - "application configuration persistence"
+  - "local RPC transport"
+affected_formats:
+  - "AppConfig JSON contract"
+  - "CompleteInitialization RPC input"
+  - "SQLite schema v2"
+affected_versions:
+  - "0.0.0-development"
+  - "SQLite schema v1 to v2"
+security_impact: "Suggests a local default, persists the user-confirmed private filesystem path, and uses it as the bounded workspace root for unscoped conversations"
+migration: "Back up schema v1, add app_config.initial_workspace_path, and advance the explicit schema version to 2"
+supersedes: []

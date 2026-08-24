@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aivo UI Test</title>
+    <link rel="stylesheet" href="/ui/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Aivo extension view</p>
+          <h1>界面扩展测试台</h1>
+          <p class="lede">验证工具详情、隔离页面、同源数据和受限桥接。</p>
+        </div>
+        <span class="status" id="bridge-status">正在连接</span>
+      </header>
+
+      <section class="message-card" aria-labelledby="message-title">
+        <p class="section-label" id="message-title">工具输入</p>
+        <p class="message" id="message">正在读取本次工具调用…</p>
+      </section>
+
+      <section class="metrics" aria-label="测试状态">
+        <article>
+          <span>Surface</span>
+          <strong id="surface">—</strong>
+        </article>
+        <article>
+          <span>交互次数</span>
+          <strong id="action-count">0</strong>
+        </article>
+        <article>
+          <span>Locale</span>
+          <strong id="locale">—</strong>
+        </article>
+      </section>
+
+      <section class="details" aria-labelledby="details-title">
+        <div class="section-heading">
+          <p class="section-label" id="details-title">Host 上下文</p>
+          <button class="quiet-button" id="refresh" type="button">刷新</button>
+        </div>
+        <dl>
+          <div><dt>工具</dt><dd id="tool-name">—</dd></div>
+          <div><dt>Operation</dt><dd id="operation-id">—</dd></div>
+          <div><dt>Session</dt><dd id="session-id">—</dd></div>
+          <div><dt>接收时间</dt><dd id="received-at">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="interaction" aria-labelledby="interaction-title">
+        <label id="interaction-title" for="interaction-label">测试一次 View action</label>
+        <div class="input-row">
+          <input id="interaction-label" maxlength="120" value="按钮交互测试" />
+          <button class="primary-button" id="record" type="button">记录交互</button>
+        </div>
+        <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
+      </section>
+
+      <footer>
+        <button class="quiet-button" id="notify" type="button">发送系统通知</button>
+        <button class="quiet-button" id="close" type="button">关闭详情</button>
+      </footer>
+    </main>
+    <script src="/ui/app.js" type="module"></script>
+  </body>
+</html>

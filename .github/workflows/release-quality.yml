@@ -1,0 +1,100 @@
+name: Release quality
+
+on:
+  workflow_dispatch:
+
+jobs:
+  desktop-package:
+    name: Package ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            package_script: package:mac
+          - name: Windows
+            os: windows-latest
+            package_script: package:win
+          - name: Linux
+            os: ubuntu-latest
+            package_script: package:linux
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libarchive-tools
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check documentation governance
+        run: npm run docs:check
+        env:
+          AIVO_ARCHIVE_BASE_REF: HEAD^
+
+      - name: Test repository scripts
+        run: npm run scripts:test
+
+      - name: Test core
+        run: npm run test:core
+
+      - name: Lint desktop
+        run: npm run lint
+
+      - name: Build desktop
+        run: npm run build
+
+      - name: Package desktop
+        run: npm run ${{ matrix.package_script }}
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Smoke packaged release
+        run: npm run smoke:release
+        env:
+          AIVO_EXPECT_INSTALLERS: "1"
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aivo-${{ matrix.name }}-${{ github.sha }}
+          path: |
+            build/desktop/*.dmg
+            build/desktop/*.zip
+            build/desktop/*.exe
+            build/desktop/*.AppImage
+            build/desktop/*.blockmap
+          if-no-files-found: error

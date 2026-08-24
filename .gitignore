@@ -1,0 +1,7 @@
+node_modules/
+dist/
+build/*
+!build/.gitkeep
+.DS_Store
+*.log
+coverage/

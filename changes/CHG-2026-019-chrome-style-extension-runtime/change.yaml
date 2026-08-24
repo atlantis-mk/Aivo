@@ -1,0 +1,41 @@
+id: "CHG-2026-019-chrome-style-extension-runtime"
+title: "Add Chrome-style extension runtime messaging"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-003"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-EXTENSION-003"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0006"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-003 Chrome-style extension runtime messaging"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-016-extension-tool-detail-views"
+affected_surfaces:
+  - "isolated extension Web views"
+  - "supervised extension service runtime"
+affected_formats:
+  - "Aivo extension Manifest v2 permissions"
+  - "extension preload runtime messaging bridge"
+  - "well-known extension service messaging endpoints"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Adds a Host-brokered same-extension message and streaming boundary; only trusted enabled Manifest v2 services with runtime.messaging permission receive bounded payloads, while backend endpoints and bearer credentials remain outside extension Web content"
+migration: "No persistence migration; all extension packages and built-ins must use Manifest/API v2, and v1 packages are rejected without automatic conversion"
+supersedes: []

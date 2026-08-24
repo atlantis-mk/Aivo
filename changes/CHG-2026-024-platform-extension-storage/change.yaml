@@ -1,0 +1,37 @@
+id: "CHG-2026-024-platform-extension-storage"
+title: "Move managed extensions into platform application data"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-004"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-EXTENSION-004"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0009"
+  - "ADR-0010"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-004 Visual local extension installation"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-023-managed-extension-packages"
+affected_surfaces:
+  - "Core managed extension package storage"
+  - "installed extension startup migration"
+affected_formats:
+  - "platform application-data extension directory layout"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Moves managed packages out of the visible legacy home-directory folder while preserving private permissions, read-only publication, integrity checks, and exact deletion scope"
+migration: "Verified packages beneath the legacy ~/.aivo/extensions root are copied into the platform application-data root, persisted, then removed from the legacy root; failures retain a safe recoverable package"
+supersedes: []

@@ -1,0 +1,44 @@
+id: "CHG-2026-020-visual-extension-installation"
+title: "Add visual local extension installation"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-EXTENSION-004"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-EXTENSION-004"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0007"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-004 Visual local extension installation"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-019-chrome-style-extension-runtime"
+affected_surfaces:
+  - "desktop extension management page"
+  - "native directory picker and preload bridge"
+  - "extension supervisor startup restoration"
+affected_formats:
+  - "extension installation preview/control RPCs"
+  - "SQLite schema v3 extension_installs table"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Adds explicit native user trust for executable local extension packages; models remain unable to install or trust, and restart restoration requires the persisted confirmed integrity to match the selected source tree"
+migration: "SQLite schema v2 to v3 adds extension_installs after a verified backup; rollback to a v2 binary leaves the v3 database unsupported and requires restoring the v2 backup"
+supersedes: []

@@ -1,0 +1,10 @@
+{
+  "name": "@aivo/example-ui-test-extension",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "register": "node register.mjs",
+    "test": "node --test server.test.mjs"
+  }
+}

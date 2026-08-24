@@ -1,0 +1,35 @@
+id: "CHG-2026-005-tool-activity-inspector"
+title: "Add a contextual tool activity inspector"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-TOOL-002"
+  - "NFR-UI-001"
+  - "NFR-UI-002"
+tests:
+  - "AT-TOOL-002"
+adrs: []
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-TOOL-002 Contextual tool activity inspector"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/03-functional-requirements.md#NFR-UI-002 Desktop visual scale and theme"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-002-desktop-hig-theme"
+  - "CHG-2026-003-sidebarless-chat-workspace"
+  - "CHG-2026-004-chat-canvas-only-shell"
+affected_surfaces:
+  - "desktop conversation tool-call summaries"
+  - "contextual right-side tool activity inspector"
+affected_formats:
+  - "renderer React composition"
+  - "desktop responsive layout classes"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "None; the inspector renders existing safe renderer tool-call data without new privileged access"
+migration: "none"
+supersedes: []

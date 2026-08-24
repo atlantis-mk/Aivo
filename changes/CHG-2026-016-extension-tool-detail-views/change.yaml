@@ -1,0 +1,47 @@
+id: "CHG-2026-016-extension-tool-detail-views"
+title: "Embed extension tool pages in the contextual inspector"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-TOOL-002"
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-TOOL-002"
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0005"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-TOOL-002 Contextual tool activity inspector"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-005-tool-activity-inspector"
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+affected_surfaces:
+  - "contextual right-side tool activity inspector"
+  - "Electron isolated extension Web views"
+  - "persisted safe tool-call detail metadata"
+affected_formats:
+  - "Host-generated extension view reference"
+  - "desktop preload IPC for embedded view lifecycle and bounds"
+  - "extension preload bridge contextChanged event"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Reuses the ADR-0002 isolated extension Web boundary inside the main window; same-identity calls reuse one WebContents while Electron main owns a bounded mount-scoped revisioned context, and extension content remains sandboxed without Node, privileged preload access, ambient credentials, or unrestricted navigation"
+migration: "No schema migration; new bounded view references are optional metadata and historical calls without them retain native detail rendering"
+supersedes: []

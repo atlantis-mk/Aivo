@@ -1,0 +1,37 @@
+id: "CHG-2026-028-remove-agent-mode-toolsets"
+title: "Remove toolsets from managed Agent-mode data"
+type: "migration"
+status: "Verified"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-AGENT-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-AGENT-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0014"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-AGENT-001 Dynamic Agent mode management"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+  - "docs/runtime-configuration.md"
+related_changes:
+  - "CHG-2026-027-dynamic-agent-modes"
+affected_surfaces:
+  - "Extensions and MCP Agent-mode list and editor"
+  - "Core Agent-mode management RPCs and runtime composition"
+  - "SQLite Agent-mode definition persistence"
+affected_formats:
+  - "SQLite schema v7 agent_mode_definitions payload"
+  - "typed local Core Agent-mode management DTOs"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Removes user-managed capability-set data from durable definitions and management RPCs; code and project runtime policy remain authoritative"
+migration: "SQLite schema v6 to v7 creates a verified v6 backup and removes toolsets from every persisted Agent-mode definition payload"
+supersedes: []

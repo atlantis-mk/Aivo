@@ -1,0 +1,40 @@
+id: "CHG-2026-042-context-compaction"
+title: "Add provider-aware session context compaction"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-WORKSPACE-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-WORKSPACE-001"
+  - "AT-UI-001"
+adrs: []
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-WORKSPACE-001 Sidebarless chat workspace"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/04-architecture.md#Go core"
+  - "docs/05-data-model.md#Current entity groups"
+  - "docs/06-security-privacy.md#Data protection"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-026-composer-resource-mentions"
+affected_surfaces:
+  - "Core session context assembly and compaction orchestration"
+  - "persisted session summary and system-note events"
+  - "desktop composer mention actions"
+affected_formats:
+  - "existing CompactSessionContext local RPC"
+  - "additive context_compacted system-note payload fields"
+  - "project runtime compaction configuration"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Summarization sends only the bounded model-visible conversation range to the configured auxiliary or active Provider; no credential, raw Provider response, hidden event, or new remote telemetry is introduced"
+migration: "none; existing summary/event rows and optional runtime compaction settings are reused"
+supersedes: []

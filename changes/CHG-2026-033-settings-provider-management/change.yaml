@@ -1,0 +1,35 @@
+id: "CHG-2026-033-settings-provider-management"
+title: "Manage model providers from desktop settings"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-PROVIDER-001"
+  - "NFR-SECURITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "CT-SECURITY-001"
+  - "AT-UI-001"
+adrs: []
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001 Provider configuration and health"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/provider-backend.md"
+  - "docs/06-security-privacy.md#Secret ownership"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes: []
+affected_surfaces:
+  - "desktop settings route"
+  - "shared provider connection flow"
+  - "provider desktop service wrapper"
+affected_formats:
+  - "existing GetProviderCatalog, ConnectProvider, and DeleteProvider local RPCs"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Reuses the existing one-time provider credential write boundary and reference-only catalog output; settings never receives persisted or returned plaintext credentials"
+migration: "none"
+supersedes: []

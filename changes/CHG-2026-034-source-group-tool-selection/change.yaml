@@ -1,0 +1,48 @@
+id: "CHG-2026-034-source-group-tool-selection"
+title: "Select and inject MCP and extension tools by source group"
+type: "feature"
+status: "Implementing"
+spec_revision: "0.1.0-active"
+target_release: null
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+adrs:
+  - "ADR-0018"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/08-traceability.md"
+related_changes:
+  - "CHG-2026-017-conversational-mcp-registration"
+  - "CHG-2026-030-replaceable-session-tool-selection"
+  - "CHG-2026-035-mcp-description-generation"
+  - "CHG-2026-036-visible-precall-tool-selection"
+  - "CHG-2026-037-intent-scoped-tool-injection"
+affected_surfaces:
+  - "MCP creation and settings"
+  - "Host auxiliary tool-group selection"
+  - "session automatic tool-set expansion"
+  - "Provider tool declarations and Tool Snapshots"
+  - "desktop four-category resource management and visible pre-call summary"
+affected_formats:
+  - "MCP source description"
+  - "Host auxiliary typed source-ID prompt and strict JSON response"
+  - "Provider namespace/function tool declarations"
+  - "typed host_tool_selection resource summaries"
+affected_versions:
+  - "0.0.0-development"
+security_impact: "Keeps source-group selection non-authoritative; Host revalidates source readiness and every concrete member before snapshot assembly, and per-tool permission checks remain unchanged"
+migration: "No schema migration because MCP description already persists; omitted and existing blank descriptions remain empty and eligible for automatic group selection"
+supersedes: []
