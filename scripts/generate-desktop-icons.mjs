@@ -7,22 +7,15 @@ import zlib from 'node:zlib'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(scriptDir, '..')
-const iconDir = path.join(rootDir, 'apps', 'desktop', 'build')
+const desktopDir = path.join(rootDir, 'apps', 'desktop')
+const sourceIconPath = path.join(desktopDir, 'assets', 'app-icon.png')
+const iconDir = path.join(desktopDir, 'build')
 const iconsetDir = path.join(iconDir, 'icon.iconset')
+const faviconPath = path.join(desktopDir, 'public', 'favicon.png')
 const baseSize = 1024
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 fs.mkdirSync(iconDir, { recursive: true })
-
-function pngChunk(type, data) {
-  const typeBuffer = Buffer.from(type)
-  const crcInput = Buffer.concat([typeBuffer, data])
-  const chunk = Buffer.alloc(12 + data.length)
-  chunk.writeUInt32BE(data.length, 0)
-  typeBuffer.copy(chunk, 4)
-  data.copy(chunk, 8)
-  chunk.writeUInt32BE(crc32(crcInput), 8 + data.length)
-  return chunk
-}
 
 function crc32(buffer) {
   let crc = 0xffffffff
@@ -33,6 +26,17 @@ function crc32(buffer) {
     }
   }
   return (crc ^ 0xffffffff) >>> 0
+}
+
+function pngChunk(type, data) {
+  const typeBuffer = Buffer.from(type)
+  const crcInput = Buffer.concat([typeBuffer, data])
+  const chunk = Buffer.alloc(12 + data.length)
+  chunk.writeUInt32BE(data.length, 0)
+  typeBuffer.copy(chunk, 4)
+  data.copy(chunk, 8)
+  chunk.writeUInt32BE(crc32(crcInput), 8 + data.length)
+  return chunk
 }
 
 function encodePng(width, height, rgba) {
@@ -51,116 +55,158 @@ function encodePng(width, height, rgba) {
   ihdr[11] = 0
   ihdr[12] = 0
   return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngSignature,
     pngChunk('IHDR', ihdr),
     pngChunk('IDAT', zlib.deflateSync(rows, { level: 9 })),
     pngChunk('IEND', Buffer.alloc(0)),
   ])
 }
 
-function pointInPolygon(x, y, points) {
-  let inside = false
-  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
-    const xi = points[i][0]
-    const yi = points[i][1]
-    const xj = points[j][0]
-    const yj = points[j][1]
-    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
-    if (intersects) {
-      inside = !inside
+function paethPredictor(left, above, upperLeft) {
+  const prediction = left + above - upperLeft
+  const leftDistance = Math.abs(prediction - left)
+  const aboveDistance = Math.abs(prediction - above)
+  const upperLeftDistance = Math.abs(prediction - upperLeft)
+  if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) return left
+  if (aboveDistance <= upperLeftDistance) return above
+  return upperLeft
+}
+
+function decodePng(png) {
+  if (!png.subarray(0, pngSignature.length).equals(pngSignature)) {
+    throw new Error(`App icon source is not a PNG: ${sourceIconPath}`)
+  }
+
+  let width
+  let height
+  let bitDepth
+  let colorType
+  let interlaceMethod
+  const imageData = []
+  for (let offset = pngSignature.length; offset < png.length; ) {
+    const length = png.readUInt32BE(offset)
+    const type = png.toString('ascii', offset + 4, offset + 8)
+    const data = png.subarray(offset + 8, offset + 8 + length)
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0)
+      height = data.readUInt32BE(4)
+      bitDepth = data[8]
+      colorType = data[9]
+      interlaceMethod = data[12]
+    } else if (type === 'IDAT') {
+      imageData.push(data)
+    } else if (type === 'IEND') {
+      break
+    }
+    offset += length + 12
+  }
+
+  if (!width || !height || bitDepth !== 8 || ![2, 6].includes(colorType) || interlaceMethod !== 0) {
+    throw new Error('App icon source must be a non-interlaced 8-bit RGB or RGBA PNG')
+  }
+
+  const bytesPerPixel = colorType === 6 ? 4 : 3
+  const stride = width * bytesPerPixel
+  const inflated = zlib.inflateSync(Buffer.concat(imageData))
+  const expectedLength = (stride + 1) * height
+  if (inflated.length !== expectedLength) {
+    throw new Error(`Unexpected PNG data length: expected ${expectedLength}, received ${inflated.length}`)
+  }
+
+  const raw = Buffer.alloc(stride * height)
+  for (let y = 0; y < height; y += 1) {
+    const inputRowOffset = y * (stride + 1)
+    const outputRowOffset = y * stride
+    const filter = inflated[inputRowOffset]
+    for (let x = 0; x < stride; x += 1) {
+      const value = inflated[inputRowOffset + x + 1]
+      const left = x >= bytesPerPixel ? raw[outputRowOffset + x - bytesPerPixel] : 0
+      const above = y > 0 ? raw[outputRowOffset + x - stride] : 0
+      const upperLeft = y > 0 && x >= bytesPerPixel ? raw[outputRowOffset + x - stride - bytesPerPixel] : 0
+      let reconstructed
+      switch (filter) {
+        case 0:
+          reconstructed = value
+          break
+        case 1:
+          reconstructed = value + left
+          break
+        case 2:
+          reconstructed = value + above
+          break
+        case 3:
+          reconstructed = value + Math.floor((left + above) / 2)
+          break
+        case 4:
+          reconstructed = value + paethPredictor(left, above, upperLeft)
+          break
+        default:
+          throw new Error(`Unsupported PNG filter type: ${filter}`)
+      }
+      raw[outputRowOffset + x] = reconstructed & 0xff
     }
   }
-  return inside
-}
 
-function roundedRectCoverage(x, y, size, radius) {
-  const min = 0
-  const max = size
-  if (x < min || x > max || y < min || y > max) return 0
-  const cx = x < radius ? radius : x > max - radius ? max - radius : x
-  const cy = y < radius ? radius : y > max - radius ? max - radius : y
-  const distance = Math.hypot(x - cx, y - cy)
-  return distance <= radius ? 1 : 0
-}
-
-function blendPixel(buffer, offset, source, alpha) {
-  const sourceAlpha = (source[3] / 255) * alpha
-  const destAlpha = buffer[offset + 3] / 255
-  const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha)
-  if (outAlpha <= 0) return
-  for (let channel = 0; channel < 3; channel += 1) {
-    const src = source[channel] / 255
-    const dst = buffer[offset + channel] / 255
-    buffer[offset + channel] = Math.round(((src * sourceAlpha + dst * destAlpha * (1 - sourceAlpha)) / outAlpha) * 255)
+  const rgba = Buffer.alloc(width * height * 4)
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const sourceOffset = pixel * bytesPerPixel
+    const targetOffset = pixel * 4
+    rgba[targetOffset] = raw[sourceOffset]
+    rgba[targetOffset + 1] = raw[sourceOffset + 1]
+    rgba[targetOffset + 2] = raw[sourceOffset + 2]
+    rgba[targetOffset + 3] = colorType === 6 ? raw[sourceOffset + 3] : 255
   }
-  buffer[offset + 3] = Math.round(outAlpha * 255)
+
+  return { width, height, rgba }
 }
 
-function lerp(a, b, amount) {
-  return a + (b - a) * amount
-}
+function resizeRgba(source, sourceWidth, sourceHeight, targetWidth, targetHeight) {
+  if (sourceWidth === targetWidth && sourceHeight === targetHeight) return Buffer.from(source)
 
-function gradientColor(x, y, size) {
-  const amount = Math.min(1, Math.max(0, (x * 0.72 + y * 0.28) / size))
-  return [
-    Math.round(lerp(126, 71, amount)),
-    Math.round(lerp(20, 191, amount)),
-    Math.round(lerp(255, 255, amount)),
-    255,
-  ]
-}
+  const target = Buffer.alloc(targetWidth * targetHeight * 4)
+  const scaleX = sourceWidth / targetWidth
+  const scaleY = sourceHeight / targetHeight
+  for (let targetY = 0; targetY < targetHeight; targetY += 1) {
+    const sourceTop = targetY * scaleY
+    const sourceBottom = (targetY + 1) * scaleY
+    const firstSourceY = Math.floor(sourceTop)
+    const lastSourceY = Math.ceil(sourceBottom)
+    for (let targetX = 0; targetX < targetWidth; targetX += 1) {
+      const sourceLeft = targetX * scaleX
+      const sourceRight = (targetX + 1) * scaleX
+      const firstSourceX = Math.floor(sourceLeft)
+      const lastSourceX = Math.ceil(sourceRight)
+      let alphaWeight = 0
+      let totalWeight = 0
+      let red = 0
+      let green = 0
+      let blue = 0
 
-function renderIcon(size) {
-  const data = Buffer.alloc(size * size * 4)
-  const scale = size / baseSize
-  const samples = size < 128 ? 4 : 3
-  const radius = 220 * scale
-  const bolt = [
-    [558, 68],
-    [220, 514],
-    [448, 514],
-    [363, 956],
-    [807, 373],
-    [566, 373],
-    [665, 68],
-  ].map(([x, y]) => [x * scale, y * scale])
-  const shadow = bolt.map(([x, y]) => [x + 18 * scale, y + 24 * scale])
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      let backgroundCoverage = 0
-      let shadowCoverage = 0
-      let boltCoverage = 0
-      for (let sy = 0; sy < samples; sy += 1) {
-        for (let sx = 0; sx < samples; sx += 1) {
-          const px = x + (sx + 0.5) / samples
-          const py = y + (sy + 0.5) / samples
-          backgroundCoverage += roundedRectCoverage(px, py, size, radius)
-          if (pointInPolygon(px, py, shadow)) shadowCoverage += 1
-          if (pointInPolygon(px, py, bolt)) boltCoverage += 1
+      for (let sourceY = firstSourceY; sourceY < lastSourceY; sourceY += 1) {
+        const yWeight = Math.min(sourceBottom, sourceY + 1) - Math.max(sourceTop, sourceY)
+        for (let sourceX = firstSourceX; sourceX < lastSourceX; sourceX += 1) {
+          const xWeight = Math.min(sourceRight, sourceX + 1) - Math.max(sourceLeft, sourceX)
+          const weight = xWeight * yWeight
+          const sourceOffset = (sourceY * sourceWidth + sourceX) * 4
+          const pixelAlphaWeight = weight * (source[sourceOffset + 3] / 255)
+          red += source[sourceOffset] * pixelAlphaWeight
+          green += source[sourceOffset + 1] * pixelAlphaWeight
+          blue += source[sourceOffset + 2] * pixelAlphaWeight
+          alphaWeight += pixelAlphaWeight
+          totalWeight += weight
         }
       }
-      const totalSamples = samples * samples
-      const offset = (y * size + x) * 4
-      const bgAlpha = backgroundCoverage / totalSamples
-      if (bgAlpha > 0) {
-        blendPixel(data, offset, gradientColor(x, y, size), bgAlpha)
+
+      const targetOffset = (targetY * targetWidth + targetX) * 4
+      if (alphaWeight > 0) {
+        target[targetOffset] = Math.round(red / alphaWeight)
+        target[targetOffset + 1] = Math.round(green / alphaWeight)
+        target[targetOffset + 2] = Math.round(blue / alphaWeight)
       }
-      if (shadowCoverage > 0) {
-        blendPixel(data, offset, [42, 15, 110, 110], (shadowCoverage / totalSamples) * bgAlpha)
-      }
-      if (boltCoverage > 0) {
-        blendPixel(data, offset, [255, 255, 255, 255], (boltCoverage / totalSamples) * bgAlpha)
-      }
+      target[targetOffset + 3] = Math.round((alphaWeight / totalWeight) * 255)
     }
   }
-  return encodePng(size, size, data)
-}
-
-function writePng(name, size) {
-  const filePath = path.join(iconDir, name)
-  fs.writeFileSync(filePath, renderIcon(size))
-  return filePath
+  return target
 }
 
 function writeIco(images) {
@@ -186,12 +232,21 @@ function writeIco(images) {
   fs.writeFileSync(path.join(iconDir, 'icon.ico'), Buffer.concat([header, ...entries, ...images.map((image) => image.data)]))
 }
 
+const sourceIcon = decodePng(fs.readFileSync(sourceIconPath))
+if (sourceIcon.width !== sourceIcon.height || sourceIcon.width < baseSize) {
+  throw new Error(`App icon source must be square and at least ${baseSize}x${baseSize}`)
+}
+
+const baseRgba = resizeRgba(sourceIcon.rgba, sourceIcon.width, sourceIcon.height, baseSize, baseSize)
 const pngSizes = [16, 32, 48, 64, 128, 256, 512, 1024]
 const pngBySize = new Map()
 for (const size of pngSizes) {
-  pngBySize.set(size, renderIcon(size))
+  const rgba = resizeRgba(baseRgba, baseSize, baseSize, size, size)
+  pngBySize.set(size, encodePng(size, size, rgba))
 }
+
 fs.writeFileSync(path.join(iconDir, 'icon.png'), pngBySize.get(1024))
+fs.writeFileSync(faviconPath, pngBySize.get(48))
 writeIco([16, 32, 48, 64, 128, 256].map((size) => ({ size, data: pngBySize.get(size) })))
 
 if (process.platform === 'darwin') {
@@ -220,4 +275,4 @@ if (process.platform === 'darwin') {
   }
 }
 
-console.log(`Generated desktop icons in ${path.relative(rootDir, iconDir)}`)
+console.log(`Generated desktop icons from ${path.relative(rootDir, sourceIconPath)}`)

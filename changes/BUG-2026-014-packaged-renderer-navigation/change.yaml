@@ -1,0 +1,28 @@
+id: "BUG-2026-014-packaged-renderer-navigation"
+title: "Restore packaged renderer assets and navigation"
+type: "bug"
+status: "Implementing"
+spec_revision: "0.1.1-active"
+target_release: "v0.1.2"
+requirements:
+  - "NFR-RELIABILITY-001"
+tests:
+  - "CT-RELIABILITY-001"
+adrs: []
+context_refs:
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/07-test-release-plan.md#Release gates"
+  - "docs/08-traceability.md"
+  - "docs/release-quality.md#Tagged release publication"
+related_changes: []
+affected_surfaces:
+  - "packaged Electron renderer"
+  - "desktop navigation history"
+  - "renderer build verification"
+affected_formats: []
+affected_versions:
+  - "v0.1.0"
+  - "v0.1.1"
+security_impact: "The fix changes only packaged renderer URL construction and build verification; Electron privilege, preload, credential, persistence, and network boundaries are unchanged."
+migration: "none"
+supersedes: []
