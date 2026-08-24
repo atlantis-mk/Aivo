@@ -16,16 +16,17 @@
     "start": "electron .",
     "prepare:icons": "node ../../scripts/generate-desktop-icons.mjs",
     "build": "npm run prepare:icons && tsc -b && vite build",
-    "package": "npm run build && electron-builder",
-    "package:mac": "npm run build && electron-builder --mac",
-    "package:win": "npm run build && electron-builder --win",
-    "package:linux": "npm run build && electron-builder --linux",
+    "package": "npm run build && electron-builder --publish never",
+    "package:mac": "npm run build && electron-builder --mac --publish never",
+    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:linux": "npm run build && electron-builder --linux --publish never",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "build": {
     "appId": "dev.aivo.desktop",
     "productName": "Aivo",
+    "executableName": "aivo",
     "asar": true,
     "icon": "build/icon.png",
     "directories": {

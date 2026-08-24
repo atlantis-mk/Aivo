@@ -94,3 +94,14 @@ test('CT-RELEASE-001 binds a tag to both package manifests and a release record'
     /does not match package version/,
   )
 })
+
+test('CT-RELEASE-001 keeps packaging names safe and disables implicit publication', async () => {
+  const desktop = JSON.parse(
+    await fs.readFile(path.join(import.meta.dirname, '..', 'apps', 'desktop', 'package.json'), 'utf8'),
+  )
+
+  assert.equal(desktop.build?.executableName, 'aivo')
+  for (const name of ['package', 'package:mac', 'package:win', 'package:linux']) {
+    assert.match(desktop.scripts?.[name] ?? '', /--publish never(?:\s|$)/, `${name} may publish implicitly`)
+  }
+})
