@@ -18,7 +18,8 @@ context_refs:
   - "docs/07-test-release-plan.md#Release gates"
   - "docs/09-document-governance.md"
   - "docs/release-quality.md"
-related_changes: []
+related_changes:
+  - "BUG-2026-013-cross-platform-release-blockers"
 affected_surfaces:
   - "source licensing and repository metadata"
   - "GitHub repository identity and history"

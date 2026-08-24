@@ -672,15 +672,21 @@ func (s *agentPTYSession) writeAs(actor string, data []byte, expectedLeaseVersio
 	s.mu.Lock()
 	s.attention = AgentPTYAttentionNone
 	if actor == AgentPTYOwnerAgent && mode == AgentPTYInputAgentOnce {
-		s.inputRequest = nil
+		s.clearInputRequestLocked(request)
 		s.releaseLeaseLocked()
 	} else if actor == AgentPTYOwnerUser && mode == AgentPTYInputUserOnce && bytesContainEnter(data) {
-		s.inputRequest = nil
+		s.clearInputRequestLocked(request)
 		s.releaseLeaseLocked()
 	}
 	s.broadcastLocked(AgentPTYEvent{Type: "status", Snapshot: s.snapshotLocked(s.nextCursor, 0)})
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *agentPTYSession) clearInputRequestLocked(resolved *AgentPTYInputRequest) {
+	if resolved != nil && s.inputRequest != nil && s.inputRequest.ID == resolved.ID {
+		s.inputRequest = nil
+	}
 }
 
 func (s *agentPTYSession) releaseLeaseLocked() {
