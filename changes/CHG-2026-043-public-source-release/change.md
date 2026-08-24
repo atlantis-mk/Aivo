@@ -61,6 +61,7 @@ Aivo 当前 GitHub 仓库为 Private，仓库没有源码许可证，打包工�
 - 新仓库已经配置 VaultMesh 相同的 `R2_ACCOUNT_ID`、`R2_BUCKET` 与 `R2_PUBLIC_BASE_URL`，并用 `R2_PREFIX=aivo` 隔离对象。`R2_ACCESS_KEY_ID` 与 `R2_SECRET_ACCESS_KEY` 已于 `2026-08-25` 恢复；macOS signing/notarization secrets 仍未配置，因此 `v0.1.0` 必须明确标注为未签名发行，不能宣称通过签名平台验收。
 - GitHub Actions [Release quality 32763350745](https://github.com/atlantis-mk/Aivo/actions/runs/32763350745) 在 Windows x64、macOS Apple Silicon 与 Linux x64 原生 runner 上全部通过安装包生成、内嵌 Core 校验、健康启动 smoke 与 artifact 上传；对应 job 耗时 9分49秒、6分57秒、3分28秒。标签工作流另含 `macos-15-intel` 的 Intel 原生矩阵，但该平台和 R2/GitHub 最终 publication 仍必须由带 Release record 的真实版本 tag 验证。
 - `v0.1.0` 首次标签 run `32764995082` 的四个原生平台构建与 smoke 全部通过，R2 七个不可变对象、stable manifest 和回读校验也通过；GitHub 在创建草稿后用 tag API 查询草稿返回 404，导致 GitHub assets 阶段安全失败且未上传 asset。恢复实现改为先取得草稿 Release ID，再使用 ID API，并增加针对既有不可变标签的手动恢复入口，避免移动或重写 `v0.1.0`。
+- 首次手动恢复 run `32766778278` 再次通过四平台构建，但在 R2 计划前拒绝了注释标签的多行 `git show` 输出；未比较或修改 R2 对象。恢复路径改为显式解引用 `v0.1.0^{commit}`，并可验证首轮 run 的 tag commit、六个成功前置 job 后下载其原始 artifacts，仅恢复 GitHub 草稿，避免重新生成或覆盖不可变发行包。
 
 ## Security and data lifecycle
 
