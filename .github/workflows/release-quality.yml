@@ -11,14 +11,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS
-            os: macos-latest
+          - name: macOS-Apple-Silicon
+            os: macos-15
             package_script: package:mac
-          - name: Windows
-            os: windows-latest
+          - name: macOS-Intel
+            os: macos-15-intel
+            package_script: package:mac
+          - name: Windows-x64
+            os: windows-2025
             package_script: package:win
-          - name: Linux
-            os: ubuntu-latest
+          - name: Linux-x64
+            os: ubuntu-24.04
             package_script: package:linux
 
     steps:
@@ -94,6 +97,9 @@ jobs:
         run: npm run smoke:release
         env:
           AIVO_EXPECT_INSTALLERS: "1"
+
+      - name: Verify native installer handoff package
+        run: node scripts/verify-native-package.mjs --input build/desktop
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v7

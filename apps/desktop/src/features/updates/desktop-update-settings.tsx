@@ -49,8 +49,8 @@ export function DesktopUpdateSettings() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-5 py-6 sm:px-8 sm:py-8">
+    <div className="h-full overflow-x-hidden overflow-y-auto">
+      <div className="mx-auto flex min-w-0 w-full max-w-3xl flex-col gap-5 px-5 py-6 sm:px-8 sm:py-8">
         <div className="space-y-1">
           <h1 className="text-lg font-semibold tracking-tight">软件更新</h1>
           <p className="text-sm text-muted-foreground">
@@ -66,12 +66,12 @@ export function DesktopUpdateSettings() {
           </Alert>
         )}
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <CardTitle>Aivo {state.currentVersion ? `v${state.currentVersion}` : ""}</CardTitle>
-                <CardDescription>{state.message}</CardDescription>
+                <CardDescription className="break-words">{state.message}</CardDescription>
               </div>
               <Badge variant={state.phase === "error" ? "destructive" : "secondary"}>
                 {desktopUpdateStatusLabel(state.phase)}
@@ -90,34 +90,35 @@ export function DesktopUpdateSettings() {
             )}
 
             <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 text-sm sm:grid-cols-2">
-              <div className="flex gap-2.5">
+              <div className="flex min-w-0 gap-2.5">
                 <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
                 <div>
                   <p className="font-medium">双源完整性校验</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
                     名称、大小和 SHA-256 必须同时匹配固定 R2 通道与 GitHub Release。
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2.5">
+              <div className="flex min-w-0 gap-2.5">
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
                 <div>
                   <p className="font-medium">由你确认安装</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
                     Aivo 不会静默运行安装包，也不会绕过操作系统安全提示。
                   </p>
                 </div>
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex flex-wrap items-center justify-between gap-3 border-t">
-            <p className="text-xs text-muted-foreground">
+          <CardFooter className="flex flex-col items-stretch gap-3 border-t sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 text-xs text-muted-foreground">
               {state.automaticChecksEnabled
                 ? "已启用：应用启动后自动检查一次稳定通道。"
                 : "开发版本不会在启动时自动联网检查。"}
             </p>
             {primary && (
               <Button
+                className="w-full sm:w-auto"
                 onClick={() => void runAction(primary.action)}
                 variant={primary.action === "cancel" ? "outline" : "default"}
               >

@@ -160,6 +160,8 @@ jobs:
         env:
           AIVO_EXPECT_INSTALLERS: "1"
         run: pnpm smoke:release
+      - name: Verify native installer handoff package
+        run: node scripts/verify-native-package.mjs --input build/desktop
       - name: Normalize release artifacts
         run: |
           version="${RELEASE_TAG#v}"

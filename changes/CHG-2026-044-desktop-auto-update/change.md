@@ -46,7 +46,9 @@ Implementation evidence on 2026-08-25:
 - A live fixed-source metadata check resolved R2 stable `v0.1.0`, selected the macOS x64 asset, and matched the same-tag GitHub Release digest.
 - `pnpm package -- --dir`: produced the unsigned macOS x64 app/DMG/ZIP successfully; `app.asar` contains `electron/desktop-updater.cjs`, `main.cjs`, `preload.cjs`, and the Settings bundle.
 - `pnpm smoke:release`: passed packaged-core startup and `/health` readiness.
-- Pending before `Verified`: responsive screenshots plus real installer/AppImage handoff on macOS arm64/x64, Windows x64, and Linux x64. The current macOS package evidence is unsigned and does not satisfy signing/notarization acceptance.
+- Responsive ready-state evidence: `evidence/desktop-update-ready-wide.png` at 1440×900 and `evidence/desktop-update-ready-narrow.png` at 390×844. The narrow pass also found and fixed a footer overflow before release.
+- Native release acceptance now requires the OS to mount and inspect the DMG plus verify the ZIP, silently install the NSIS package into a temporary directory, or extract and inspect the AppImage on the matching GitHub-hosted runner.
+- Pending before `Verified`: one successful four-target native release-quality run. The packages remain unsigned and are presented with explicit trust warnings rather than signing/notarization claims.
 
 ## Security and data lifecycle
 
