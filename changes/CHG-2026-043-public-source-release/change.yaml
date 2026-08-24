@@ -1,7 +1,7 @@
 id: "CHG-2026-043-public-source-release"
 title: "重建 Public 源码仓库并自动发布安装包"
 type: "governance"
-status: "Implementing"
+status: "Verified"
 spec_revision: "0.1.1-active"
 target_release: "v0.1.0"
 requirements:

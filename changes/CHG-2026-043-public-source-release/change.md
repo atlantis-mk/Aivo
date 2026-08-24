@@ -35,9 +35,9 @@ Aivo 当前 GitHub 仓库为 Private，仓库没有源码许可证，打包工�
 | Task | Requirement | Verifiable output | Test | Status |
 | --- | --- | --- | --- | --- |
 | `PUBLIC-01` | `NFR-RELEASE-001` | PolyForm 许可证、source-available/商业授权边界和一致包元数据 | `CT-LICENSE-001` | Complete |
-| `PUBLIC-02` | `NFR-RELEASE-001` | 版本标签驱动的四平台打包、R2 与 GitHub Release publication | `CT-RELEASE-001` | In Progress |
+| `PUBLIC-02` | `NFR-RELEASE-001` | 版本标签驱动的四平台打包、R2 与 GitHub Release publication | `CT-RELEASE-001` | Complete |
 | `PUBLIC-03` | `NFR-RELEASE-001` | 仓库外备份、秘密扫描、新根 main 和同名 Public 仓库 | `CT-REPOSITORY-001` | Complete |
-| `PUBLIC-04` | N/A | 文档、脚本、构建、远端与发布证据 | `pnpm docs:check` | In Progress |
+| `PUBLIC-04` | N/A | 文档、脚本、构建、远端与发布证据 | `pnpm docs:check` | Complete |
 
 ## Acceptance and evidence
 
@@ -49,19 +49,20 @@ Aivo 当前 GitHub 仓库为 Private，仓库没有源码许可证，打包工�
 - 目标 OS 签名/notarization 所需 secret 缺失时必须明确记录，不能把未执行的平台验收写成通过。
 - 完成证据写回后进入 `Verified` 并立即执行 `pnpm work:archive -- CHG-2026-043-public-source-release`。
 
-实施中证据（`2026-08-24`）：
+验证证据（截至 `2026-08-25`）：
 
 - 旧 Private 仓库 ID 为 `1295489589`（`R_kgDOTTeaNQ`）；删除后同名 Public 仓库 ID 为 `1345008131`（`R_kgDOUCsyAw`），创建时间为 `2026-08-24T13:48:03Z`，证明是新的 repository identity。
 - `/Users/atlan/Documents/Aivo-history-before-public-20260824.bundle` 包含删除前 28 个本地/远端/工具 refs 并通过 `git bundle verify`，SHA-256 为 `be84b460b302342d6ffab928d51a537b503f6b42f8b8dabb87a021889f425047`。`/Users/atlan/Documents/Aivo-github-backup-20260824/` 保存 repository、branch、tag、release、Action、hook、deployment 和远端 ref 元数据及 SHA-256 清单。
 - 新根 bundle 与源码 tar 分别为 `/Users/atlan/Documents/Aivo-public-root-20260824.bundle` 和 `/Users/atlan/Documents/Aivo-public-root-20260824.tar.gz`，SHA-256 分别为 `f99c5c18392209c343eb1423f4fd94f6ef05856a855225f16c861bfdb1e57401` 与 `df7f899e6b8ef2103a8eade38c607cac201ce455a3495cbdced4b89be1090cf0`；两者均已验证且未上传。
 - Gitleaks `8.30.1` 对新根提交 `edca100afbfbd8a7169b396dd8d2ee503d959139` 扫描 1,184 个 tracked 文件、约 6.1 MB，无 secret finding。新 Public `main` 初始提交正是该无 parent 根提交。
-- 新仓库最终只有 `main`，无 tag、PR、Issue、Release 或 Action；旧 Action run `29030534610` 返回 404，旧 main SHA `75ac8a7d1091e2df5c8ed70d4dc0f24a1247529b` 返回 422。description 和八个 topics 已恢复，secret scanning、push protection、private vulnerability reporting 均已启用。
+- 新仓库重建完成时只有 `main`，未迁移旧 tag、PR、Issue、Release 或 Action；旧 Action run `29030534610` 返回 404，旧 main SHA `75ac8a7d1091e2df5c8ed70d4dc0f24a1247529b` 返回 422。description 和八个 topics 已恢复，secret scanning、push protection、private vulnerability reporting 均已启用。
 - `v0.1.0` 标签、两个 package manifest 与同名 Release record 的绑定校验通过；`CT-LICENSE-001` 与 `CT-RELEASE-001` 聚焦测试 9/9 通过；`pnpm scripts:test` 全部通过；`pnpm docs:check` 通过（90 Markdown、45 YAML、21 Requirements、23 Test IDs、21 ADRs、44 Work Packages、25 archived Work Packages）；`pnpm lint` 通过并保留既有 Fast Refresh warnings；`pnpm build` 通过并保留既有 bundle-size warning。
 - `pnpm test:core` 首次因 compaction test 读取本机 models.dev cache 而得到 1,050,000 而非内建 400,000 context limit；测试隔离 `AIVO_MODELS_CACHE` 后聚焦测试与全套 `go test ./...` 通过。
 - 新仓库已经配置 VaultMesh 相同的 `R2_ACCOUNT_ID`、`R2_BUCKET` 与 `R2_PUBLIC_BASE_URL`，并用 `R2_PREFIX=aivo` 隔离对象。`R2_ACCESS_KEY_ID` 与 `R2_SECRET_ACCESS_KEY` 已于 `2026-08-25` 恢复；macOS signing/notarization secrets 仍未配置，因此 `v0.1.0` 必须明确标注为未签名发行，不能宣称通过签名平台验收。
-- GitHub Actions [Release quality 32763350745](https://github.com/atlantis-mk/Aivo/actions/runs/32763350745) 在 Windows x64、macOS Apple Silicon 与 Linux x64 原生 runner 上全部通过安装包生成、内嵌 Core 校验、健康启动 smoke 与 artifact 上传；对应 job 耗时 9分49秒、6分57秒、3分28秒。标签工作流另含 `macos-15-intel` 的 Intel 原生矩阵，但该平台和 R2/GitHub 最终 publication 仍必须由带 Release record 的真实版本 tag 验证。
+- GitHub Actions [Release quality 32763350745](https://github.com/atlantis-mk/Aivo/actions/runs/32763350745) 在 Windows x64、macOS Apple Silicon 与 Linux x64 原生 runner 上全部通过安装包生成、内嵌 Core 校验、健康启动 smoke 与 artifact 上传；对应 job 耗时 9分49秒、6分57秒、3分28秒。
 - `v0.1.0` 首次标签 run `32764995082` 的四个原生平台构建与 smoke 全部通过，R2 七个不可变对象、stable manifest 和回读校验也通过；GitHub 在创建草稿后用 tag API 查询草稿返回 404，导致 GitHub assets 阶段安全失败且未上传 asset。恢复实现改为先取得草稿 Release ID，再使用 ID API，并增加针对既有不可变标签的手动恢复入口，避免移动或重写 `v0.1.0`。
 - 首次手动恢复 run `32766778278` 再次通过四平台构建，但在 R2 计划前拒绝了注释标签的多行 `git show` 输出；未比较或修改 R2 对象。恢复路径改为显式解引用 `v0.1.0^{commit}`，并可验证首轮 run 的 tag commit、六个成功前置 job 后下载其原始 artifacts，仅恢复 GitHub 草稿，避免重新生成或覆盖不可变发行包。
+- GitHub Actions [artifact recovery 32768136532](https://github.com/atlantis-mk/Aivo/actions/runs/32768136532) 验证首轮 run 与不可变 `v0.1.0` commit、六个成功前置 job 和原始 artifacts 后，在 1分40秒内补齐并公开 [Aivo v0.1.0](https://github.com/atlantis-mk/Aivo/releases/tag/v0.1.0)。独立 API/R2 核对证明 Release 非 draft、非 prerelease，共含六个原生安装包与 `SHA256SUMS`；它们与 `aivo/channels/stable/latest.json` 的文件名、大小和 SHA-256 全部一致，两个公开端点的 `SHA256SUMS` 内容相同。
 
 ## Security and data lifecycle
 
