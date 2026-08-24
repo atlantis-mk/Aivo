@@ -30,6 +30,14 @@ function configureApplicationMenu() {
       submenu: [
         { role: 'about', label: '关于 Aivo' },
         { type: 'separator' },
+        {
+          label: '检查更新…',
+          click: () => {
+            const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+            if (window && desktopUpdater) void checkAndOfferUpdate(window, true)
+          },
+        },
+        { type: 'separator' },
         { role: 'services', label: '服务' },
         { type: 'separator' },
         { role: 'hide', label: '隐藏 Aivo' },
@@ -343,9 +351,24 @@ ipcMain.handle('aivo:update:cancel', (event) => {
   return desktopUpdater?.cancel()
 })
 
-async function checkAndOfferStartupUpdate(mainWindow) {
+async function checkAndOfferUpdate(mainWindow, reportCurrent = false) {
   const state = await desktopUpdater.check()
-  if (state.phase !== 'available' || mainWindow.isDestroyed()) return
+  if (mainWindow.isDestroyed()) return
+  if (state.phase !== 'available') {
+    if (!reportCurrent) return
+    const failed = state.phase === 'error'
+    await dialog.showMessageBox(mainWindow, {
+      type: failed ? 'error' : 'info',
+      title: failed ? '无法检查 Aivo 更新' : 'Aivo 软件更新',
+      message: state.phase === 'up-to-date'
+        ? `Aivo v${state.currentVersion} 已是最新版本`
+        : state.message,
+      buttons: ['好'],
+      defaultId: 0,
+      noLink: true,
+    })
+    return
+  }
   const offer = await dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: 'Aivo 更新可用',
@@ -539,7 +562,7 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(() => {
-        void checkAndOfferStartupUpdate(mainWindow)
+        void checkAndOfferUpdate(mainWindow)
       }, 3_000)
     })
   }

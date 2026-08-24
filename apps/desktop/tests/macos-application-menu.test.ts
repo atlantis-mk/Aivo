@@ -16,6 +16,7 @@ test("macOS uses the Aivo name and Chinese application menu labels", async () =>
   for (const label of [
     "Aivo",
     "关于 Aivo",
+    "检查更新…",
     "服务",
     "隐藏 Aivo",
     "隐藏其他",
@@ -47,6 +48,14 @@ test("macOS uses the Aivo name and Chinese application menu labels", async () =>
     assert.match(menuSource, new RegExp(`label: '${label}'`));
   }
   assert.match(menuSource, /Menu\.setApplicationMenu\(menu\)/);
+  assert.match(
+    menuSource,
+    /label: '检查更新…'[\s\S]*checkAndOfferUpdate\(window, true\)/,
+  );
+  assert.match(
+    main,
+    /state\.phase === 'up-to-date'[\s\S]*已是最新版本/,
+  );
   assert.ok(
     main.indexOf("configureApplicationMenu()", main.indexOf("app.whenReady()")) <
       main.indexOf("createWindow()", main.indexOf("app.whenReady()")),

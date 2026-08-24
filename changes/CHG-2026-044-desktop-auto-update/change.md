@@ -6,7 +6,7 @@ Packaged Aivo releases are published to a stable R2 manifest and matching GitHub
 
 ## Expected behavior
 
-`REQ-UPDATE-001` owns the observable flow. A packaged app checks the fixed stable channel once after startup, reports current and available versions, verifies the selected platform asset against both the R2 manifest and the matching GitHub Release, downloads with bounded progress, verifies exact size and SHA-256, then opens or reveals the verified package only after an explicit user action. Failure remains actionable and retryable.
+`REQ-UPDATE-001` owns the observable flow. A packaged app checks the fixed stable channel once after startup, supports repeat checks from Settings and the macOS Aivo application menu, reports current and available versions, verifies the selected platform asset against both the R2 manifest and the matching GitHub Release, downloads with bounded progress, verifies exact size and SHA-256, then opens or reveals the verified package only after an explicit user action. Failure remains actionable and retryable.
 
 ## Non-goals
 
