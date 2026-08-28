@@ -59,3 +59,21 @@ test("desktop shows a loading surface until the main renderer is ready", async (
     /useEffect\([\s\S]*navigate\(\{ to: startupRouteFor\(config\), replace: true \}\)[\s\S]*return <SetupLoadingSkeleton/,
   );
 });
+
+test("Windows and Linux keep native caption buttons", async () => {
+  const main = await readFile(
+    new URL("../electron/main.cjs", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(main, /frame: isMac/);
+  assert.equal(
+    (main.match(/frame: true/g) || []).length,
+    2,
+    "both startup and main windows should retain their native frame",
+  );
+  assert.match(
+    main,
+    /isMac\s*\?\s*\{[\s\S]*titleBarStyle: 'hidden'/,
+  );
+});

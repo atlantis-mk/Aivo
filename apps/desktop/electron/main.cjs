@@ -19,11 +19,30 @@ const newConversationWindowOffset = 28
 
 app.setName('Aivo')
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
+
 let coreProcess = null
 let logFile = null
 let extensionViewManager = null
 let desktopUpdater = null
 let startupWindow = null
+
+function focusAivoWindow() {
+  const window = BrowserWindow.getAllWindows()[0]
+  if (!window || window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
+
+if (hasSingleInstanceLock) {
+  app.on('second-instance', () => {
+    focusAivoWindow()
+  })
+}
 
 function configureApplicationMenu() {
   if (!isMac) {
@@ -338,7 +357,9 @@ function createStartupWindow() {
     show: false,
     backgroundColor: rendererBackgroundColor,
     title: 'Aivo',
-    frame: isMac,
+    // Keep the native caption buttons on Windows and Linux. macOS still uses
+    // its hidden title-bar treatment below.
+    frame: true,
     ...(isMac
       ? {
           titleBarStyle: 'hidden',
@@ -369,7 +390,9 @@ function createWindow(initialRoute = '', position) {
     backgroundColor: rendererBackgroundColor,
     ...(position ? { x: position.x, y: position.y } : {}),
     title: 'Aivo',
-    frame: isMac,
+    // Keep the native caption buttons on Windows and Linux. macOS still uses
+    // its hidden title-bar treatment below.
+    frame: true,
     ...(isMac
       ? {
           titleBarStyle: 'hidden',
@@ -635,7 +658,8 @@ ipcMain.handle('aivo:toggle-maximize', (event) => {
   window.maximize()
 })
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) {
+  app.whenReady().then(async () => {
   configureApplicationMenu()
   initializeDiagnostics()
   startupWindow = createStartupWindow()
@@ -688,7 +712,8 @@ app.whenReady().then(async () => {
       createWindow()
     }
   })
-})
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -56,3 +56,11 @@ test("packaged main owns a dynamic Core and injects the accepted endpoint", asyn
   assert.match(main, /additionalArguments:[\s\S]*coreURLArgument\(coreUrl\)/);
   assert.doesNotMatch(main, /using existing healthy core/);
 });
+
+test("desktop permits only one Aivo instance to own the local database", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const main = await readFile(new URL("../electron/main.cjs", import.meta.url), "utf8");
+  assert.match(main, /app\.requestSingleInstanceLock\(\)/);
+  assert.match(main, /app\.on\('second-instance'/);
+  assert.match(main, /focusAivoWindow\(\)/);
+});

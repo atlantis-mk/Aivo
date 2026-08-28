@@ -6,11 +6,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	sqlite "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
+
+const sqliteConnectionPragmas = "_pragma=busy_timeout(5000)"
 
 type Store struct {
 	db                   *gorm.DB
@@ -49,7 +52,7 @@ func openStore(path, managedExtensionRoot, managedPromptRoot string) (*Store, er
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(sqliteDSN(path)), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +66,17 @@ func openStore(path, managedExtensionRoot, managedPromptRoot string) (*Store, er
 		return nil, err
 	}
 	return store, nil
+}
+
+// sqliteDSN configures every pooled SQLite connection. The busy timeout turns
+// short-lived competing writes (for example OAuth completion and model refresh)
+// into a wait instead of an immediate SQLITE_BUSY failure.
+func sqliteDSN(path string) string {
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + sqliteConnectionPragmas
 }
 
 func (s *Store) ManagedPromptRoot() (string, error) {
