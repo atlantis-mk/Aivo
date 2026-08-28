@@ -23,13 +23,19 @@ func (s *Service) CreateRuntimeSession(ctx context.Context, input domain.CreateS
 			input.AgentMode = definition.ID
 		}
 	}
-	needsInitialWorkspace := input.Type == domain.SessionTypeCoding && strings.TrimSpace(input.ProjectPath) == ""
-	initialWorkspacePath := ""
-	if needsInitialWorkspace {
-		cfg, err := s.AppConfig(ctx)
+	isCodingSession := input.Type == domain.SessionTypeCoding
+	var cfg domain.AppConfig
+	if isCodingSession {
+		var err error
+		cfg, err = s.AppConfig(ctx)
 		if err != nil {
 			return domain.Session{}, err
 		}
+	}
+	needsInitialWorkspace := isCodingSession && strings.TrimSpace(input.ProjectPath) == ""
+	initialWorkspacePath := ""
+	if needsInitialWorkspace {
+		var err error
 		initialWorkspacePath, err = ensureInitialWorkspaceDirectory(cfg.InitialWorkspacePath)
 		if err != nil {
 			return domain.Session{}, err
@@ -38,6 +44,12 @@ func (s *Service) CreateRuntimeSession(ctx context.Context, input domain.CreateS
 	session, err := s.store.CreateRuntimeSession(ctx, input)
 	if err != nil {
 		return domain.Session{}, err
+	}
+	if isCodingSession {
+		if _, err := s.SetPermissionMode(ctx, domain.PermissionModeInput{SessionID: session.ID, Mode: cfg.DefaultPermissionMode}); err != nil {
+			_, _ = s.store.SetRuntimeSessionStatus(ctx, session.ID, domain.SessionStatusDeleted)
+			return domain.Session{}, err
+		}
 	}
 	if needsInitialWorkspace {
 		if _, err := s.CreateOrUpdateCodingContext(ctx, session.ID, initialWorkspacePath); err != nil {

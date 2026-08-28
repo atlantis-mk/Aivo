@@ -171,7 +171,7 @@ func normalizeIDList(values []string) []string {
 func normalizeWebSearchConfig(config domain.WebSearchConfig) domain.WebSearchConfig {
 	defaults := defaultWebSearchConfig()
 	switch strings.TrimSpace(config.Mode) {
-	case domain.WebSearchModeDisabled, domain.WebSearchModeLive:
+	case domain.WebSearchModeDisabled, domain.WebSearchModeCached, domain.WebSearchModeIndexed, domain.WebSearchModeLive:
 	default:
 		config.Mode = defaults.Mode
 	}

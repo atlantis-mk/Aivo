@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"aivo/core/domain"
 )
 
 func TestDefaultManagedExtensionRootUsesPlatformApplicationData(t *testing.T) {
@@ -478,8 +480,8 @@ func TestSchemaV7MigrationCreatesBackupAndPreservesAgentModePayloads(t *testing.
 	if err := store.db.Model(&schemaVersionRow{}).Select("MAX(version)").Scan(&version).Error; err != nil {
 		t.Fatal(err)
 	}
-	if version != 9 {
-		t.Fatalf("schema version = %d, want 9", version)
+	if version != latestSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, latestSchemaVersion)
 	}
 	var definition string
 	if err := store.db.Model(&agentModeDefinitionRow{}).Where("id = ?", "research").Pluck("definition", &definition).Error; err != nil {
@@ -542,6 +544,137 @@ func TestSchemaV7MigrationRefusesInvalidBackupBeforeVersionMutation(t *testing.T
 	}
 	if version != 7 {
 		t.Fatalf("schema version = %d after invalid backup, want 7", version)
+	}
+}
+
+func TestSchemaV9MigrationCreatesBackupAndDefaultsAppName(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV9Fixture(t, dbPath)
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.db.Migrator().HasColumn(&appConfigRow{}, "app_name") {
+		t.Fatal("schema v10 app name column is missing")
+	}
+	cfg, err := store.LoadConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AppName != "Aivo" || !cfg.Initialized || cfg.InitialWorkspacePath != "/synthetic/workspace" {
+		t.Fatalf("migrated config = %#v", cfg)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := migrationBackupPath(dbPath, 9)
+	if err := verifySQLiteBackup(backupPath); err != nil {
+		t.Fatalf("v9 backup is not recoverable: %v", err)
+	}
+	before, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	after, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) || before.Size() != after.Size() {
+		t.Fatal("idempotent reopen rewrote the v9 backup")
+	}
+}
+
+func TestSchemaV9MigrationRefusesInvalidBackupBeforeAppNameMutation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV9Fixture(t, dbPath)
+	backupPath := migrationBackupPath(dbPath, 9)
+	if err := os.WriteFile(backupPath, []byte("invalid backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "verify schema v9 migration backup") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.Query("PRAGMA table_info(app_config)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatal(err)
+		}
+		if name == "app_name" {
+			t.Fatal("schema mutated despite invalid v9 backup")
+		}
+	}
+}
+
+func TestSchemaV10MigrationCreatesBackupAndDefaultsPermissionMode(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV10Fixture(t, dbPath)
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !store.db.Migrator().HasColumn(&appConfigRow{}, "default_permission_mode") {
+		t.Fatal("schema v11 default permission mode column is missing")
+	}
+	cfg, err := store.LoadConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultPermissionMode != domain.PermissionModeRequestApproval {
+		t.Fatalf("default permission mode = %q, want request approval", cfg.DefaultPermissionMode)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backupPath := migrationBackupPath(dbPath, 10)
+	if err := verifySQLiteBackup(backupPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSchemaV10MigrationRefusesInvalidBackupBeforePermissionModeMutation(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "aivo.db")
+	writeSchemaV10Fixture(t, dbPath)
+	backupPath := migrationBackupPath(dbPath, 10)
+	if err := os.WriteFile(backupPath, []byte("invalid backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Open(dbPath)
+	if err == nil || !strings.Contains(err.Error(), "verify schema v10 migration backup") {
+		t.Fatalf("error = %v", err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('app_config') WHERE name = 'default_permission_mode'").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("schema mutated despite invalid v10 backup")
 	}
 }
 
@@ -729,6 +862,55 @@ INSERT INTO agent_mode_definitions(id, definition, time_created, time_updated) V
   '2026-01-01T00:00:00Z',
   '2026-01-01T00:00:00Z'
 );
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchemaV9Fixture(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO schema_version(version, applied_at) VALUES (9, '2026-01-01T00:00:00Z');
+CREATE TABLE app_config (
+  id INTEGER PRIMARY KEY,
+  initialized INTEGER NOT NULL DEFAULT 0,
+  initial_workspace_path TEXT,
+  updated_at TEXT NOT NULL
+);
+INSERT INTO app_config(id, initialized, initial_workspace_path, updated_at)
+VALUES (1, 1, '/synthetic/workspace', '2026-01-01T00:00:00Z');
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSchemaV10Fixture(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+INSERT INTO schema_version(version, applied_at) VALUES (10, '2026-01-01T00:00:00Z');
+CREATE TABLE app_config (
+  id INTEGER PRIMARY KEY,
+  initialized INTEGER NOT NULL DEFAULT 0,
+  app_name TEXT,
+  initial_workspace_path TEXT,
+  updated_at TEXT NOT NULL
+);
+INSERT INTO app_config(id, initialized, app_name, initial_workspace_path, updated_at)
+VALUES (1, 1, 'Aivo', '/synthetic/workspace', '2026-01-01T00:00:00Z');
 `)
 	if err != nil {
 		t.Fatal(err)

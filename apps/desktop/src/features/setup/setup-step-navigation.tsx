@@ -10,13 +10,15 @@ export function SetupStepNavigation({
   onPrimary,
   primaryContent,
   primaryDisabled = false,
+  totalSteps = 3,
 }: {
-  currentStep: 1 | 2 | 3;
+  currentStep: number;
   helperText: ReactNode;
   onBack?: () => void;
   onPrimary: () => void;
   primaryContent: ReactNode;
   primaryDisabled?: boolean;
+  totalSteps?: number;
 }) {
   return (
     <footer className="flex w-full shrink-0 flex-col items-center gap-aivo-3 px-aivo-4 pb-aivo-8 sm:px-aivo-8">
@@ -49,7 +51,7 @@ export function SetupStepNavigation({
       </p>
 
       <p className="aivo-type-footnote mt-aivo-3 flex items-center gap-aivo-2 text-muted-foreground">
-        {[1, 2, 3].map((step) => (
+        {Array.from({ length: totalSteps }, (_, index) => index + 1).map((step) => (
           <span
             aria-hidden="true"
             className={
@@ -60,7 +62,7 @@ export function SetupStepNavigation({
             key={step}
           />
         ))}
-        <span className="ml-aivo-2">{currentStep} / 3</span>
+        <span className="ml-aivo-2">{currentStep} / {totalSteps}</span>
       </p>
     </footer>
   );

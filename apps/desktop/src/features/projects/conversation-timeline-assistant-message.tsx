@@ -1,4 +1,4 @@
-import { Expand, RotateCcw, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
@@ -126,12 +126,6 @@ export function AssistantResponse({
       <div className="relative mb-3 h-6">
         <div className="absolute left-0 top-0 z-10 flex items-center gap-2">
           <CopyTextButton ariaLabel="复制回复" text={responseText} />
-          <Button aria-label="赞" size="icon-sm" type="button" variant="ghost">
-            <ThumbsUp />
-          </Button>
-          <Button aria-label="踩" size="icon-sm" type="button" variant="ghost">
-            <ThumbsDown />
-          </Button>
           {turn.turnId && completedAt && actions.onRetryTurn ? (
             <Button
               aria-label="重试"
@@ -156,9 +150,6 @@ export function AssistantResponse({
               <Trash2 />
             </Button>
           ) : null}
-          <Button aria-label="展开" size="icon-sm" type="button" variant="ghost">
-            <Expand />
-          </Button>
           {completedAt ? (
             <span className="text-sm">{formatCompletionTime(completedAt)}</span>
           ) : null}

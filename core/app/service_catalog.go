@@ -50,6 +50,22 @@ func (s *Service) Catalog(ctx context.Context) (domain.CatalogState, error) {
 			connected = append(connected, providers[i].ID)
 			connectedProviders = append(connectedProviders, providers[i])
 		}
+		if authRecord != nil && isOAuthMethod(authRecord.Method) {
+			route := ResolvedModelRoute{
+				Provider:   domain.ProviderConfig{ID: providers[i].ID, Type: providers[i].Type, BaseURL: providers[i].BaseURL, Model: providers[i].DefaultModelID},
+				Definition: def,
+				Transport:  def.Transport,
+				BaseURL:    firstNonEmpty(providers[i].BaseURL, def.DefaultBaseURL),
+				Credential: llmCredential{Method: authRecord.Method, AccessToken: authRecord.AccessToken, AccountID: authRecord.AccountID, AuthRecord: authRecord},
+			}
+			capabilities := capabilitiesForProviderAccount(route)
+			if capabilities.NamespaceTools || capabilities.ImageGeneration || capabilities.WebSearch {
+				providers[i].NativeCapabilities = &domain.ProviderNativeCapabilities{
+					NamespaceTools: capabilities.NamespaceTools, ImageGeneration: capabilities.ImageGeneration,
+					WebSearch: capabilities.WebSearch, Source: "provider-account",
+				}
+			}
+		}
 		if providers[i].Readiness == nil {
 			providers[i].Readiness = providerReadiness(providers[i], def, authRecord)
 		}

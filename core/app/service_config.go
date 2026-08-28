@@ -56,11 +56,17 @@ func normalizeLegacyConfigModels(cfg *domain.AppConfig) {
 	}
 	cfg.ReasoningEffort = normalizeReasoningEffort(cfg.ReasoningEffort)
 	cfg.ServiceTier = normalizeServiceTier(cfg.ServiceTier)
+	permissionMode, err := normalizePermissionMode(cfg.DefaultPermissionMode)
+	if err != nil {
+		cfg.DefaultPermissionMode = domain.PermissionModeRequestApproval
+	} else {
+		cfg.DefaultPermissionMode = permissionMode
+	}
 }
 
 func normalizeReasoningEffort(effort string) string {
 	switch strings.TrimSpace(strings.ToLower(effort)) {
-	case "low", "medium", "high", "ultra":
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra":
 		return strings.TrimSpace(strings.ToLower(effort))
 	case "低":
 		return "low"
@@ -79,6 +85,8 @@ func normalizeServiceTier(serviceTier string) string {
 	switch strings.TrimSpace(strings.ToLower(serviceTier)) {
 	case "priority", "fast":
 		return "priority"
+	case "flex":
+		return "flex"
 	case "default", "":
 		return "default"
 	default:

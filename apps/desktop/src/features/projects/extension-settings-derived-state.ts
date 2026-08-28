@@ -9,6 +9,7 @@ import {
   filterTools,
   isAivoBuiltinTool,
   mergeToolCatalogEntries,
+  selectVisibleSkillCandidates,
 } from "@/features/projects/extension-settings-model";
 import type {
   AgentModeDefinition,
@@ -18,6 +19,7 @@ import type {
   SkillImportCandidate,
   ToolCatalogEntry,
 } from "@/services/aivo";
+import { isRequiredCoreToolName } from "./tool-injection-resource-model.ts";
 
 export function useExtensionSettingsDerivedState({
   agentModes,
@@ -73,15 +75,22 @@ export function useExtensionSettingsDerivedState({
     [query, skills],
   );
   const visibleSkillCandidates = useMemo(
-    () => filterSkillCandidates(skillCandidates, query),
-    [query, skillCandidates],
+    () =>
+      selectVisibleSkillCandidates(
+        filterSkillCandidates(skillCandidates, query),
+        skills,
+      ),
+    [query, skillCandidates, skills],
   );
   const visibleServers = useMemo(
     () => filterServers(servers, query),
     [query, servers],
   );
   const manageableTools = useMemo(
-    () => visibleTools.filter(isAivoBuiltinTool),
+    () =>
+      visibleTools.filter(
+        (tool) => isAivoBuiltinTool(tool) && !isRequiredCoreToolName(tool.name),
+      ),
     [visibleTools],
   );
   const visibleAllTools = useMemo(

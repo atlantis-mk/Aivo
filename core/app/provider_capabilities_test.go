@@ -120,10 +120,46 @@ func TestValidateModelCapabilitiesAllowsUnknownModelForCompatibility(t *testing.
 	}
 }
 
+func TestValidateModelCapabilitiesUsesOnlyExplicitDynamicDimensions(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	route := capabilityTestRoute(domain.ModelInfo{
+		ID: "declared-model", ProviderID: "test-provider", Name: "Declared Model",
+		DeclaredCapabilities: []string{"tools"}, Capabilities: []string{"streaming"}, Streaming: true,
+	})
+
+	if err := service.validateModelCapabilities(context.Background(), route, modelRequirement{Tools: true}); err == nil {
+		t.Fatal("tools=false declaration was not enforced")
+	}
+	if err := service.validateModelCapabilities(context.Background(), route, modelRequirement{Reasoning: true}); err != nil {
+		t.Fatalf("undeclared reasoning dimension should remain unknown: %v", err)
+	}
+}
+
 func TestRequestRequirementsDerivesCapabilities(t *testing.T) {
 	req := requestRequirements(domain.ChatRequest{Tools: []domain.ToolSpec{{Name: "read_file"}}}, "high", func(string) {})
 	if !req.Tools || !req.Streaming || !req.Reasoning {
 		t.Fatalf("requirements = %+v, want all true", req)
+	}
+}
+
+func TestModelInfoForCodexRouteDoesNotUnionStaticCapabilities(t *testing.T) {
+	service := NewService(&memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"openai": {ProviderID: "openai", Models: []domain.ModelInfo{{
+			ID: "gpt-codex", ProviderID: "openai", Modalities: []string{"text"},
+			DeclaredCapabilities: []string{codexRuntimeCapability},
+		}}},
+	}})
+	defer service.Shutdown()
+	route := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "openai"}, Model: domain.ModelRef{ProviderID: "openai", ModelID: "gpt-codex"},
+		Definition: ProviderDefinition{ID: "openai", BuiltIn: true, Transport: TransportOpenAIResponses, Models: []domain.ModelInfo{{
+			ID: "gpt-codex", ProviderID: "openai", Modalities: []string{"text", "image"}, Capabilities: []string{"vision"},
+		}}},
+		Transport: TransportOpenAIResponses, Credential: llmCredential{Method: "oauth-browser"},
+	}
+	model, ok := service.modelInfoForRoute(context.Background(), route)
+	if !ok || len(model.Modalities) != 1 || model.Modalities[0] != "text" || containsString(model.Capabilities, "vision") {
+		t.Fatalf("model = %#v", model)
 	}
 }
 

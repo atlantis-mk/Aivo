@@ -64,7 +64,7 @@ func TestGenerateChatResponseUsesCanonicalToolNameUnchanged(t *testing.T) {
 	}
 	for attempt := 0; attempt < 2; attempt++ {
 		var streamed []domain.ChatToolCall
-		response, _, err := service.GenerateChatResponseStreamWithToolDelta(context.Background(), request, nil, "", "", nil, func(call domain.ChatToolCall) {
+		response, _, err := service.GenerateChatResponseStreamWithToolDelta(context.Background(), request, nil, "none", "", nil, func(call domain.ChatToolCall) {
 			streamed = append(streamed, call)
 		})
 		if err != nil {

@@ -54,6 +54,9 @@ func (r *Registry) Register(tool domain.Tool) error {
 	if err := validateCanonicalToolName(name); err != nil {
 		return err
 	}
+	if err := validateToolSelectionGroup(spec.SelectionGroup); err != nil {
+		return fmt.Errorf("tool %q: %w", name, err)
+	}
 	return r.RegisterScoped(tool, domain.ToolSourceBuiltin, "", "")
 }
 
@@ -66,6 +69,9 @@ func (r *Registry) RegisterScoped(tool domain.Tool, source string, sourceID stri
 	if err := validateCanonicalToolName(name); err != nil {
 		return err
 	}
+	if err := validateToolSelectionGroup(spec.SelectionGroup); err != nil {
+		return fmt.Errorf("tool %q: %w", name, err)
+	}
 	if source == "" {
 		source = domain.ToolSourceBuiltin
 	}
@@ -76,6 +82,13 @@ func (r *Registry) RegisterScoped(tool domain.Tool, source string, sourceID stri
 	}
 	if isBridgeToolName(name) && source != domain.ToolSourceBridge {
 		return fmt.Errorf("tool %q is reserved by the Host control plane", name)
+	}
+	selectionGroups := map[string]domain.ToolSelectionGroup{}
+	if spec.SelectionGroup != nil {
+		selectionGroups[spec.SelectionGroup.ID] = *spec.SelectionGroup
+	}
+	if err := r.validateSelectionGroupsLocked(selectionGroups, source, sourceID, map[string]bool{name: true}); err != nil {
+		return err
 	}
 	if existing := r.tools[name]; len(existing) > 0 {
 		current := existing[len(existing)-1]
@@ -108,6 +121,7 @@ func (r *Registry) RegisterScopedBatch(tools []domain.Tool, source, sourceID, ve
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	seen := map[string]bool{}
+	selectionGroups := map[string]domain.ToolSelectionGroup{}
 	for _, tool := range tools {
 		if tool == nil {
 			return errors.New("tool is required")
@@ -115,6 +129,15 @@ func (r *Registry) RegisterScopedBatch(tools []domain.Tool, source, sourceID, ve
 		name := tool.Spec().Name
 		if err := validateCanonicalToolName(name); err != nil {
 			return err
+		}
+		if err := validateToolSelectionGroup(tool.Spec().SelectionGroup); err != nil {
+			return fmt.Errorf("tool %q: %w", name, err)
+		}
+		if group := tool.Spec().SelectionGroup; group != nil {
+			if existing, ok := selectionGroups[group.ID]; ok && existing != *group {
+				return fmt.Errorf("selection group %q has inconsistent metadata", group.ID)
+			}
+			selectionGroups[group.ID] = *group
 		}
 		if seen[name] {
 			return fmt.Errorf("tool %q is duplicated in the registration batch", name)
@@ -136,6 +159,9 @@ func (r *Registry) RegisterScopedBatch(tools []domain.Tool, source, sourceID, ve
 			}
 		}
 	}
+	if err := r.validateSelectionGroupsLocked(selectionGroups, source, sourceID, seen); err != nil {
+		return err
+	}
 	for _, tool := range tools {
 		spec := tool.Spec()
 		name := strings.TrimSpace(spec.Name)
@@ -146,6 +172,36 @@ func (r *Registry) RegisterScopedBatch(tools []domain.Tool, source, sourceID, ve
 			tool: tool, registrationID: toolRegistrationID(spec, source, sourceID, version), schemaHash: toolSchemaHash(spec),
 			source: source, sourceID: sourceID, version: version, implementationHash: spec.ImplementationHash, enabled: true,
 		})
+	}
+	return nil
+}
+
+func (r *Registry) validateSelectionGroupsLocked(groups map[string]domain.ToolSelectionGroup, source, sourceID string, replacing map[string]bool) error {
+	if len(groups) == 0 {
+		return nil
+	}
+	for name := range r.tools {
+		if replacing[name] {
+			continue
+		}
+		registration, ok := r.effectiveLocked(name)
+		if !ok {
+			continue
+		}
+		group := registration.tool.Spec().SelectionGroup
+		if group == nil {
+			continue
+		}
+		candidate, exists := groups[group.ID]
+		if !exists {
+			continue
+		}
+		if registration.source != source || registration.sourceID != sourceID {
+			return fmt.Errorf("selection group %q is already registered by another source", group.ID)
+		}
+		if candidate != *group {
+			return fmt.Errorf("selection group %q has inconsistent metadata", group.ID)
+		}
 	}
 	return nil
 }
@@ -257,16 +313,17 @@ func (r *Registry) CatalogEntries() []domain.ToolCatalogEntry {
 			Namespace: spec.Namespace, NamespaceDescription: spec.NamespaceDescription, Capability: spec.Capability, RiskLevel: spec.RiskLevel,
 			Category: spec.Category, Toolsets: spec.Toolsets, Source: reg.source, SourceID: reg.sourceID,
 			RegistrationID: reg.registrationID, SchemaHash: reg.schemaHash, Version: reg.version, ImplementationHash: reg.implementationHash, Enabled: reg.enabled, ActivationPolicy: spec.ActivationPolicy,
+			SelectionGroup: cloneToolSelectionGroup(spec.SelectionGroup),
 		})
 	}
 	return out
 }
 
 func (r *Registry) orderedNamesLocked() []string {
-	core := []string{"read", "bash", "edit", "write"}
+	preferred := []string{"read", "bash", "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"}
 	seen := map[string]bool{}
 	names := make([]string, 0, len(r.tools))
-	for _, name := range core {
+	for _, name := range preferred {
 		if _, ok := r.tools[name]; ok {
 			names = append(names, name)
 			seen[name] = true
@@ -290,7 +347,7 @@ func (r *Registry) orderedNamesLocked() []string {
 
 func isReservedCoreToolName(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "read", "bash", "edit", "write":
+	case "read", "bash", "edit", "write", "update_plan", "ask_user":
 		return true
 	default:
 		return false
@@ -300,10 +357,39 @@ func isReservedCoreToolName(name string) bool {
 func toolRegistrationID(spec domain.ToolSpec, source string, sourceID string, version string) string {
 	raw, _ := json.Marshal(map[string]any{
 		"name": spec.Name, "source": source, "sourceID": sourceID, "version": version,
-		"capability": spec.Capability, "schema": spec.InputSchema, "implementationHash": spec.ImplementationHash,
+		"capability": spec.Capability, "schema": spec.InputSchema, "selectionGroup": spec.SelectionGroup, "implementationHash": spec.ImplementationHash,
 	})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:12])
+}
+
+func validateToolSelectionGroup(group *domain.ToolSelectionGroup) error {
+	if group == nil {
+		return nil
+	}
+	if err := validateCanonicalToolName(strings.TrimSpace(group.ID)); err != nil {
+		return fmt.Errorf("selection group id is invalid: %w", err)
+	}
+	if strings.TrimSpace(group.ID) != group.ID {
+		return errors.New("selection group id must be canonical")
+	}
+	name := strings.TrimSpace(group.Name)
+	description := strings.TrimSpace(group.Description)
+	if name == "" || len([]rune(name)) > 100 {
+		return errors.New("selection group name is required and must be at most 100 characters")
+	}
+	if len([]rune(description)) > 500 {
+		return errors.New("selection group description must be at most 500 characters")
+	}
+	return nil
+}
+
+func cloneToolSelectionGroup(group *domain.ToolSelectionGroup) *domain.ToolSelectionGroup {
+	if group == nil {
+		return nil
+	}
+	copy := *group
+	return &copy
 }
 
 func toolSchemaHash(spec domain.ToolSpec) string {
@@ -343,8 +429,14 @@ func NewCodingToolRegistryWithExecutionEnvironment(workspaceRoot string, outputS
 	edit.environment = environment
 	write := NewWriteTool(workspaceRoot)
 	write.environment = environment
+	grep := NewSearchFilesTool(workspaceRoot)
+	grep.environment = environment
+	find := NewGlobTool(workspaceRoot)
+	find.environment = environment
+	ls := NewListFilesTool(workspaceRoot)
+	ls.environment = environment
 	for _, tool := range []domain.Tool{
-		read, bash, edit, write,
+		read, bash, edit, write, grep, find, ls,
 	} {
 		if err := registry.Register(tool); err != nil {
 			return nil, err

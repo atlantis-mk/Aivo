@@ -1,21 +1,37 @@
 package domain
 
 type ModelInfo struct {
-	ID                string             `json:"id"`
-	ProviderID        string             `json:"providerId"`
-	Name              string             `json:"name"`
-	Recommended       bool               `json:"recommended,omitempty"`
-	Deprecated        bool               `json:"deprecated,omitempty"`
-	ContextLength     int                `json:"contextLength,omitempty"`
-	OutputLimit       int                `json:"outputLimit,omitempty"`
-	Capabilities      []string           `json:"capabilities,omitempty"`
-	Modalities        []string           `json:"modalities,omitempty"`
-	Streaming         bool               `json:"streaming,omitempty"`
-	ToolSupport       bool               `json:"toolSupport,omitempty"`
-	ReasoningControls []string           `json:"reasoningControls,omitempty"`
-	Pricing           map[string]float64 `json:"pricing,omitempty"`
-	Status            string             `json:"status,omitempty"`
-	LastRefreshed     string             `json:"lastRefreshed,omitempty"`
+	ID                          string             `json:"id"`
+	ProviderID                  string             `json:"providerId"`
+	Name                        string             `json:"name"`
+	Recommended                 bool               `json:"recommended,omitempty"`
+	Deprecated                  bool               `json:"deprecated,omitempty"`
+	ContextLength               int                `json:"contextLength,omitempty"`
+	MaxContextLength            int                `json:"maxContextLength,omitempty"`
+	AutoCompactTokenLimit       int                `json:"autoCompactTokenLimit,omitempty"`
+	OutputLimit                 int                `json:"outputLimit,omitempty"`
+	Capabilities                []string           `json:"capabilities,omitempty"`
+	DeclaredCapabilities        []string           `json:"declaredCapabilities,omitempty"`
+	NativeTools                 []string           `json:"nativeTools,omitempty"`
+	NativeToolsKnown            bool               `json:"nativeToolsKnown,omitempty"`
+	Modalities                  []string           `json:"modalities,omitempty"`
+	Streaming                   bool               `json:"streaming,omitempty"`
+	ToolSupport                 bool               `json:"toolSupport,omitempty"`
+	ReasoningControls           []string           `json:"reasoningControls,omitempty"`
+	SupportedReasoningEfforts   []string           `json:"supportedReasoningEfforts,omitempty"`
+	DefaultReasoningEffort      string             `json:"defaultReasoningEffort,omitempty"`
+	SupportsVerbosity           *bool              `json:"supportsVerbosity,omitempty"`
+	DefaultVerbosity            string             `json:"defaultVerbosity,omitempty"`
+	ServiceTiers                []string           `json:"serviceTiers,omitempty"`
+	DefaultServiceTier          string             `json:"defaultServiceTier,omitempty"`
+	SupportsParallelToolCalls   *bool              `json:"supportsParallelToolCalls,omitempty"`
+	WebSearchToolType           string             `json:"webSearchToolType,omitempty"`
+	WebSearchToolTypeKnown      bool               `json:"webSearchToolTypeKnown,omitempty"`
+	UseResponsesLite            *bool              `json:"useResponsesLite,omitempty"`
+	SupportsImageDetailOriginal *bool              `json:"supportsImageDetailOriginal,omitempty"`
+	Pricing                     map[string]float64 `json:"pricing,omitempty"`
+	Status                      string             `json:"status,omitempty"`
+	LastRefreshed               string             `json:"lastRefreshed,omitempty"`
 }
 
 type ProviderAuthMethod struct {
@@ -36,27 +52,37 @@ type AuthInfo struct {
 }
 
 type ProviderInfo struct {
-	ID               string                `json:"id"`
-	Name             string                `json:"name"`
-	Description      string                `json:"description,omitempty"`
-	Type             string                `json:"type"`
-	BaseURL          string                `json:"baseUrl,omitempty"`
-	BuiltIn          bool                  `json:"builtIn"`
-	Custom           bool                  `json:"custom"`
-	Experimental     bool                  `json:"experimental,omitempty"`
-	Deprecated       bool                  `json:"deprecated,omitempty"`
-	Connected        bool                  `json:"connected"`
-	ConnectionSource string                `json:"connectionSource,omitempty"`
-	Environment      string                `json:"environment,omitempty"`
-	DefaultModelID   string                `json:"defaultModelId,omitempty"`
-	Models           []ModelInfo           `json:"models"`
-	AuthMethods      []ProviderAuthMethod  `json:"authMethods"`
-	Auth             *AuthInfo             `json:"auth,omitempty"`
-	Accounts         []ProviderAccountInfo `json:"accounts,omitempty"`
-	Readiness        *ProviderReadiness    `json:"readiness,omitempty"`
-	Health           *ProviderHealth       `json:"health,omitempty"`
-	ModelRefresh     *ProviderModelRefresh `json:"modelRefresh,omitempty"`
-	Profile          *ProviderProfile      `json:"profile,omitempty"`
+	ID                 string                      `json:"id"`
+	Name               string                      `json:"name"`
+	Description        string                      `json:"description,omitempty"`
+	Type               string                      `json:"type"`
+	BaseURL            string                      `json:"baseUrl,omitempty"`
+	BuiltIn            bool                        `json:"builtIn"`
+	Custom             bool                        `json:"custom"`
+	Experimental       bool                        `json:"experimental,omitempty"`
+	Deprecated         bool                        `json:"deprecated,omitempty"`
+	Connected          bool                        `json:"connected"`
+	ConnectionSource   string                      `json:"connectionSource,omitempty"`
+	Environment        string                      `json:"environment,omitempty"`
+	DefaultModelID     string                      `json:"defaultModelId,omitempty"`
+	Models             []ModelInfo                 `json:"models"`
+	AuthMethods        []ProviderAuthMethod        `json:"authMethods"`
+	Auth               *AuthInfo                   `json:"auth,omitempty"`
+	Accounts           []ProviderAccountInfo       `json:"accounts,omitempty"`
+	Readiness          *ProviderReadiness          `json:"readiness,omitempty"`
+	Health             *ProviderHealth             `json:"health,omitempty"`
+	ModelRefresh       *ProviderModelRefresh       `json:"modelRefresh,omitempty"`
+	Profile            *ProviderProfile            `json:"profile,omitempty"`
+	NativeCapabilities *ProviderNativeCapabilities `json:"nativeCapabilities,omitempty"`
+}
+
+// ProviderNativeCapabilities are provider-owned runtime feature upper bounds.
+// They are distinct from the capabilities declared by an individual model.
+type ProviderNativeCapabilities struct {
+	NamespaceTools  bool   `json:"namespaceTools"`
+	ImageGeneration bool   `json:"imageGeneration"`
+	WebSearch       bool   `json:"webSearch"`
+	Source          string `json:"source"`
 }
 
 type ProviderReadiness struct {

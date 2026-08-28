@@ -1,4 +1,5 @@
 import {
+  isRequiredCoreToolName,
   isStandaloneToolResource,
   type ToolInjectionResourceKind,
 } from "./tool-injection-resource-model.ts";
@@ -94,6 +95,7 @@ export function groupPromptMentionItems(items: PromptMentionItem[]) {
 }
 
 export function isPromptMentionBuiltinTool(tool: {
+  activationPolicy?: string;
   category?: string;
   enabled: boolean;
   name?: string;
@@ -101,7 +103,11 @@ export function isPromptMentionBuiltinTool(tool: {
   sourceId?: string;
   toolsets?: string[];
 }) {
-  return tool.enabled && isStandaloneToolResource(tool);
+  return (
+    tool.enabled &&
+    !isRequiredCoreToolName(tool.name) &&
+    isStandaloneToolResource(tool)
+  );
 }
 
 export function promptMentionProjectItems(

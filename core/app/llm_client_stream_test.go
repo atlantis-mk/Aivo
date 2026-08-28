@@ -108,13 +108,13 @@ func TestDoLLMRequestSurfacesJSONProviderFailure(t *testing.T) {
 
 func TestReadLLMEventStreamEmitsResponsesCustomToolDeltas(t *testing.T) {
 	raw := strings.NewReader("event: response.output_item.added\n" +
-		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ct_1\",\"type\":\"custom_tool_call\",\"status\":\"in_progress\",\"input\":\"\",\"call_id\":\"call_patch\",\"name\":\"apply_patch\"}}\n\n" +
+		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ct_1\",\"type\":\"custom_tool_call\",\"status\":\"in_progress\",\"input\":\"\",\"call_id\":\"call_custom\",\"name\":\"custom_tool\"}}\n\n" +
 		"event: response.custom_tool_call_input.delta\n" +
-		"data: {\"type\":\"response.custom_tool_call_input.delta\",\"item_id\":\"ct_1\",\"delta\":\"*** Begin Patch\\n*** Add File: docs/spec.md\\n+hello\"}\n\n" +
+		"data: {\"type\":\"response.custom_tool_call_input.delta\",\"item_id\":\"ct_1\",\"delta\":\"custom input\"}\n\n" +
 		"event: response.custom_tool_call_input.done\n" +
-		"data: {\"type\":\"response.custom_tool_call_input.done\",\"item_id\":\"ct_1\",\"input\":\"*** Begin Patch\\n*** Add File: docs/spec.md\\n+hello\\n*** End Patch\\n\"}\n\n" +
+		"data: {\"type\":\"response.custom_tool_call_input.done\",\"item_id\":\"ct_1\",\"input\":\"custom input\"}\n\n" +
 		"event: response.output_item.done\n" +
-		"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ct_1\",\"type\":\"custom_tool_call\",\"status\":\"completed\",\"input\":\"*** Begin Patch\\n*** Add File: docs/spec.md\\n+hello\\n*** End Patch\\n\",\"call_id\":\"call_patch\",\"name\":\"apply_patch\"}}\n\n")
+		"data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ct_1\",\"type\":\"custom_tool_call\",\"status\":\"completed\",\"input\":\"custom input\",\"call_id\":\"call_custom\",\"name\":\"custom_tool\"}}\n\n")
 	var toolDeltas []domain.ChatToolCall
 	resp, err := readLLMEventStream(raw, nil, func(call domain.ChatToolCall) {
 		toolDeltas = append(toolDeltas, call)
@@ -122,8 +122,8 @@ func TestReadLLMEventStreamEmitsResponsesCustomToolDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "call_patch" || !strings.Contains(string(resp.ToolCalls[0].Arguments), "docs/spec.md") {
-		t.Fatalf("ToolCalls = %#v, want completed custom apply_patch", resp.ToolCalls)
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "call_custom" || string(resp.ToolCalls[0].Arguments) != "custom input" {
+		t.Fatalf("ToolCalls = %#v, want completed custom tool", resp.ToolCalls)
 	}
 	if len(toolDeltas) < 2 {
 		t.Fatalf("toolDeltas = %#v, want streamed custom deltas", toolDeltas)
@@ -210,9 +210,9 @@ func TestReadLLMEventStreamSeparatesResponsesToolArgumentsFromText(t *testing.T)
 
 func TestReadLLMEventStreamEmitsResponsesToolArgumentDeltas(t *testing.T) {
 	raw := strings.NewReader("event: response.output_item.added\n" +
-		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_patch\",\"name\":\"apply_patch\"}}\n\n" +
+		"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"in_progress\",\"arguments\":\"\",\"call_id\":\"call_edit\",\"name\":\"edit\"}}\n\n" +
 		"event: response.function_call_arguments.delta\n" +
-		"data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{\\\"patchText\\\":\\\"*** Begin Patch\\\\n*** Add File: docs/spec.md\\\\n+hello\"}\n\n")
+		"data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"{\\\"path\\\":\\\"docs/spec.md\\\"}\"}\n\n")
 	var toolDeltas []domain.ChatToolCall
 
 	resp, err := readLLMEventStream(raw, nil, func(call domain.ChatToolCall) {
@@ -228,11 +228,11 @@ func TestReadLLMEventStreamEmitsResponsesToolArgumentDeltas(t *testing.T) {
 		t.Fatalf("toolDeltas = %#v, want start and argument delta", toolDeltas)
 	}
 	last := toolDeltas[len(toolDeltas)-1]
-	if last.ID != "call_patch" || last.Name != "apply_patch" {
+	if last.ID != "call_edit" || last.Name != "edit" {
 		t.Fatalf("last tool delta = %#v", last)
 	}
 	if !strings.Contains(string(last.Arguments), "docs/spec.md") {
-		t.Fatalf("last arguments = %q, want streamed patch text", string(last.Arguments))
+		t.Fatalf("last arguments = %q, want streamed tool arguments", string(last.Arguments))
 	}
 }
 
@@ -570,5 +570,30 @@ func TestMergeTokenUsageAcceptsExplicitZeroFinalFields(t *testing.T) {
 	)
 	if merged.CacheReadTokens != 0 || !merged.CacheReadTokensAvailable {
 		t.Fatalf("usage = %+v, want an explicitly reported zero cache read", merged)
+	}
+}
+
+func TestExtractChatResponsePreservesBoundedURLCitations(t *testing.T) {
+	response := extractChatResponse([]byte(`{
+		"output":[{"type":"message","content":[{"type":"output_text","text":"Recent result","annotations":[
+			{"type":"url_citation","url":"https://example.com/news","title":"Example News"},
+			{"type":"url_citation","url":"https://example.com/news","title":"Duplicate"}
+		]}]}]
+	}`))
+	if len(response.Sources) != 1 || response.Sources[0].URL != "https://example.com/news" || !strings.Contains(response.Text, "[Example News](https://example.com/news)") {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestReadLLMEventStreamCollectsSearchSourcesWithoutDuplicatingText(t *testing.T) {
+	raw := strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Answer\"}\n\n" +
+		"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"web_search_call\",\"results\":[{\"type\":\"text_result\",\"url\":\"https://example.com/source\",\"title\":\"Source\"}]}}\n\n" +
+		"data: [DONE]\n\n")
+	response, err := readLLMEventStream(raw, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Text != "Answer\n\nSources:\n1. [Source](https://example.com/source)" || len(response.Sources) != 1 {
+		t.Fatalf("response = %+v", response)
 	}
 }

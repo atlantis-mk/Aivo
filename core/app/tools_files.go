@@ -22,7 +22,7 @@ const (
 	globMaxResults                 = 100
 	searchMaxMatches               = 100
 	filesystemNamespace            = "functions"
-	filesystemNamespaceDescription = "Workspace file tools. Use read_file only when the exact file path is known, list_files to inspect one directory, glob to find files by filename/path pattern, search_files to find text inside files, and write/edit/patch tools only for requested changes."
+	filesystemNamespaceDescription = "Workspace file tools. Use read_file only when the exact file path is known, ls to inspect one directory, find to match files by filename/path pattern, grep to find text inside files, and write/edit/patch tools only for requested changes."
 )
 
 var ignoredToolDirs = map[string]bool{
@@ -40,7 +40,7 @@ func NewReadFileTool(workspaceRoot string) *ReadFileTool {
 func (t *ReadFileTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "read_file",
-		Description:          "Read one UTF-8 text file inside the current workspace. Use this when the exact file path is known and you need file contents, such as source code, README files, config files, or project documentation. Do not use this to list directories or discover filenames; use list_files, glob, or search_files first. The path must be relative to the workspace root. Binary files, sensitive files, directories, and paths outside the workspace are rejected. Large whole-file reads are truncated. For large files, pass offset and limit to read a line range; paged output uses LINE|CONTENT.",
+		Description:          "Read one UTF-8 text file inside the current workspace. Use this when the exact file path is known and you need file contents, such as source code, README files, config files, or project documentation. Do not use this to list directories or discover filenames; use ls, find, or grep first. The path must be relative to the workspace root. Binary files, sensitive files, directories, and paths outside the workspace are rejected. Large whole-file reads are truncated. For large files, pass offset and limit to read a line range; paged output uses LINE|CONTENT.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.read",
@@ -136,6 +136,7 @@ func withNestedProjectInstructions(content, workspaceRoot, targetPath string) st
 
 type ListFilesTool struct {
 	workspaceRoot string
+	environment   ExecutionEnvironment
 }
 
 func NewListFilesTool(workspaceRoot string) *ListFilesTool {
@@ -144,8 +145,8 @@ func NewListFilesTool(workspaceRoot string) *ListFilesTool {
 
 func (t *ListFilesTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
-		Name:                 "list_files",
-		Description:          "List entries in one workspace directory. Use this to inspect project structure when you do not yet know which file to read. Do not use this when you already know the target file; use read_file. For filename/path pattern matching use glob, and for content search use search_files. The optional path must be relative to the workspace root. Hidden files and directories whose names start with . are skipped unless includeHidden is true. Heavy generated directories such as .git, node_modules, vendor, dist, build, .next, and target are ignored, and workspace .gitignore rules are respected.",
+		Name:                 "ls",
+		Description:          "List entries in one workspace directory. Use this to inspect project structure when you do not yet know which file to read. Do not use this when you already know the target file; use read. For filename/path pattern matching use find, and for content search use grep. The optional path must be relative to the workspace root. Hidden files and directories whose names start with . are skipped unless includeHidden is true. Heavy generated directories such as .git, node_modules, vendor, dist, build, .next, and target are ignored, and workspace .gitignore rules are respected.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.list",
@@ -153,6 +154,7 @@ func (t *ListFilesTool) Spec() domain.ToolSpec {
 		Category:             "filesystem",
 		Toolsets:             []string{"safe", "coding"},
 		RequiresWorkspace:    true,
+		ImplementationHash:   executionEnvironmentHash(t.environment),
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -164,26 +166,29 @@ func (t *ListFilesTool) Spec() domain.ToolSpec {
 }
 
 func (t *ListFilesTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+	if t.environment != nil {
+		return t.environment.ExecutePrimitive(ctx, "ls", args, execCtx)
+	}
 	var input struct {
 		Path          string `json:"path"`
 		IncludeHidden *bool  `json:"includeHidden"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &input); err != nil {
-			return toolError("list_files", err)
+			return toolError("ls", err)
 		}
 	}
 	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
 	path, err := safeJoin(workspaceRoot, input.Path)
 	if err != nil {
-		return toolError("list_files", err)
+		return toolError("ls", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return toolError("list_files", err)
+		return toolError("ls", err)
 	}
 	if !info.IsDir() {
-		return toolError("list_files", errors.New("path must be a directory"))
+		return toolError("ls", errors.New("path must be a directory"))
 	}
 	var files []string
 	truncated := false
@@ -226,14 +231,14 @@ func (t *ListFilesTool) Execute(ctx context.Context, args json.RawMessage, execC
 		err = nil
 	}
 	if err != nil {
-		return toolError("list_files", err)
+		return toolError("ls", err)
 	}
 	sort.Strings(files)
 	content := strings.Join(files, "\n")
 	if truncated {
 		content += fmt.Sprintf("\n\n[truncated: showing first %d files]", listFilesMaxResults)
 	}
-	return domain.ToolResult{Name: "list_files", OK: true, Content: content}
+	return domain.ToolResult{Name: "ls", OK: true, Content: content}
 }
 
 func shouldSkipHiddenListEntry(workspaceRoot string, current string, entry os.DirEntry) bool {
@@ -246,6 +251,7 @@ func shouldSkipHiddenListEntry(workspaceRoot string, current string, entry os.Di
 
 type GlobTool struct {
 	workspaceRoot string
+	environment   ExecutionEnvironment
 }
 
 func NewGlobTool(workspaceRoot string) *GlobTool {
@@ -254,8 +260,8 @@ func NewGlobTool(workspaceRoot string) *GlobTool {
 
 func (t *GlobTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
-		Name:                 "glob",
-		Description:          "Find workspace files by filename or path glob pattern. Use this when you know a path pattern, extension, or filename fragment, such as **/*.go, src/**/*.tsx, or **/README*. Do not use this to search file contents; use search_files. Do not use this to read file contents; use read_file after choosing a result. The optional path limits matching to one workspace-relative directory. Generated directories, sensitive files, and paths ignored by .gitignore are skipped.",
+		Name:                 "find",
+		Description:          "Find workspace files by filename or path glob pattern. Use this when you know a path pattern, extension, or filename fragment, such as **/*.go, src/**/*.tsx, or **/README*. Do not use this to search file contents; use grep. Do not use this to read file contents; use read after choosing a result. The optional path limits matching to one workspace-relative directory. Generated directories, sensitive files, and paths ignored by .gitignore are skipped.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.glob",
@@ -263,6 +269,7 @@ func (t *GlobTool) Spec() domain.ToolSpec {
 		Category:             "filesystem",
 		Toolsets:             []string{"safe", "coding"},
 		RequiresWorkspace:    true,
+		ImplementationHash:   executionEnvironmentHash(t.environment),
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -275,35 +282,38 @@ func (t *GlobTool) Spec() domain.ToolSpec {
 }
 
 func (t *GlobTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+	if t.environment != nil {
+		return t.environment.ExecutePrimitive(ctx, "find", args, execCtx)
+	}
 	var input struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
-		return toolError("glob", err)
+		return toolError("find", err)
 	}
 	pattern := filepath.ToSlash(strings.TrimSpace(input.Pattern))
 	if pattern == "" {
-		return toolError("glob", errors.New("pattern is required"))
+		return toolError("find", errors.New("pattern is required"))
 	}
 	if filepath.IsAbs(pattern) || strings.HasPrefix(filepath.Clean(pattern), "../") || filepath.Clean(pattern) == ".." {
-		return toolError("glob", errors.New("pattern must be relative"))
+		return toolError("find", errors.New("pattern must be relative"))
 	}
 	matcher, err := compileGlobMatcher(pattern)
 	if err != nil {
-		return toolError("glob", err)
+		return toolError("find", err)
 	}
 	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
 	searchRoot, err := safeJoin(workspaceRoot, input.Path)
 	if err != nil {
-		return toolError("glob", err)
+		return toolError("find", err)
 	}
 	info, err := os.Stat(searchRoot)
 	if err != nil {
-		return toolError("glob", err)
+		return toolError("find", err)
 	}
 	if !info.IsDir() {
-		return toolError("glob", errors.New("path must be a directory"))
+		return toolError("find", errors.New("path must be a directory"))
 	}
 	var files []string
 	truncated := false
@@ -343,7 +353,7 @@ func (t *GlobTool) Execute(ctx context.Context, args json.RawMessage, execCtx do
 		err = nil
 	}
 	if err != nil {
-		return toolError("glob", err)
+		return toolError("find", err)
 	}
 	sort.Strings(files)
 	content := "No files found"
@@ -353,11 +363,12 @@ func (t *GlobTool) Execute(ctx context.Context, args json.RawMessage, execCtx do
 			content += fmt.Sprintf("\n\n[truncated: showing first %d files]", globMaxResults)
 		}
 	}
-	return domain.ToolResult{Name: "glob", OK: true, Content: content}
+	return domain.ToolResult{Name: "find", OK: true, Content: content}
 }
 
 type SearchFilesTool struct {
 	workspaceRoot string
+	environment   ExecutionEnvironment
 }
 
 func NewSearchFilesTool(workspaceRoot string) *SearchFilesTool {
@@ -366,8 +377,8 @@ func NewSearchFilesTool(workspaceRoot string) *SearchFilesTool {
 
 func (t *SearchFilesTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
-		Name:                 "search_files",
-		Description:          "Search for a plain-text query inside workspace text files. Use this to locate definitions, references, config keys, error messages, or documentation snippets before reading specific files. Do not use this to find filenames by pattern; use glob. Do not use this to list directories; use list_files. Use path to restrict search to one directory or file, fileGlob to restrict searched filenames, and limit to control result size. Query must be non-empty. Generated directories, binary files, sensitive files, and paths ignored by .gitignore are skipped.",
+		Name:                 "grep",
+		Description:          "Search for a plain-text query inside workspace text files. Use this to locate definitions, references, config keys, error messages, or documentation snippets before reading specific files. Do not use this to find filenames by pattern; use find. Do not use this to list directories; use ls. Use path to restrict search to one directory or file, fileGlob to restrict searched filenames, and limit to control result size. Query must be non-empty. Generated directories, binary files, sensitive files, and paths ignored by .gitignore are skipped.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.search",
@@ -375,6 +386,7 @@ func (t *SearchFilesTool) Spec() domain.ToolSpec {
 		Category:             "filesystem",
 		Toolsets:             []string{"safe", "coding"},
 		RequiresWorkspace:    true,
+		ImplementationHash:   executionEnvironmentHash(t.environment),
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -389,6 +401,9 @@ func (t *SearchFilesTool) Spec() domain.ToolSpec {
 }
 
 func (t *SearchFilesTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+	if t.environment != nil {
+		return t.environment.ExecutePrimitive(ctx, "grep", args, execCtx)
+	}
 	var input struct {
 		Query    string `json:"query"`
 		Path     string `json:"path"`
@@ -396,11 +411,11 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args json.RawMessage, exe
 		Limit    int    `json:"limit"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
-		return toolError("search_files", err)
+		return toolError("grep", err)
 	}
 	query := strings.TrimSpace(input.Query)
 	if query == "" {
-		return toolError("search_files", errors.New("query is required"))
+		return toolError("grep", errors.New("query is required"))
 	}
 	limit := input.Limit
 	if limit <= 0 || limit > searchMaxMatches {
@@ -409,21 +424,21 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args json.RawMessage, exe
 	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
 	searchRoot, err := safeJoin(workspaceRoot, input.Path)
 	if err != nil {
-		return toolError("search_files", err)
+		return toolError("grep", err)
 	}
 	info, err := os.Stat(searchRoot)
 	if err != nil {
-		return toolError("search_files", err)
+		return toolError("grep", err)
 	}
 	var globMatcher *regexp.Regexp
 	if strings.TrimSpace(input.FileGlob) != "" {
 		pattern := filepath.ToSlash(strings.TrimSpace(input.FileGlob))
 		if filepath.IsAbs(pattern) || strings.HasPrefix(filepath.Clean(pattern), "../") || filepath.Clean(pattern) == ".." {
-			return toolError("search_files", errors.New("fileGlob must be relative"))
+			return toolError("grep", errors.New("fileGlob must be relative"))
 		}
 		globMatcher, err = compileGlobMatcher(pattern)
 		if err != nil {
-			return toolError("search_files", err)
+			return toolError("grep", err)
 		}
 	}
 	var matches []string
@@ -474,11 +489,11 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args json.RawMessage, exe
 		err = nil
 	}
 	if err != nil {
-		return toolError("search_files", err)
+		return toolError("grep", err)
 	}
 	content := strings.Join(matches, "\n")
 	if len(matches) >= limit {
 		content += fmt.Sprintf("\n\n[truncated: showing first %d matches]", limit)
 	}
-	return domain.ToolResult{Name: "search_files", OK: true, Content: content}
+	return domain.ToolResult{Name: "grep", OK: true, Content: content}
 }

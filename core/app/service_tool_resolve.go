@@ -107,12 +107,7 @@ func (s *Service) GetSessionActiveTools(ctx context.Context, sessionID string) (
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	coreNames := make([]string, 0, len(coreToolNames()))
-	for _, name := range coreToolNames() {
-		if !s.disabledCoreTools(ctx, sessionID)[name] {
-			coreNames = append(coreNames, name)
-		}
-	}
+	coreNames := coreToolNames()
 	return domain.SessionActiveToolsResult{SessionID: sessionID, ToolNames: names, CoreToolNames: coreNames}, nil
 }
 
@@ -136,21 +131,11 @@ func (s *Service) SetSessionActiveTools(ctx context.Context, input domain.Sessio
 			return domain.SessionActiveToolsResult{}, errors.New("tool is hidden from new conversation activation: " + name)
 		}
 	}
-	selected := map[string]bool{}
-	for _, name := range input.ToolNames {
-		selected[strings.TrimSpace(name)] = true
-	}
-	disabledCore := make([]string, 0, len(coreToolNames()))
-	for _, name := range coreToolNames() {
-		if !selected[name] {
-			disabledCore = append(disabledCore, name)
-		}
-	}
 	if state.Metadata == nil {
 		state.Metadata = map[string]any{}
 	}
 	state.Metadata[sessionMetadataRememberedDeferredTools] = names
-	state.Metadata[sessionMetadataDisabledCoreTools] = disabledCore
+	state.Metadata[sessionMetadataDisabledCoreTools] = []string{}
 	if _, err := s.store.UpsertSessionExecutionState(ctx, state); err != nil {
 		return domain.SessionActiveToolsResult{}, err
 	}
@@ -209,23 +194,11 @@ func normalizeDeferredToolNames(toolNames []string) []string {
 }
 
 func (s *Service) disabledCoreTools(ctx context.Context, sessionID string) map[string]bool {
-	disabled := map[string]bool{}
-	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
-		return disabled
-	}
-	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
-	if err != nil || state.Metadata == nil {
-		return disabled
-	}
-	for _, name := range stringSliceFromAny(state.Metadata[sessionMetadataDisabledCoreTools]) {
-		name = strings.TrimSpace(name)
-		if isReservedCoreToolName(name) {
-			disabled[name] = true
-		}
-	}
-	return disabled
+	_ = ctx
+	_ = sessionID
+	return map[string]bool{}
 }
 
 func coreToolNames() []string {
-	return []string{"read", "bash", "edit", "write"}
+	return []string{"read", "bash", "edit", "write", "update_plan", "ask_user"}
 }

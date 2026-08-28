@@ -8,10 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
-
-	"aivo/core/domain"
 )
 
 func safeTargetForWrite(workspaceRoot string, relPath string) (string, error) {
@@ -70,26 +67,6 @@ func gitCommandOutput(ctx context.Context, workspaceRoot string, args ...string)
 	return string(output), nil
 }
 
-func extractPatchText(args json.RawMessage) (string, error) {
-	raw := strings.TrimSpace(string(args))
-	if raw == "" || raw == "{}" {
-		return "", errors.New("patchText is required")
-	}
-	if strings.HasPrefix(raw, "*** Begin Patch") {
-		return raw, nil
-	}
-	var input struct {
-		PatchText string `json:"patchText"`
-	}
-	if err := json.Unmarshal(args, &input); err == nil {
-		if strings.TrimSpace(input.PatchText) == "" {
-			return "", errors.New("patchText is required")
-		}
-		return input.PatchText, nil
-	}
-	return "", errors.New("invalid apply_patch arguments")
-}
-
 type writeFileInput struct {
 	Path         string `json:"path"`
 	Content      string `json:"content"`
@@ -133,60 +110,6 @@ func parseEditFileArgs(args json.RawMessage) (editFileInput, error) {
 	return input, nil
 }
 
-func patchChangePaths(changes []patchFileChange) []string {
-	seen := map[string]bool{}
-	for _, change := range changes {
-		addPatchPath(seen, change.Path)
-		if change.MovePath != "" {
-			addPatchPath(seen, change.MovePath)
-		}
-	}
-	paths := make([]string, 0, len(seen))
-	for path := range seen {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths
-}
-
-func patchApplySummary(changes []patchFileChange) string {
-	lines := []string{"Success. Updated the following files:"}
-	for _, change := range changes {
-		path := change.Path
-		prefix := "M"
-		switch change.Type {
-		case "add":
-			prefix = "A"
-		case "delete":
-			prefix = "D"
-		case "move":
-			prefix = "R"
-			path = change.Path + " -> " + change.MovePath
-		}
-		lines = append(lines, prefix+" "+path)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func patchChangeResultFiles(workspaceRoot string, changes []patchFileChange) []domain.ToolResultFile {
-	files := make([]domain.ToolResultFile, 0, len(changes))
-	for _, change := range changes {
-		files = append(files, domain.ToolResultFile{
-			Path:         change.Path,
-			FullPath:     fullWorkspacePath(workspaceRoot, change.Path),
-			MovePath:     change.MovePath,
-			MoveFullPath: fullWorkspacePath(workspaceRoot, change.MovePath),
-			Type:         change.Type,
-			Additions:    change.Additions,
-			Deletions:    change.Deletions,
-			Diff:         change.Diff,
-			BaseHash:     change.BaseHash,
-			CurrentHash:  change.CurrentHash,
-		})
-	}
-	return files
-}
-
 func fullWorkspacePath(workspaceRoot string, relPath string) string {
 	root := strings.TrimSpace(workspaceRoot)
 	path := strings.TrimSpace(relPath)
@@ -208,7 +131,7 @@ func requireTextLineLimit(toolName string, fieldName string, value string, maxLi
 	if lineCount <= maxLines {
 		return nil
 	}
-	return fmt.Errorf("%s %s exceeds %d lines (%d lines); use apply_patch for long content", toolName, fieldName, maxLines, lineCount)
+	return fmt.Errorf("%s %s exceeds %d lines (%d lines)", toolName, fieldName, maxLines, lineCount)
 }
 
 func countContentLines(value string) int {

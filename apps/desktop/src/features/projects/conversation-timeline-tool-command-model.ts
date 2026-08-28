@@ -18,6 +18,7 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
           ...visibleToolArgs(args, ["path"]),
         ]),
       };
+    case "ls":
     case "list_files":
       return {
         label: "列出",
@@ -26,9 +27,10 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
           ...visibleToolArgs(args, ["path"]),
         ]),
       };
+    case "find":
     case "glob":
       return {
-        label: "Glob",
+        label: "查找",
         detail: joinCommandParts([
           stringArg(args, "path"),
           stringArg(args, "pattern")
@@ -37,6 +39,7 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
           ...visibleToolArgs(args, ["path", "pattern"]),
         ]),
       };
+    case "grep":
     case "search_files":
       return {
         label: "搜索",
@@ -108,14 +111,6 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
             ? `maxSkills=${scalarArg(args, "maxSkills")}`
             : "",
           ...visibleToolArgs(args, ["intent", "mode", "maxSkills", "names"]),
-        ]),
-      };
-    case "apply_patch":
-      return {
-        label: "补丁",
-        detail: joinCommandParts([
-          patchSummary(args),
-          ...visibleToolArgs(args, ["patchText"]),
         ]),
       };
     case "write_file":
@@ -213,29 +208,4 @@ function commandFromToolResultText(text: string) {
     .split("\n")
     .find((line) => line.trimStart().startsWith("Command:"));
   return commandLine?.replace(/^\s*Command:\s*/, "").trim() ?? "";
-}
-
-function patchSummary(args: Record<string, unknown>) {
-  const patch = args.patchText;
-  if (typeof patch !== "string") return "";
-  const fileCount = new Set(
-    patch
-      .split("\n")
-      .filter(
-        (line) =>
-          line.startsWith("*** Add File: ") ||
-          line.startsWith("*** Update File: ") ||
-          line.startsWith("*** Delete File: "),
-      )
-      .map((line) =>
-        line
-          .replace(/^\*\*\* Add File: /, "")
-          .replace(/^\*\*\* Update File: /, "")
-          .replace(/^\*\*\* Delete File: /, "")
-          .trim(),
-      )
-      .filter((path) => path),
-  ).size;
-  if (fileCount <= 0) return "patch";
-  return `${fileCount} 个文件`;
 }

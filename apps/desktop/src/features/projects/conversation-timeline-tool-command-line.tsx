@@ -35,7 +35,11 @@ export function ToolCallCommandLine({
   const showFileChanges =
     toolCallKind(toolCall) === "write" && fileChanges.length > 0;
   const resultText =
-    toolCall.name === "list_files" || commandTool || skillTool || failed
+    toolCall.name === "ls" ||
+    toolCall.name === "list_files" ||
+    commandTool ||
+    skillTool ||
+    failed
       ? getToolResultText(toolCall)
       : "";
   const showCommandLine =

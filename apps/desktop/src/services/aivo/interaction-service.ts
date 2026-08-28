@@ -45,8 +45,7 @@ export type QuestionRequest = {
   timeUpdated: string;
 };
 
-export type PermissionMode =
-  "request_approval" | "auto_approve" | "full_access";
+export type PermissionMode = "request_approval" | "full_access";
 
 export type PermissionModeState = {
   sessionId?: string;

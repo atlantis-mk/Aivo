@@ -2,6 +2,8 @@ import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
+import { FileLinkIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
 import {
@@ -14,9 +16,15 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ECharts, EChartsCoreOption } from "echarts/core";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { Streamdown, type Components, type ControlsConfig, type CustomRendererProps } from "streamdown";
 
+import {
+ localPathFromMarkdownHref,
+ localPathFromText,
+ markdownHrefForLocalPath,
+} from "@/components/markdown-local-path";
 import { cn } from "@/lib/utils";
 
 type MarkdownStreamFactory = () => AsyncGenerator<string, void, unknown>;
@@ -58,13 +66,76 @@ echarts.use([
 ]);
 
 const streamdownComponents: Components = {
- a: (props) => {
- const href = typeof props.href === "string" ? props.href : undefined;
- const title = typeof props.title === "string" ? props.title : undefined;
+ a: ({ children, className, href: rawHref, node: _node, title: rawTitle, ...props }) => {
+ const href = typeof rawHref === "string" ? rawHref : undefined;
+ const title = typeof rawTitle === "string" ? rawTitle : undefined;
+ const localPath = href ? localPathFromMarkdownHref(href) : undefined;
+ if (localPath) {
  return (
- <a href={href} rel="noopener noreferrer" target="_blank" title={title}>
- {props.children}
+ <a
+ {...props}
+ className={cn(
+ "inline-flex max-w-full items-baseline gap-1 align-baseline font-medium text-blue-600 no-underline underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/45 dark:text-blue-300",
+ className,
+ )}
+ data-local-path-link="true"
+ href={href}
+ onClick={(event) => {
+ event.preventDefault();
+ void openLocalPath(localPath);
+ }}
+ target={undefined}
+ title={title ?? `使用系统默认应用打开 ${localPath}`}
+ >
+ <LocalPathLinkContent>{children}</LocalPathLinkContent>
  </a>
+ );
+ }
+
+ return (
+ <a
+ {...props}
+ className={cn("wrap-anywhere font-medium text-primary underline", className)}
+ data-streamdown="link"
+ href={href}
+ rel="noopener noreferrer"
+ target="_blank"
+ title={title}
+ >
+ {children}
+ </a>
+ );
+ },
+ inlineCode: ({ children, className, node: _node }) => {
+ const text = typeof children === "string" ? children : undefined;
+ const localPath = text
+ ? localPathFromText(text, window.aivo?.platform)
+ : undefined;
+ if (!localPath) {
+ return (
+ <code
+ className={cn("rounded bg-muted px-1.5 py-0.5 font-mono text-sm", className)}
+ data-streamdown="inline-code"
+ >
+ {children}
+ </code>
+ );
+ }
+
+ return (
+ <button
+ aria-label={`使用系统默认应用打开 ${localPath}`}
+ className={cn(
+ "inline-flex max-w-full cursor-pointer appearance-none items-baseline gap-1 border-0 bg-transparent p-0 align-baseline font-sans font-medium text-blue-600 underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/45 dark:text-blue-300",
+ className,
+ )}
+ data-local-path-link="true"
+ onClick={() => void openLocalPath(localPath)}
+ title={`使用系统默认应用打开 ${localPath}`}
+ type="button"
+ >
+ <LocalPathLinkContent>{children}</LocalPathLinkContent>
+ </button>
  );
  },
  img: (props) => {
@@ -76,6 +147,20 @@ const streamdownComponents: Components = {
  return <img alt={alt} loading="lazy" src={src} title={title} />;
  },
 };
+
+function LocalPathLinkContent({ children }: { children: ReactNode }) {
+ return (
+ <>
+ <HugeiconsIcon
+ aria-hidden="true"
+ className="relative top-[0.125em] size-[1.05em] shrink-0 self-baseline"
+ icon={FileLinkIcon}
+ strokeWidth={2}
+ />
+ <span className="min-w-0 break-all text-left">{children}</span>
+ </>
+ );
+}
 
 const streamdownPlugins = {
  code,
@@ -282,6 +367,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function safeMarkdownUrl(value: string, key: string) {
  if (!value) return "";
 
+ if (key === "href") {
+ const localPathHref = markdownHrefForLocalPath(value, window.aivo?.platform);
+ if (localPathHref) return localPathHref;
+ }
+
  try {
  const url = new URL(value, window.location.href);
  if (key === "src") {
@@ -291,5 +381,14 @@ function safeMarkdownUrl(value: string, key: string) {
  return ["http:", "https:", "mailto:"].includes(url.protocol) ? value : "";
  } catch {
  return "";
+ }
+}
+
+async function openLocalPath(target: string) {
+ try {
+ await window.aivo.openPath(target);
+ } catch (error) {
+ const detail = error instanceof Error ? error.message : String(error);
+ toast.error("无法打开文件地址", { description: detail });
  }
 }

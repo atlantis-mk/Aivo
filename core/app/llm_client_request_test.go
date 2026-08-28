@@ -67,6 +67,75 @@ func TestResponsesRequestBodyUsesInputItemList(t *testing.T) {
 	assertResponsesContent(t, payload.Input[2], "assistant", "output_text", "hi")
 }
 
+func TestApplyCodexRequestCapabilitiesUsesResponsesLiteContract(t *testing.T) {
+	lite := true
+	parallel := false
+	verbosity := true
+	model := domain.ModelInfo{
+		SupportedReasoningEfforts: []string{"low", "high"}, DefaultReasoningEffort: "low",
+		SupportsVerbosity: &verbosity, DefaultVerbosity: "low", ServiceTiers: []string{"fast"},
+		SupportsParallelToolCalls: &parallel, UseResponsesLite: &lite,
+	}
+	tools := []domain.ToolSpec{{Name: "read", Description: "Read", InputSchema: map[string]any{"type": "object"}}}
+	body := responsesRequestBody("gpt-lite", []llmChatMessage{{Role: "user", Text: "hello"}}, tools, "max", "flex")
+	applyCodexRequestCapabilities(body, model, tools, "max", "flex")
+	if _, ok := body["tools"]; ok {
+		t.Fatalf("Responses Lite body retained top-level tools: %#v", body)
+	}
+	if body["parallel_tool_calls"] != false || body["service_tier"] != nil {
+		t.Fatalf("Responses Lite request controls = %#v", body)
+	}
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if reasoning["effort"] != "low" || reasoning["context"] != "all_turns" {
+		t.Fatalf("reasoning = %#v", reasoning)
+	}
+	textConfig, _ := body["text"].(map[string]any)
+	if textConfig["verbosity"] != "low" {
+		t.Fatalf("text = %#v", textConfig)
+	}
+	input, _ := body["input"].([]map[string]any)
+	if len(input) != 2 || input[0]["type"] != "additional_tools" || input[0]["role"] != "developer" {
+		t.Fatalf("input = %#v", input)
+	}
+}
+
+func TestApplyCodexRequestCapabilitiesOverridesStaticProfileWithDeclarations(t *testing.T) {
+	body := responsesRequestBody("gpt-codex", []llmChatMessage{{Role: "user", Text: "hello"}}, nil, "max", "priority")
+	applyRequestProfile(body, domain.ProviderRequestProfile{ModelOverrides: map[string]domain.ProviderRequestOverride{
+		"gpt-codex": {Params: map[string]any{
+			"reasoning":    map[string]any{"effort": "max", "summary": "auto"},
+			"service_tier": "priority",
+		}},
+	}}, domain.ProviderConfig{ID: "openai"}, "gpt-codex")
+	parallel := false
+	applyCodexRequestCapabilities(body, domain.ModelInfo{
+		SupportedReasoningEfforts: []string{"low"}, DefaultReasoningEffort: "low",
+		ServiceTiers: []string{"flex"}, SupportsParallelToolCalls: &parallel,
+	}, nil, "max", "priority")
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if reasoning["effort"] != "low" || reasoning["summary"] != nil {
+		t.Fatalf("reasoning = %#v", reasoning)
+	}
+	if _, ok := body["service_tier"]; ok || body["parallel_tool_calls"] != false {
+		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestResponsesHostedSearchSerializesIndexedAndImageContent(t *testing.T) {
+	indexed := true
+	external := true
+	tools := responsesTools([]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{
+		Type: "web_search", ExternalWebAccess: &external, IndexedWebAccess: &indexed, SearchContentTypes: []string{"text", "image"},
+	}}})
+	if len(tools) != 1 || tools[0]["indexed_web_access"] != true {
+		t.Fatalf("tools = %#v", tools)
+	}
+	contentTypes, _ := tools[0]["search_content_types"].([]string)
+	if len(contentTypes) != 2 {
+		t.Fatalf("search_content_types = %#v", tools[0]["search_content_types"])
+	}
+}
+
 func TestResponsesRequestBodyRendersImageAndFileAttachments(t *testing.T) {
 	body := responsesRequestBody("gpt-5.5", []llmChatMessage{{
 		Role: "user",
@@ -183,8 +252,8 @@ func TestResponsesToolsGroupsNamespaceTools(t *testing.T) {
 
 func TestResponsesToolsRendersFreeformCustomTool(t *testing.T) {
 	tools := responsesTools([]domain.ToolSpec{{
-		Name:        "apply_patch",
-		Description: "Apply patch",
+		Name:        "custom_tool",
+		Description: "Custom tool",
 		Kind:        domain.ToolKindFreeform,
 		Format:      &domain.ToolFormat{Type: "grammar", Syntax: "lark", Definition: "start: /.+/"},
 		InputSchema: map[string]any{"type": "object"},
@@ -193,8 +262,8 @@ func TestResponsesToolsRendersFreeformCustomTool(t *testing.T) {
 	if len(tools) != 1 {
 		t.Fatalf("tools = %#v, want one custom tool", tools)
 	}
-	if tools[0]["type"] != "custom" || tools[0]["name"] != "apply_patch" {
-		t.Fatalf("tool = %#v, want custom apply_patch", tools[0])
+	if tools[0]["type"] != "custom" || tools[0]["name"] != "custom_tool" {
+		t.Fatalf("tool = %#v, want custom tool", tools[0])
 	}
 	format, _ := tools[0]["format"].(*domain.ToolFormat)
 	if format == nil || format.Type != "grammar" || format.Syntax != "lark" {
@@ -387,6 +456,17 @@ func TestAnthropicRequestBodyRendersHostedWebFetch(t *testing.T) {
 	}
 	if tools[0]["type"] != "web_fetch_20250910" || tools[0]["name"] != "web_fetch" || tools[0]["max_uses"] != 3 {
 		t.Fatalf("tool = %#v, want anthropic web_fetch server tool", tools[0])
+	}
+}
+
+func TestAnthropicRequestBodyRendersHostedCodeExecution(t *testing.T) {
+	body := anthropicRequestBody("claude-dynamic", []llmChatMessage{{Role: "user", Text: "analyze"}}, []domain.ToolSpec{{
+		Name: "code_execution", Hosted: &domain.HostedToolSpec{Type: "code_execution_20250825"},
+	}}, "")
+
+	tools, _ := body["tools"].([]map[string]any)
+	if len(tools) != 1 || tools[0]["type"] != "code_execution_20250825" || tools[0]["name"] != "code_execution" {
+		t.Fatalf("tools = %#v, want Anthropic code execution server tool", body["tools"])
 	}
 }
 

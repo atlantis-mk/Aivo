@@ -44,8 +44,6 @@ func normalizePermissionMode(mode string) (string, error) {
 	switch strings.TrimSpace(mode) {
 	case "", domain.PermissionModeRequestApproval:
 		return domain.PermissionModeRequestApproval, nil
-	case domain.PermissionModeAutoApprove:
-		return domain.PermissionModeAutoApprove, nil
 	case domain.PermissionModeFullAccess:
 		return domain.PermissionModeFullAccess, nil
 	default:
@@ -57,7 +55,11 @@ func permissionModeFromRule(rule domain.PermissionRule) string {
 	if !strings.HasPrefix(rule.Scope, permissionModeScopePrefix) {
 		return ""
 	}
-	mode, err := normalizePermissionMode(strings.TrimPrefix(rule.Scope, permissionModeScopePrefix))
+	rawMode := strings.TrimSpace(strings.TrimPrefix(rule.Scope, permissionModeScopePrefix))
+	if rawMode == legacyPermissionModeAutoApprove {
+		return domain.PermissionModeRequestApproval
+	}
+	mode, err := normalizePermissionMode(rawMode)
 	if err != nil {
 		return ""
 	}
@@ -286,32 +288,6 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 			files = append(files, map[string]any{"path": path, "fullPath": fullWorkspacePath(execCtx.WorkspaceRoot, path), "type": "format", "baseHash": baseHash, "currentHash": baseHash})
 		}
 		return input.Paths, map[string]any{"files": files, "riskLevel": "medium", "rememberScope": "exact_paths"}, nil
-	case "apply_patch":
-		patchText, err := extractPatchText(args)
-		if err != nil {
-			return nil, nil, err
-		}
-		changes, err := buildPatchChanges(execCtx.WorkspaceRoot, patchText)
-		if err != nil {
-			return nil, nil, err
-		}
-		storePreparedPatchPlan(execCtx.ToolCallID, patchText, changes)
-		paths := patchChangePaths(changes)
-		files := make([]map[string]any, 0, len(changes))
-		var diff strings.Builder
-		for _, change := range changes {
-			files = append(files, map[string]any{
-				"path": change.Path, "fullPath": fullWorkspacePath(execCtx.WorkspaceRoot, change.Path),
-				"movePath": change.MovePath, "moveFullPath": fullWorkspacePath(execCtx.WorkspaceRoot, change.MovePath),
-				"type": change.Type, "additions": change.Additions, "deletions": change.Deletions, "diff": change.Diff,
-				"baseHash": change.BaseHash, "currentHash": change.CurrentHash,
-			})
-			diff.WriteString(change.Diff)
-			if !strings.HasSuffix(change.Diff, "\n") {
-				diff.WriteByte('\n')
-			}
-		}
-		return paths, map[string]any{"files": files, "diff": diff.String(), "patchText": patchText, "patchTextPreview": bounded(patchText, 4000), "riskLevel": "high", "rememberScope": "exact_paths"}, nil
 	case "write", "write_file":
 		if name == "write" {
 			var input struct {

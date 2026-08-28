@@ -19,13 +19,15 @@ import (
 )
 
 type testTool struct {
-	name         string
-	content      string
-	modelContent string
+	name           string
+	namespace      string
+	content        string
+	modelContent   string
+	selectionGroup *domain.ToolSelectionGroup
 }
 
 func (t testTool) Spec() domain.ToolSpec {
-	return domain.ToolSpec{Name: t.name, Description: "test", InputSchema: map[string]any{"type": "object"}}
+	return domain.ToolSpec{Name: t.name, Namespace: t.namespace, Description: "test", InputSchema: map[string]any{"type": "object"}, SelectionGroup: t.selectionGroup}
 }
 
 func (t testTool) Execute(context.Context, json.RawMessage, domain.ToolExecutionContext) domain.ToolResult {
@@ -69,6 +71,87 @@ func TestToolRegistryRegistersQueriesAndRejectsDuplicate(t *testing.T) {
 	}
 	if err := registry.Register(testTool{name: "alpha"}); err == nil {
 		t.Fatal("duplicate tool registration succeeded")
+	}
+}
+
+func TestToolRuntimeRejectsMismatchedResponseNamespace(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(testTool{name: "imagegen", namespace: "image_gen"}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewToolRuntime(registry, t.TempDir())
+	result := runtime.Execute(context.Background(), domain.ChatToolCall{ID: "call-1", Namespace: "other", Name: "imagegen", Arguments: json.RawMessage(`{}`)})
+	if result.OK || result.ToolError == nil || result.ToolError.Code != "tool_namespace_mismatch" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestToolRegistrySupportsExplicitGroupsAndIndividualRegistrations(t *testing.T) {
+	registry := NewRegistry()
+	group := &domain.ToolSelectionGroup{ID: "extension_calendar", Name: "Calendar", Description: "Read and update calendars"}
+	if err := registry.RegisterScopedBatch([]domain.Tool{
+		testTool{name: "calendar_list", selectionGroup: group},
+		testTool{name: "calendar_update", selectionGroup: group},
+	}, domain.ToolSourceExtension, "calendar", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterScoped(testTool{name: "notes_read"}, domain.ToolSourceExtension, "notes", "v1"); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := registry.CatalogEntries()
+	if len(entries) != 3 || entries[0].SelectionGroup == nil || entries[1].SelectionGroup == nil || entries[2].SelectionGroup != nil {
+		t.Fatalf("catalog entries = %#v, want two explicitly grouped tools and one individual tool", entries)
+	}
+	if *entries[0].SelectionGroup != *group || *entries[1].SelectionGroup != *group {
+		t.Fatalf("catalog group metadata = %#v, %#v", entries[0].SelectionGroup, entries[1].SelectionGroup)
+	}
+	entries[0].SelectionGroup.Name = "mutated"
+	if next := registry.CatalogEntries(); next[0].SelectionGroup == nil || next[0].SelectionGroup.Name != "Calendar" {
+		t.Fatalf("catalog leaked mutable selection-group metadata: %#v", next)
+	}
+}
+
+func TestToolRegistryRejectsInvalidOrInconsistentSelectionGroups(t *testing.T) {
+	for name, group := range map[string]*domain.ToolSelectionGroup{
+		"invalid id": {ID: "calendar.group", Name: "Calendar"},
+		"blank name": {ID: "calendar_group", Name: "  "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			registry := NewRegistry()
+			if err := registry.Register(testTool{name: "calendar_list", selectionGroup: group}); err == nil {
+				t.Fatalf("registered invalid selection group %#v", group)
+			}
+		})
+	}
+
+	registry := NewRegistry()
+	err := registry.RegisterScopedBatch([]domain.Tool{
+		testTool{name: "calendar_list", selectionGroup: &domain.ToolSelectionGroup{ID: "calendar_group", Name: "Calendar"}},
+		testTool{name: "calendar_update", selectionGroup: &domain.ToolSelectionGroup{ID: "calendar_group", Name: "Different"}},
+	}, domain.ToolSourceExtension, "calendar", "v1")
+	if err == nil || !strings.Contains(err.Error(), "inconsistent metadata") {
+		t.Fatalf("inconsistent group metadata error = %v", err)
+	}
+
+	registry = NewRegistry()
+	if err := registry.RegisterScoped(
+		testTool{name: "calendar_list", selectionGroup: &domain.ToolSelectionGroup{ID: "calendar_group", Name: "Calendar"}},
+		domain.ToolSourceExtension, "calendar", "v1",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterScoped(
+		testTool{name: "calendar_update", selectionGroup: &domain.ToolSelectionGroup{ID: "calendar_group", Name: "Different"}},
+		domain.ToolSourceExtension, "calendar", "v1",
+	); err == nil || !strings.Contains(err.Error(), "inconsistent metadata") {
+		t.Fatalf("separate inconsistent group registration error = %v", err)
+	}
+	if err := registry.RegisterScoped(
+		testTool{name: "other_calendar", selectionGroup: &domain.ToolSelectionGroup{ID: "calendar_group", Name: "Calendar"}},
+		domain.ToolSourceExtension, "other", "v1",
+	); err == nil || !strings.Contains(err.Error(), "another source") {
+		t.Fatalf("cross-source group registration error = %v", err)
 	}
 }
 

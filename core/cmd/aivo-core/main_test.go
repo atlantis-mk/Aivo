@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -86,5 +87,32 @@ func TestCoreServerAddrUsesEnvOverride(t *testing.T) {
 	t.Setenv("AIVO_CORE_ADDR", "127.0.0.1:0")
 	if got := coreServerAddr(); got != "127.0.0.1:0" {
 		t.Fatalf("addr = %q, want env override", got)
+	}
+}
+
+func TestWriteCoreReadyRecordAnnouncesVersionedLoopbackOrigin(t *testing.T) {
+	var out bytes.Buffer
+	if err := writeCoreReadyRecord(&out, "127.0.0.1:54321"); err != nil {
+		t.Fatalf("writeCoreReadyRecord: %v", err)
+	}
+	want := "AIVO_CORE_READY {\"version\":1,\"url\":\"http://127.0.0.1:54321\"}\n"
+	if got := out.String(); got != want {
+		t.Fatalf("record = %q, want %q", got, want)
+	}
+}
+
+func TestWriteCoreReadyRecordRejectsUnsafeEndpoints(t *testing.T) {
+	for _, addr := range []string{
+		"127.0.0.1:0",
+		"0.0.0.0:54321",
+		"[::1]:54321",
+		"localhost:54321",
+		"127.0.0.1:not-a-port",
+	} {
+		t.Run(addr, func(t *testing.T) {
+			if err := writeCoreReadyRecord(io.Discard, addr); err == nil {
+				t.Fatalf("writeCoreReadyRecord(%q) succeeded, want refusal", addr)
+			}
+		})
 	}
 }

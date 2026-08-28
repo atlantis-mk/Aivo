@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"aivo/core/domain"
 )
@@ -305,6 +306,35 @@ func validateExtensionManifest(root string, manifest domain.ExtensionManifest) e
 			return fmt.Errorf("tool %s has invalid activation", tool.Name)
 		}
 	}
+	seenToolGroups := map[string]bool{}
+	groupedTools := map[string]bool{}
+	for _, group := range manifest.Contributes.ToolGroups {
+		groupID := strings.TrimSpace(group.ID)
+		groupName := strings.TrimSpace(group.Name)
+		groupDescription := strings.TrimSpace(group.Description)
+		if !extensionIDPattern.MatchString(groupID) || seenToolGroups[groupID] {
+			return fmt.Errorf("invalid or duplicate extension tool group %q", group.ID)
+		}
+		if groupName == "" || utf8.RuneCountInString(groupName) > 100 || utf8.RuneCountInString(groupDescription) > 500 {
+			return fmt.Errorf("extension tool group %q requires a bounded name and description", group.ID)
+		}
+		if len(group.Tools) == 0 {
+			return fmt.Errorf("extension tool group %q must contain at least one tool", group.ID)
+		}
+		seenToolGroups[groupID] = true
+		seenMembers := map[string]bool{}
+		for _, toolName := range group.Tools {
+			toolName = strings.TrimSpace(toolName)
+			if !seenTools[toolName] {
+				return fmt.Errorf("extension tool group %q references undeclared tool %q", group.ID, toolName)
+			}
+			if seenMembers[toolName] || groupedTools[toolName] {
+				return fmt.Errorf("extension tool %q belongs to more than one tool group", toolName)
+			}
+			seenMembers[toolName] = true
+			groupedTools[toolName] = true
+		}
+	}
 	allowedSurfaces := map[string]bool{"page": true, "dialog": true, "tool-detail": true, "settings": true, "notification": true}
 	seenViews := map[string]bool{}
 	for _, view := range manifest.Contributes.Views {
@@ -371,6 +401,21 @@ func validateExtensionManifest(root string, manifest domain.ExtensionManifest) e
 		}
 	}
 	return nil
+}
+
+func extensionToolSelectionGroups(manifest domain.ExtensionManifest) map[string]domain.ToolSelectionGroup {
+	groups := make(map[string]domain.ToolSelectionGroup)
+	for _, contribution := range manifest.Contributes.ToolGroups {
+		group := domain.ToolSelectionGroup{
+			ID:          generatedToolName("extension", manifest.ID, contribution.ID),
+			Name:        strings.TrimSpace(contribution.Name),
+			Description: strings.TrimSpace(contribution.Description),
+		}
+		for _, toolName := range contribution.Tools {
+			groups[strings.TrimSpace(toolName)] = group
+		}
+	}
+	return groups
 }
 
 func extensionLoopbackHost(host string) bool {

@@ -22,6 +22,7 @@ import type {
 } from "@/lib/provider-catalog";
 
 export type AppConfigWithAuxiliary = domain.AppConfig & {
+  appName?: string;
   auxiliaryModel?: domain.ModelRef;
   initialWorkspacePath?: string;
   defaultInitialWorkspacePath?: string;

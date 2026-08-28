@@ -14,7 +14,65 @@ func extractChatResponse(raw []byte) domain.ChatResponse {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return domain.ChatResponse{Text: extractResponseStreamText(raw)}
 	}
-	return domain.ChatResponse{Text: extractResponsePayloadText(payload), ToolCalls: extractResponseToolCalls(payload), Usage: extractTokenUsage(payload)}
+	sources := extractResponseSources(payload)
+	return domain.ChatResponse{Text: appendResponseSources(extractResponsePayloadText(payload), sources), ToolCalls: extractResponseToolCalls(payload), Usage: extractTokenUsage(payload), Sources: sources}
+}
+
+const maxResponseSources = 20
+
+func extractResponseSources(payload map[string]any) []domain.ChatSource {
+	sources := []domain.ChatSource{}
+	seen := map[string]bool{}
+	var visit func(any, bool, int)
+	visit = func(value any, sourceContext bool, depth int) {
+		if depth > 12 || len(sources) >= maxResponseSources {
+			return
+		}
+		switch typed := value.(type) {
+		case []any:
+			for _, item := range typed {
+				visit(item, sourceContext, depth+1)
+			}
+		case map[string]any:
+			itemType := strings.ToLower(strings.TrimSpace(firstString(typed, "type")))
+			isCitation := itemType == "url_citation" || strings.Contains(itemType, "search_result") || strings.Contains(itemType, "text_result")
+			if sourceContext || isCitation {
+				url := strings.TrimSpace(firstString(typed, "url"))
+				if normalized, err := normalizeWebURL(url); err == nil && !seen[normalized] {
+					seen[normalized] = true
+					sources = append(sources, domain.ChatSource{
+						URL: normalized, Title: bounded(strings.TrimSpace(firstString(typed, "title", "name")), 500),
+						RefID: bounded(strings.TrimSpace(firstString(typed, "ref_id", "refId")), 200),
+					})
+				}
+			}
+			for key, child := range typed {
+				key = strings.ToLower(strings.TrimSpace(key))
+				visit(child, sourceContext || key == "annotations" || key == "citations" || key == "sources" || key == "results", depth+1)
+			}
+		}
+	}
+	visit(payload, false, 0)
+	return sources
+}
+
+func appendResponseSources(text string, sources []domain.ChatSource) string {
+	text = strings.TrimSpace(text)
+	if text == "" || len(sources) == 0 {
+		return text
+	}
+	var builder strings.Builder
+	builder.WriteString(text)
+	builder.WriteString("\n\nSources:")
+	for index, source := range sources {
+		label := strings.TrimSpace(source.Title)
+		if label == "" {
+			label = source.URL
+		}
+		label = strings.NewReplacer("[", "", "]", "", "\n", " ", "\r", " ").Replace(label)
+		builder.WriteString(fmt.Sprintf("\n%d. [%s](%s)", index+1, label, source.URL))
+	}
+	return builder.String()
 }
 
 func extractProviderPayloadError(payload map[string]any) error {
@@ -433,9 +491,10 @@ func extractResponseToolCalls(payload map[string]any) []domain.ChatToolCall {
 				continue
 			}
 			id := firstString(item, "call_id", "id")
+			namespace, _ := item["namespace"].(string)
 			name, _ := item["name"].(string)
 			args := rawJSONFromAny(firstNonNil(item["arguments"], item["input"]))
-			calls = append(calls, domain.ChatToolCall{ID: id, Name: name, Arguments: args})
+			calls = append(calls, domain.ChatToolCall{ID: id, Namespace: namespace, Name: name, Arguments: args})
 		}
 	}
 	if content, ok := payload["content"].([]any); ok {

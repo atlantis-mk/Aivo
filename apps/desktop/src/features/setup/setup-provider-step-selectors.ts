@@ -30,7 +30,7 @@ export function selectedModelIdForProvider({
   selectedModelId: string;
 }) {
   if (!provider) return selectedModelId;
-  if (selectedModelId && models.some((model) => model.id === selectedModelId)) {
+  if (selectedModelId.trim()) {
     return selectedModelId;
   }
   return (

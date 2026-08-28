@@ -4,11 +4,12 @@ const (
 	SkillScopeGlobal  = "global"
 	SkillScopeProject = "project"
 
-	SkillSourceAivo     = "aivo"
-	SkillSourceClaude   = "claude"
-	SkillSourceAgents   = "agents"
-	SkillSourceCodex    = "codex"
-	SkillSourceOpenCode = "opencode"
+	SkillSourceAivo        = "aivo"
+	SkillSourceClaude      = "claude"
+	SkillSourceAgents      = "agents"
+	SkillSourceCodex       = "codex"
+	SkillSourceCodexSystem = "codex-system"
+	SkillSourceOpenCode    = "opencode"
 
 	SkillCandidateStatusPending  = "pending"
 	SkillCandidateStatusImported = "imported"
@@ -94,6 +95,18 @@ type SkillIgnoreCandidatesInput struct {
 type SkillEnabledInput struct {
 	SkillID string `json:"skillId"`
 	Enabled bool   `json:"enabled"`
+}
+
+type SkillEditResult struct {
+	Skill   SkillEntry `json:"skill"`
+	Content string     `json:"content"`
+}
+
+type SkillUpdateInput struct {
+	SkillID             string `json:"skillId"`
+	Description         string `json:"description"`
+	Content             string `json:"content"`
+	ExpectedContentHash string `json:"expectedContentHash"`
 }
 
 type LoadSkillIntoSessionInput struct {

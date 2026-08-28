@@ -7,6 +7,7 @@ import { EventsOn } from "../../bridge/runtime/runtime";
 import type { domain } from "../../bridge/go/models";
 import type { CatalogState } from "@/lib/provider-catalog";
 import { getPreviewAppConfig, getPreviewCatalog } from "@/lib/preview-state";
+import { appNameFromConfig } from "@/lib/app-identity";
 import { getAppConfig as loadAppConfig, getProviderCatalog as loadProviderCatalog } from "@/services/aivo";
 
 type AppConfigState = {
@@ -94,6 +95,7 @@ export const useAppConfig = create<AppConfigState>((set) => ({
 }));
 
 export function AppConfigProvider({ children }: { children: ReactNode }) {
+  const config = useAppConfig((state) => state.config);
   const bridgeReady = useAppConfig((state) => state.bridgeReady);
   const bridgeResolved = useAppConfig((state) => state.bridgeResolved);
   const setBridgeReady = useAppConfig((state) => state.setBridgeReady);
@@ -102,6 +104,10 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
   const setCatalog = useAppConfig((state) => state.setCatalog);
   const setError = useAppConfig((state) => state.setError);
   const reload = useAppConfig((state) => state.reload);
+
+  useEffect(() => {
+    document.title = appNameFromConfig(config);
+  }, [config]);
 
   useEffect(() => {
     if (bridgeReady) return;

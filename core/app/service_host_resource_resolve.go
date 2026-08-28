@@ -38,10 +38,9 @@ func (s *Service) resolveSessionToolReplacement(ctx context.Context, request Too
 	}
 	groups := hostToolGroupCandidates(request.Candidates)
 	if len(groups) == 0 {
-		return ToolResolveDecision{Names: hostStandaloneToolNames(request.Candidates), Reason: "retained eligible standalone tools; no MCP or extension source candidates"}, nil
+		return ToolResolveDecision{Reason: "no eligible grouped or individual tool candidates"}, nil
 	}
 	decision := s.resolveHostToolGroupsWithAuxiliaryModel(ctx, request.Intent, groups, false)
-	decision.ToolNames = append(decision.ToolNames, hostStandaloneToolNames(request.Candidates)...)
 	return ToolResolveDecision{Names: normalizeDeferredToolNames(decision.ToolNames), Reason: decision.Reason}, nil
 }
 
@@ -51,6 +50,7 @@ type hostToolGroupCandidate struct {
 	Name        string
 	Description string
 	ToolNames   []string
+	Grouped     bool
 }
 
 type hostToolSelectionResource struct {
@@ -179,8 +179,6 @@ func (s *Service) resolveHostPreCallResources(
 		for _, entry := range toolCandidates {
 			toolDecision.ToolNames = append(toolDecision.ToolNames, entry.Name)
 		}
-	} else {
-		toolDecision.ToolNames = append(toolDecision.ToolNames, hostStandaloneToolNames(toolCandidates)...)
 	}
 	selectedTools := validateToolResolveSelection(toolCandidates, toolDecision.ToolNames)
 	if !autoInitialized && eligibilityErr == nil {
@@ -195,7 +193,6 @@ func (s *Service) resolveHostPreCallResources(
 		}
 		committedNames := normalizeDeferredToolNames(names)
 		selectedResources := hostToolSelectionResources(toolDecision.Groups, committedNames)
-		selectedResources = append(selectedResources, hostStandaloneToolSelectionResources(toolCandidates, toolDecision.Groups, committedNames)...)
 		persistedNames := committedNames
 		if toolDecision.Intent == hostToolSelectionInspect {
 			persistedNames = nil
@@ -235,16 +232,6 @@ func (s *Service) resolveHostPreCallResources(
 	}, nil
 }
 
-func hostStandaloneToolNames(entries []domain.ToolCatalogEntry) []string {
-	names := make([]string, 0)
-	for _, entry := range entries {
-		if isStandaloneToolCatalogEntry(entry) {
-			names = append(names, entry.Name)
-		}
-	}
-	return normalizeDeferredToolNames(names)
-}
-
 func hostToolGroupCandidates(entries []domain.ToolCatalogEntry) []hostToolGroupCandidate {
 	type groupIdentity struct {
 		key string
@@ -253,38 +240,43 @@ func hostToolGroupCandidates(entries []domain.ToolCatalogEntry) []hostToolGroupC
 	byKey := map[string]*hostToolGroupCandidate{}
 	toolDescriptions := map[string][]string{}
 	for _, entry := range entries {
-		name := strings.TrimSpace(entry.Name)
-		sourceID := strings.TrimSpace(entry.SourceID)
-		if sourceID == "" || sanitizeHostToolGroupText(sourceID, 512) != sourceID {
+		toolName := strings.TrimSpace(entry.Name)
+		if toolName == "" {
 			continue
 		}
-		kind := domain.SessionResourceExtension
-		if entry.Source == domain.ToolSourceMCP || entry.Category == "mcp" {
-			kind = domain.SessionResourceMCP
+		kind := domain.SessionResourceTool
+		candidateID := toolName
+		candidateName := toolName
+		description := sanitizeHostToolGroupText(entry.Description, 4000)
+		grouped := false
+		if entry.SelectionGroup != nil {
+			kind = hostToolSelectionResourceKind(entry)
+			candidateID = strings.TrimSpace(entry.SelectionGroup.ID)
+			candidateName = sanitizeHostToolGroupText(entry.SelectionGroup.Name, 100)
+			description = sanitizeHostToolGroupText(entry.SelectionGroup.Description, 4000)
+			grouped = true
 		}
-		if name == "" || sourceID == "" || (entry.Source != domain.ToolSourceExtension && entry.Source != domain.ToolSourceMCP) {
+		if candidateID == "" || sanitizeHostToolGroupText(candidateID, 512) != candidateID || candidateName == "" {
 			continue
 		}
-		if isStandaloneToolCatalogEntry(entry) {
-			continue
-		}
-		groupName := sourceID
-		key := kind + "\x00" + sourceID
+		key := kind + "\x00" + candidateID
 		group := byKey[key]
 		if group == nil {
 			group = &hostToolGroupCandidate{
-				Kind: kind, ID: sourceID, Name: groupName,
-				Description: sanitizeHostToolGroupText(entry.NamespaceDescription, 4000),
+				Kind: kind, ID: candidateID, Name: candidateName,
+				Description: description, Grouped: grouped,
 			}
 			byKey[key] = group
 			identities = append(identities, groupIdentity{key: key})
+		} else if group.Name != candidateName || group.Grouped != grouped {
+			continue
 		} else if group.Description == "" {
-			group.Description = sanitizeHostToolGroupText(entry.NamespaceDescription, 4000)
+			group.Description = description
 		}
-		if !containsString(group.ToolNames, name) {
-			group.ToolNames = append(group.ToolNames, name)
+		if !containsString(group.ToolNames, toolName) {
+			group.ToolNames = append(group.ToolNames, toolName)
 			if description := sanitizeHostToolGroupText(entry.Description, 400); description != "" {
-				toolDescriptions[key] = append(toolDescriptions[key], name+": "+description)
+				toolDescriptions[key] = append(toolDescriptions[key], toolName+": "+description)
 			}
 		}
 	}
@@ -299,6 +291,26 @@ func hostToolGroupCandidates(entries []domain.ToolCatalogEntry) []hostToolGroupC
 		}
 	}
 	return out
+}
+
+func hostStandaloneToolNames(entries []domain.ToolCatalogEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.SelectionGroup == nil {
+			names = append(names, entry.Name)
+		}
+	}
+	return normalizeDeferredToolNames(names)
+}
+
+func hostToolSelectionResourceKind(entry domain.ToolCatalogEntry) string {
+	if entry.Source == domain.ToolSourceMCP || entry.Category == "mcp" {
+		return domain.SessionResourceMCP
+	}
+	if entry.Source == domain.ToolSourceExtension && !strings.HasPrefix(strings.TrimSpace(entry.SourceID), "aivo.") {
+		return domain.SessionResourceExtension
+	}
+	return domain.SessionResourceTool
 }
 
 func hostToolSelectionResources(groups []hostToolGroupCandidate, selectedToolNames []string) []hostToolSelectionResource {
@@ -324,29 +336,6 @@ func hostToolSelectionResources(groups []hostToolGroupCandidate, selectedToolNam
 	return resources
 }
 
-func hostStandaloneToolSelectionResources(entries []domain.ToolCatalogEntry, groups []hostToolGroupCandidate, selectedToolNames []string) []hostToolSelectionResource {
-	grouped := map[string]bool{}
-	for _, group := range groups {
-		for _, name := range group.ToolNames {
-			grouped[name] = true
-		}
-	}
-	selected := make(map[string]bool, len(selectedToolNames))
-	for _, name := range selectedToolNames {
-		selected[name] = true
-	}
-	resources := make([]hostToolSelectionResource, 0)
-	for _, entry := range entries {
-		if !selected[entry.Name] || grouped[entry.Name] {
-			continue
-		}
-		resources = append(resources, hostToolSelectionResource{
-			Kind: domain.SessionResourceTool, ID: entry.Name, Name: entry.Name, ToolCount: 1,
-		})
-	}
-	return resources
-}
-
 func sanitizeHostToolGroupText(value string, limit int) string {
 	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 	return boundedHostToolGroupText(value, limit)
@@ -364,7 +353,7 @@ func boundedHostToolGroupText(value string, limit int) string {
 func renderHostToolGroupSelectionPrompt(intent string, candidates []hostToolGroupCandidate) string {
 	lines := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
-		lines = append(lines, candidate.Kind+":"+candidate.ID+"："+sanitizeHostToolGroupText(candidate.Description, 4000))
+		lines = append(lines, renderHostToolSelectionCandidate(candidate))
 	}
 	prompt, err := renderPromptTemplate(builtinPromptBody("auxiliary.host_tool_groups.user"), map[string]string{
 		"intent": boundedHostToolGroupText(intent, 4000), "candidates": strings.Join(lines, "\n"),
@@ -377,18 +366,18 @@ func renderHostToolGroupSelectionPrompt(intent string, candidates []hostToolGrou
 
 func (s *Service) resolveHostToolGroupsWithAuxiliaryModel(ctx context.Context, intent string, candidates []hostToolGroupCandidate, allowInspect bool) hostToolGroupDecision {
 	if strings.TrimSpace(intent) == "" || len(candidates) == 0 {
-		return hostToolGroupDecision{Intent: hostToolSelectionUse, Reason: "no eligible tool groups"}
+		return hostToolGroupDecision{Intent: hostToolSelectionUse, Reason: "no eligible tool resources"}
 	}
-	selectionRule := "Classify intent as use and select only capability groups directly needed to perform the requested action."
+	selectionRule := "Classify intent as use and select only grouped or individual tool resources directly needed to perform the requested action."
 	intentShape := "\"use\""
 	if allowInspect {
-		selectionRule = "Classify intent as inspect only when the user asks to list, inspect, explain, or compare available tools/capabilities without asking to perform an action; inspect requires sources:[] and the Host will expose the complete eligible catalog once. Otherwise classify as use and select only sources directly needed to perform the requested action."
+		selectionRule = "Classify intent as inspect only when the user asks to list, inspect, explain, or compare available tools/capabilities without asking to perform an action; inspect requires resources:[] and the Host will expose the complete eligible catalog once. Otherwise classify as use and select only grouped or individual resources directly needed to perform the requested action."
 		intentShape = "\"inspect\"|\"use\""
 	}
 	systemPrompt, systemErr := s.renderManagedPrompt("auxiliary.host_tool_groups.system", map[string]string{"selection_rule": selectionRule, "intent_shape": intentShape})
 	candidateLines := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
-		candidateLines = append(candidateLines, candidate.Kind+":"+candidate.ID+"："+sanitizeHostToolGroupText(candidate.Description, 4000))
+		candidateLines = append(candidateLines, renderHostToolSelectionCandidate(candidate))
 	}
 	userPrompt, userErr := s.renderManagedPrompt("auxiliary.host_tool_groups.user", map[string]string{"intent": boundedHostToolGroupText(intent, 4000), "candidates": strings.Join(candidateLines, "\n")})
 	if systemErr != nil || userErr != nil {
@@ -419,17 +408,21 @@ func (s *Service) resolveHostToolGroupsWithAuxiliaryModel(ctx context.Context, i
 	return decision
 }
 
+func renderHostToolSelectionCandidate(candidate hostToolGroupCandidate) string {
+	return candidate.Kind + ":" + candidate.ID + "：" + sanitizeHostToolGroupText(candidate.Name, 100) + "｜" + sanitizeHostToolGroupText(candidate.Description, 4000)
+}
+
 func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroupCandidate, limit int, allowInspect bool) (hostToolGroupDecision, error) {
 	text := strings.TrimSpace(raw)
 	if text == "" || !strings.HasPrefix(text, "{") || !strings.HasSuffix(text, "}") {
 		return hostToolGroupDecision{}, errors.New("tool-group selection must be a strict JSON object")
 	}
 	var payload struct {
-		Intent  string `json:"intent"`
-		Sources *[]struct {
+		Intent    string `json:"intent"`
+		Resources *[]struct {
 			Kind string `json:"kind"`
 			ID   string `json:"id"`
-		} `json:"sources"`
+		} `json:"resources"`
 	}
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
@@ -443,15 +436,15 @@ func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroup
 	if selectionIntent != hostToolSelectionInspect && selectionIntent != hostToolSelectionUse {
 		return hostToolGroupDecision{}, errors.New("tool-group selection contains an invalid intent")
 	}
-	if payload.Sources == nil {
-		return hostToolGroupDecision{}, errors.New("tool-group selection is missing sources")
+	if payload.Resources == nil {
+		return hostToolGroupDecision{}, errors.New("tool selection is missing resources")
 	}
-	sources := *payload.Sources
+	resources := *payload.Resources
 	if selectionIntent == hostToolSelectionInspect {
 		if !allowInspect {
 			return hostToolGroupDecision{}, errors.New("tool inspection is unavailable for persistent replacement")
 		}
-		if len(sources) != 0 {
+		if len(resources) != 0 {
 			return hostToolGroupDecision{}, errors.New("tool inspection must not select partial groups")
 		}
 		groups, toolNames, err := expandHostToolGroups(candidates, nil, false)
@@ -463,18 +456,18 @@ func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroup
 	if limit <= 0 || limit > hostToolSelectionLimit {
 		limit = hostToolSelectionLimit
 	}
-	if len(sources) > limit {
-		return hostToolGroupDecision{}, errors.New("tool-group selection exceeds the group limit")
+	if len(resources) > limit {
+		return hostToolGroupDecision{}, errors.New("tool selection exceeds the resource limit")
 	}
-	keys := make([]string, 0, len(sources))
-	for _, source := range sources {
-		if source.Kind != domain.SessionResourceMCP && source.Kind != domain.SessionResourceExtension {
-			return hostToolGroupDecision{}, errors.New("tool-group selection contains an invalid source kind")
+	keys := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Kind != domain.SessionResourceMCP && resource.Kind != domain.SessionResourceExtension && resource.Kind != domain.SessionResourceTool {
+			return hostToolGroupDecision{}, errors.New("tool selection contains an invalid resource kind")
 		}
-		if source.ID == "" || strings.TrimSpace(source.ID) != source.ID || sanitizeHostToolGroupText(source.ID, 512) != source.ID {
-			return hostToolGroupDecision{}, errors.New("tool-group selection contains an invalid source id")
+		if resource.ID == "" || strings.TrimSpace(resource.ID) != resource.ID || sanitizeHostToolGroupText(resource.ID, 512) != resource.ID {
+			return hostToolGroupDecision{}, errors.New("tool selection contains an invalid resource id")
 		}
-		keys = append(keys, source.Kind+"\x00"+source.ID)
+		keys = append(keys, resource.Kind+"\x00"+resource.ID)
 	}
 	groups, toolNames, err := expandHostToolGroups(candidates, keys, true)
 	if err != nil {
@@ -526,7 +519,7 @@ func localHostToolGroupSelection(intent string, candidates []hostToolGroupCandid
 	}
 	entries := make([]domain.ToolCatalogEntry, 0, len(candidates))
 	for _, candidate := range candidates {
-		entries = append(entries, domain.ToolCatalogEntry{Name: candidate.Kind + ":" + candidate.ID, Description: candidate.Description})
+		entries = append(entries, domain.ToolCatalogEntry{Name: candidate.Kind + ":" + candidate.ID, Description: candidate.Name + " " + candidate.Description})
 	}
 	matches := searchToolCatalog(entries, intent, hostToolSelectionLimit)
 	selectedGroups := make([]string, 0, len(matches))

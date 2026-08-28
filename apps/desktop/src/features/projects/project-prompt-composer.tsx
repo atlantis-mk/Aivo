@@ -105,7 +105,7 @@ export function PromptComposer({
 
   return (
     <div
-      className="flex min-w-0 flex-col"
+      className="flex min-w-0 flex-col bg-background"
       data-testid="prompt-composer"
       ref={rootRef}
     >

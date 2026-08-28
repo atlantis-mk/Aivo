@@ -11,6 +11,10 @@ import type { CatalogState } from "@/lib/provider-catalog";
 import { getPermissionMode, type PermissionMode } from "@/services/aivo";
 import type { domain } from "../../../bridge/go/models";
 
+type AppConfigWithPermissionPreference = domain.AppConfig & {
+  defaultPermissionMode?: PermissionMode;
+};
+
 export function useProjectModelRuntimeState({
   activeSessionId,
   catalog,
@@ -25,7 +29,11 @@ export function useProjectModelRuntimeState({
   const [reasoningEffort, setReasoningEffort] = useState("medium");
   const [serviceTier, setServiceTier] = useState("default");
   const [permissionMode, setLocalPermissionMode] =
-    useState<PermissionMode>("request_approval");
+    useState<PermissionMode>(() =>
+      normalizePermissionMode(
+        (config as AppConfigWithPermissionPreference | null)?.defaultPermissionMode,
+      ),
+    );
 
   const modelSelection = useProjectModelSelection({
     catalog,
@@ -33,6 +41,15 @@ export function useProjectModelRuntimeState({
     selectedModelId,
     selectedProviderId,
   });
+
+  useEffect(() => {
+    if (activeSessionId) return;
+    setLocalPermissionMode(
+      normalizePermissionMode(
+        (config as AppConfigWithPermissionPreference | null)?.defaultPermissionMode,
+      ),
+    );
+  }, [activeSessionId, config]);
 
   useEffect(() => {
     if (!hasAppBridge() || !activeSessionId) return;

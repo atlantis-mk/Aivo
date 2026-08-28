@@ -250,9 +250,10 @@ func TestConfigPersistsModelPreferencesAcrossReopen(t *testing.T) {
 			Type:  "openai",
 			Model: "gpt-5.4-mini",
 		},
-		DefaultModel:    &domain.ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-mini"},
-		ReasoningEffort: "high",
-		ServiceTier:     "priority",
+		DefaultModel:          &domain.ModelRef{ProviderID: "openai", ModelID: "gpt-5.4-mini"},
+		ReasoningEffort:       "high",
+		ServiceTier:           "priority",
+		DefaultPermissionMode: domain.PermissionModeFullAccess,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -277,6 +278,9 @@ func TestConfigPersistsModelPreferencesAcrossReopen(t *testing.T) {
 	}
 	if cfg.ServiceTier != "priority" {
 		t.Fatalf("serviceTier = %q, want priority", cfg.ServiceTier)
+	}
+	if cfg.DefaultPermissionMode != domain.PermissionModeFullAccess {
+		t.Fatalf("defaultPermissionMode = %q, want full access", cfg.DefaultPermissionMode)
 	}
 }
 
@@ -345,7 +349,8 @@ func TestProviderModelCacheAndValidationPersistAcrossReopen(t *testing.T) {
 		ProviderID: "custom-api",
 		Models: []domain.ModelInfo{{
 			ID: "team-model", ProviderID: "custom-api", Name: "Team Model", Recommended: true,
-			Capabilities: []string{"tools"}, ToolSupport: true,
+			Capabilities: []string{"tools"}, DeclaredCapabilities: []string{"tools", "reasoning"},
+			NativeTools: []string{"code_execution"}, NativeToolsKnown: true, ToolSupport: true,
 		}},
 		DefaultModel: "team-model",
 		Strategy:     "openai_compatible",
@@ -394,7 +399,7 @@ func TestProviderModelCacheAndValidationPersistAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotCache == nil || gotCache.DefaultModel != "team-model" || len(gotCache.Models) != 1 || !gotCache.Models[0].ToolSupport {
+	if gotCache == nil || gotCache.DefaultModel != "team-model" || len(gotCache.Models) != 1 || !gotCache.Models[0].ToolSupport || len(gotCache.Models[0].DeclaredCapabilities) != 2 || !gotCache.Models[0].NativeToolsKnown || len(gotCache.Models[0].NativeTools) != 1 {
 		t.Fatalf("cache = %+v, want persisted model metadata", gotCache)
 	}
 	gotValidation, err := reopened.LoadProviderValidation(ctx, "custom-api")

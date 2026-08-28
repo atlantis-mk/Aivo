@@ -42,6 +42,8 @@ type Service struct {
 	refreshedModels          map[string][]domain.ModelInfo
 	refreshedDefault         map[string]string
 	refreshedInfo            map[string]domain.ProviderInfo
+	providerCapabilitySyncMu sync.Mutex
+	providerCapabilitySynced map[string]bool
 	schedulerCancel          context.CancelFunc
 	activeAgentRunMu         sync.Mutex
 	activeAgentRunCancel     map[string]context.CancelFunc
@@ -83,6 +85,7 @@ func NewService(store Store) *Service {
 		refreshedModels:          map[string][]domain.ModelInfo{},
 		refreshedDefault:         map[string]string{},
 		refreshedInfo:            map[string]domain.ProviderInfo{},
+		providerCapabilitySynced: map[string]bool{},
 		activeAgentRunCancel:     map[string]context.CancelFunc{},
 		activeTurnCancel:         map[string]context.CancelFunc{},
 		mcpRegistrationProposals: newMCPRegistrationProposalStore(),

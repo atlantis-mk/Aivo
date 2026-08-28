@@ -25,19 +25,37 @@ func (t serviceTool) Execute(ctx context.Context, args json.RawMessage, execCtx 
 }
 
 func newAgentRuntimeTools(service *Service) []domain.Tool {
-	return []domain.Tool{
+	tools := []domain.Tool{
 		serviceTool{spec: jsonToolSpec("agent_mode_list", "List available agent modes.", "agent.read", "agent", "safe", "admin"), handler: service.agentModeListTool},
 		serviceTool{spec: jsonToolSpec("agent_mode_set", "Set the current session agent mode.", "agent.write", "agent", "admin"), handler: service.agentModeSetTool},
 		serviceTool{spec: jsonToolSpec("agent_delegate_task", "Delegate a bounded task to a child agent session.", "agent.delegate", "agent", "safe", "coding", "personal"), handler: service.agentDelegateTaskTool},
 		serviceTool{spec: jsonToolSpec("agent_run_list", "List subagent run records for the current session.", "agent.read", "agent", "safe", "personal"), handler: service.agentRunListTool},
 		serviceTool{spec: jsonToolSpec("agent_run_cancel", "Cancel a subagent run record.", "agent.write", "agent", "personal"), handler: service.agentRunCancelTool},
-		serviceTool{spec: updatePlanToolSpec(), handler: service.updatePlanTool},
-		serviceTool{spec: questionToolSpec("ask_user", ""), handler: service.askUserTool},
+	}
+	tools = append(tools, newDefaultHostControlTools(service)...)
+	tools = append(tools,
 		serviceTool{spec: jsonToolSpec("automation_create", "Create an automation or scheduled job.", "scheduler.write", "automation", "personal"), handler: service.automationCreateTool},
 		serviceTool{spec: jsonToolSpec("automation_list", "List automations and scheduled jobs.", "scheduler.read", "automation", "safe", "personal"), handler: service.automationListTool},
 		serviceTool{spec: jsonToolSpec("automation_update", "Update an automation or scheduled job.", "scheduler.write", "automation", "personal"), handler: service.automationUpdateTool},
 		serviceTool{spec: jsonToolSpec("automation_cancel", "Cancel an automation or scheduled job.", "scheduler.write", "automation", "personal"), handler: service.automationCancelTool},
+	)
+	return tools
+}
+
+func newDefaultHostControlTools(service *Service) []domain.Tool {
+	return []domain.Tool{
+		serviceTool{spec: updatePlanToolSpec(), handler: service.updatePlanTool},
+		serviceTool{spec: questionToolSpec("ask_user", ""), handler: service.askUserTool},
 	}
+}
+
+func registerDefaultHostControlTools(registry *Registry, service *Service) error {
+	for _, tool := range newDefaultHostControlTools(service) {
+		if err := registry.Register(tool); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func jsonToolSpec(name, description, capability, category string, toolsets ...string) domain.ToolSpec {

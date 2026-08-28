@@ -45,10 +45,18 @@ type ExtensionRuntime struct {
 
 type ExtensionContributions struct {
 	Tools       []ExtensionToolContribution       `json:"tools,omitempty"`
+	ToolGroups  []ExtensionToolGroupContribution  `json:"toolGroups,omitempty"`
 	Views       []ExtensionViewContribution       `json:"views,omitempty"`
 	Contexts    []ExtensionContextContribution    `json:"contexts,omitempty"`
 	Policies    []string                          `json:"policies,omitempty"`
 	Environment *ExtensionEnvironmentContribution `json:"environment,omitempty"`
+}
+
+type ExtensionToolGroupContribution struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Tools       []string `json:"tools"`
 }
 
 type ExtensionToolContribution struct {

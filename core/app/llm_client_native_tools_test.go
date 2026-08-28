@@ -70,6 +70,162 @@ func TestToolsForModelRouteUsesHostedWebFetchForAnthropic(t *testing.T) {
 	}
 }
 
+func TestToolsForModelRouteAutomaticallyBridgesDiscoveredAnthropicCodeExecution(t *testing.T) {
+	store := &memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"anthropic": {ProviderID: "anthropic", Models: []domain.ModelInfo{{
+			ID: "claude-dynamic", ProviderID: "anthropic", Name: "Claude Dynamic",
+			Capabilities: []string{"tools", "streaming", "code_execution"},
+			NativeTools:  []string{"code_execution"}, NativeToolsKnown: true, ToolSupport: true, Streaming: true,
+		}}},
+	}}
+	service := NewService(store)
+	defer service.Shutdown()
+	route := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "anthropic"},
+		Model:      domain.ModelRef{ProviderID: "anthropic", ModelID: "claude-dynamic"},
+		Definition: ProviderDefinition{ID: "anthropic", Transport: TransportAnthropicMessages},
+		Transport:  TransportAnthropicMessages,
+	}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, route, nil)
+	if len(tools) != 1 || tools[0].Name != "code_execution" || tools[0].Hosted == nil || tools[0].Hosted.Type != "code_execution_20250825" {
+		t.Fatalf("tools = %#v, want automatically bridged Anthropic code execution", tools)
+	}
+}
+
+func TestToolsForModelRouteDoesNotBridgeUnknownOrDisabledDynamicTools(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		model    domain.ModelInfo
+		disabled []string
+	}{
+		{name: "unknown metadata", model: domain.ModelInfo{ID: "claude-dynamic", ProviderID: "anthropic", Capabilities: []string{"code_execution"}}},
+		{name: "explicitly disabled", model: domain.ModelInfo{ID: "claude-dynamic", ProviderID: "anthropic", NativeToolsKnown: true, NativeTools: []string{"code_execution"}}, disabled: []string{"code_execution"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewService(&memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+				"anthropic": {ProviderID: "anthropic", Models: []domain.ModelInfo{tt.model}},
+			}})
+			defer service.Shutdown()
+			route := ResolvedModelRoute{
+				Provider: domain.ProviderConfig{ID: "anthropic"}, Model: domain.ModelRef{ProviderID: "anthropic", ModelID: "claude-dynamic"},
+				Definition: ProviderDefinition{ID: "anthropic", Transport: TransportAnthropicMessages}, Transport: TransportAnthropicMessages,
+			}
+			tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{NativeTools: domain.NativeToolsConfig{Disabled: tt.disabled}}, route, nil)
+			if len(tools) != 0 {
+				t.Fatalf("tools = %#v, want no automatic native tools", tools)
+			}
+		})
+	}
+}
+
+func TestToolsForModelRouteDoesNotTurnGenericDeclarationIntoHostedTool(t *testing.T) {
+	service := NewService(&memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"openrouter": {ProviderID: "openrouter", Models: []domain.ModelInfo{{
+			ID: "vendor/model", ProviderID: "openrouter", DeclaredCapabilities: []string{"tools"},
+			Capabilities: []string{"tools"}, ToolSupport: true,
+		}}},
+	}})
+	defer service.Shutdown()
+	route := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "openrouter"},
+		Model:    domain.ModelRef{ProviderID: "openrouter", ModelID: "vendor/model"},
+		Definition: ProviderDefinition{
+			ID: "openrouter", Transport: TransportOpenAICompatible, ModelFetch: ModelFetchOpenRouter,
+		},
+		Transport: TransportOpenAICompatible,
+	}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, route, nil)
+	if len(tools) != 0 {
+		t.Fatalf("tools = %#v, generic function-calling support must not create hosted tools", tools)
+	}
+}
+
+func TestToolsForModelRouteBridgesCodexShellOnlyForOAuth(t *testing.T) {
+	store := &memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"openai": {ProviderID: "openai", Models: []domain.ModelInfo{{
+			ID: "gpt-codex", ProviderID: "openai",
+			DeclaredCapabilities: []string{codexShellCapability},
+			Capabilities:         []string{codexShellCapability},
+		}}},
+	}}
+	service := NewService(store)
+	defer service.Shutdown()
+	definition := ProviderDefinition{ID: "openai", BuiltIn: true, Transport: TransportOpenAIResponses}
+	specs := []domain.ToolSpec{
+		NewReadTool("").Spec(), NewBashTool("", NewLocalSandboxRunner(), nil).Spec(),
+	}
+	oauthRoute := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "openai"}, Model: domain.ModelRef{ProviderID: "openai", ModelID: "gpt-codex"},
+		Definition: definition, Transport: TransportOpenAIResponses, Credential: llmCredential{Method: "oauth-browser"},
+	}
+	oauthTools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, oauthRoute, specs)
+	if !toolSpecNamed(oauthTools, "read") || !toolSpecNamed(oauthTools, "bash") {
+		t.Fatalf("OAuth Codex tools = %#v, want read plus declared shell", oauthTools)
+	}
+	apiKeyRoute := oauthRoute
+	apiKeyRoute.Credential = llmCredential{Method: "api-key", APIKey: "key"}
+	apiKeyTools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, apiKeyRoute, specs)
+	if !toolSpecNamed(apiKeyTools, "bash") {
+		t.Fatalf("API-key tools = %#v, want ordinary bash", apiKeyTools)
+	}
+}
+
+func TestToolsForModelRouteCodexDeclarationsFailClosed(t *testing.T) {
+	store := &memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"openai": {ProviderID: "openai", Models: []domain.ModelInfo{{
+			ID: "gpt-codex", ProviderID: "openai",
+			DeclaredCapabilities: []string{codexShellCapability},
+		}}},
+	}}
+	service := NewService(store)
+	defer service.Shutdown()
+	route := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "openai"}, Model: domain.ModelRef{ProviderID: "openai", ModelID: "gpt-codex"},
+		Definition: ProviderDefinition{ID: "openai", BuiltIn: true, Transport: TransportOpenAIResponses},
+		Transport:  TransportOpenAIResponses, Credential: llmCredential{Method: "oauth-browser"},
+	}
+	specs := []domain.ToolSpec{NewReadTool("").Spec(), NewBashTool("", NewLocalSandboxRunner(), nil).Spec()}
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, route, specs)
+	if !toolSpecNamed(tools, "read") || toolSpecNamed(tools, "bash") {
+		t.Fatalf("explicitly disabled Codex tools = %#v, want only unaffected read", tools)
+	}
+}
+
+func TestToolsForModelRouteUsesCodexDeclaredHostedAndLiteSearch(t *testing.T) {
+	lite := false
+	model := domain.ModelInfo{
+		ID: "gpt-codex", ProviderID: "openai", WebSearchToolType: "text_and_image", WebSearchToolTypeKnown: true,
+		UseResponsesLite: &lite, DeclaredCapabilities: []string{codexWebSearchCapability}, Capabilities: []string{codexWebSearchCapability},
+	}
+	store := &memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{"openai": {ProviderID: "openai", Models: []domain.ModelInfo{model}}}}
+	service := NewService(store)
+	defer service.Shutdown()
+	route := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "openai"}, Model: domain.ModelRef{ProviderID: "openai", ModelID: "gpt-codex"},
+		Definition: ProviderDefinition{ID: "openai", BuiltIn: true, Transport: TransportOpenAIResponses},
+		Transport:  TransportOpenAIResponses, Credential: llmCredential{Method: "oauth-browser"},
+	}
+	specs := []domain.ToolSpec{NewCodexWebSearchTool(service).Spec()}
+	config := domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeIndexed, Route: domain.WebSearchRouteAuto}}
+	tools := service.toolsForModelRoute(context.Background(), config, route, nil)
+	if len(tools) != 1 || tools[0].Hosted == nil || tools[0].Hosted.Type != "web_search" || tools[0].Hosted.IndexedWebAccess == nil || !*tools[0].Hosted.IndexedWebAccess || len(tools[0].Hosted.SearchContentTypes) != 2 {
+		t.Fatalf("hosted Codex tools = %#v", tools)
+	}
+	lite = true
+	model.UseResponsesLite = &lite
+	store.modelCaches["openai"] = domain.ProviderModelCache{ProviderID: "openai", Models: []domain.ModelInfo{model}}
+	tools = service.toolsForModelRoute(context.Background(), config, route, specs)
+	if len(tools) != 1 || tools[0].Hosted != nil || tools[0].Name != "web_search" {
+		t.Fatalf("Responses Lite tools = %#v, want local Codex search executor", tools)
+	}
+	config.WebSearch.Mode = domain.WebSearchModeDisabled
+	if tools := service.toolsForModelRoute(context.Background(), config, route, specs); len(tools) != 0 {
+		t.Fatalf("disabled search tools = %#v", tools)
+	}
+}
+
 func TestToolsForModelRouteUsesURLContextForGeminiWhenSafeToCombine(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	route := ResolvedModelRoute{

@@ -20,7 +20,7 @@ import (
 	"aivo/core/domain"
 )
 
-const latestSchemaVersion = 9
+const latestSchemaVersion = 11
 
 func (s *Store) migrate(ctx context.Context) error {
 	version, hasVersionTable, err := s.currentSchemaVersion(ctx)
@@ -31,6 +31,12 @@ func (s *Store) migrate(ctx context.Context) error {
 		return fmt.Errorf("database schema version %d is newer than supported version %d", version, latestSchemaVersion)
 	}
 	if version == latestSchemaVersion {
+		if !s.db.WithContext(ctx).Migrator().HasColumn(&appConfigRow{}, "default_permission_mode") {
+			return errors.New("database schema version 11 is missing app_config.default_permission_mode")
+		}
+		if !s.db.WithContext(ctx).Migrator().HasColumn(&appConfigRow{}, "app_name") {
+			return errors.New("database schema version 10 is missing app_config.app_name")
+		}
 		if !s.db.WithContext(ctx).Migrator().HasColumn(&appConfigRow{}, "initial_workspace_path") {
 			return errors.New("database schema version 2 is missing app_config.initial_workspace_path")
 		}

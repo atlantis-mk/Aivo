@@ -123,11 +123,19 @@ func (s *Service) prepareSessionResourceReferences(
 			canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: skill.ID, Name: skill.Name})
 		case domain.SessionResourceTool:
 			entry, ok := toolEntries[reference.ID]
-			if !ok || !isStandaloneToolCatalogEntry(entry) {
+			if ok && isStandaloneToolCatalogEntry(entry) {
+				toolNames[entry.Name] = true
+				canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: entry.Name, Name: entry.Name})
+				break
+			}
+			groupNames, groupName := sessionResourceSelectionGroupToolNames(toolEntries, reference.ID, domain.SessionResourceTool)
+			if len(groupNames) == 0 {
 				return preparedSessionResourceReferences{}, fmt.Errorf("tool reference %q is unavailable", reference.ID)
 			}
-			toolNames[entry.Name] = true
-			canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: entry.Name, Name: entry.Name})
+			for _, name := range groupNames {
+				toolNames[name] = true
+			}
+			canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: reference.ID, Name: groupName})
 		case domain.SessionResourceExtension:
 			install, ok := extensions[reference.ID]
 			if !ok {
@@ -289,4 +297,20 @@ func sessionResourceSourceToolNames(entries map[string]domain.ToolCatalogEntry, 
 	}
 	sort.Strings(names)
 	return names
+}
+
+func sessionResourceSelectionGroupToolNames(entries map[string]domain.ToolCatalogEntry, groupID, kind string) ([]string, string) {
+	names := make([]string, 0)
+	groupName := ""
+	for _, entry := range entries {
+		if entry.SelectionGroup == nil || entry.SelectionGroup.ID != groupID || hostToolSelectionResourceKind(entry) != kind {
+			continue
+		}
+		names = append(names, entry.Name)
+		if groupName == "" {
+			groupName = entry.SelectionGroup.Name
+		}
+	}
+	sort.Strings(names)
+	return names, firstNonEmpty(groupName, groupID)
 }

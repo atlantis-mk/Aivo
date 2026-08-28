@@ -73,6 +73,66 @@ func fetchOpenAICompatibleModels(ctx context.Context, provider domain.ProviderCo
 	return models, defaultModel, nil
 }
 
+func fetchMistralModels(ctx context.Context, provider domain.ProviderConfig, credential llmCredential) ([]domain.ModelInfo, string, error) {
+	endpoint, err := providerModelsEndpoint(provider.BaseURL)
+	if err != nil {
+		return nil, "", err
+	}
+	raw, err := fetchBearerModelCatalog(ctx, provider, credential, endpoint)
+	if err != nil {
+		return nil, "", err
+	}
+	models, defaultModel, err := parseMistralModels(raw, provider.ID)
+	return finalizeProviderModelCatalog(provider.ID, models, defaultModel, err)
+}
+
+func fetchOpenRouterModels(ctx context.Context, provider domain.ProviderConfig, credential llmCredential) ([]domain.ModelInfo, string, error) {
+	endpoint, err := providerModelsEndpoint(provider.BaseURL)
+	if err != nil {
+		return nil, "", err
+	}
+	raw, err := fetchBearerModelCatalog(ctx, provider, credential, endpoint)
+	if err != nil {
+		return nil, "", err
+	}
+	models, defaultModel, err := parseOpenRouterModels(raw, provider.ID)
+	return finalizeProviderModelCatalog(provider.ID, models, defaultModel, err)
+}
+
+func fetchCerebrasModels(ctx context.Context, provider domain.ProviderConfig, credential llmCredential) ([]domain.ModelInfo, string, error) {
+	raw, err := fetchBearerModelCatalog(ctx, provider, credential, cerebrasPublicModelsURL)
+	if err != nil {
+		return nil, "", err
+	}
+	models, defaultModel, err := parseCerebrasModels(raw, provider.ID)
+	return finalizeProviderModelCatalog(provider.ID, models, defaultModel, err)
+}
+
+func fetchBearerModelCatalog(ctx context.Context, provider domain.ProviderConfig, credential llmCredential, endpoint string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	applyProviderHeaders(req, provider.Headers)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", openAIUserAgent)
+	if credential.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+credential.APIKey)
+	}
+	return doProviderModelsRequest(req)
+}
+
+func finalizeProviderModelCatalog(providerID string, models []domain.ModelInfo, defaultModel string, err error) ([]domain.ModelInfo, string, error) {
+	if err != nil {
+		return nil, "", err
+	}
+	if preferred := preferredDefaultModel(providerID, models); preferred != "" {
+		defaultModel = preferred
+		markRecommended(models, defaultModel)
+	}
+	return models, defaultModel, nil
+}
+
 func usesAzureAPIKeyHeader(provider domain.ProviderConfig) bool {
 	if normalizeProviderID(provider.ID) == "azure-openai" || provider.Type == string(TransportAzureOpenAI) {
 		return true
@@ -93,7 +153,14 @@ func fetchAnthropicModels(ctx context.Context, provider domain.ProviderConfig, c
 	if err != nil {
 		return nil, "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	parsedEndpoint, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, "", err
+	}
+	query := parsedEndpoint.Query()
+	query.Set("limit", "1000")
+	parsedEndpoint.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedEndpoint.String(), nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -106,7 +173,7 @@ func fetchAnthropicModels(ctx context.Context, provider domain.ProviderConfig, c
 	if err != nil {
 		return nil, "", err
 	}
-	models, defaultModel, err := parseOpenAICompatibleModels(raw, provider.ID)
+	models, defaultModel, err := parseAnthropicModels(raw, provider.ID)
 	if err != nil {
 		return nil, "", err
 	}

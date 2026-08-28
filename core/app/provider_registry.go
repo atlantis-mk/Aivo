@@ -40,6 +40,9 @@ const (
 	ModelFetchOpenAICompatible   ModelFetchStrategy = "openai_compatible"
 	ModelFetchOpenAICodexAccount ModelFetchStrategy = "openai_codex_account"
 	ModelFetchAnthropic          ModelFetchStrategy = "anthropic"
+	ModelFetchMistral            ModelFetchStrategy = "mistral"
+	ModelFetchOpenRouter         ModelFetchStrategy = "openrouter"
+	ModelFetchCerebras           ModelFetchStrategy = "cerebras"
 	ModelFetchGoogle             ModelFetchStrategy = "google"
 	ModelFetchDisabled           ModelFetchStrategy = "disabled"
 )

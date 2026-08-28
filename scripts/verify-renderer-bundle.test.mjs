@@ -4,12 +4,14 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { verifyRendererBundle } from './verify-renderer-bundle.mjs'
+import { verifyRendererBundle, verifyRendererConnectCSP } from './verify-renderer-bundle.mjs'
+
+const rendererCSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*;">`
 
 async function rendererFixture(t, html, assets = []) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aivo-renderer-bundle-'))
   t.after(() => fs.rm(directory, { recursive: true, force: true }))
-  await fs.writeFile(path.join(directory, 'index.html'), html)
+  await fs.writeFile(path.join(directory, 'index.html'), `${rendererCSP}${html}`)
   for (const asset of assets) {
     const assetPath = path.join(directory, asset)
     await fs.mkdir(path.dirname(assetPath), { recursive: true })
@@ -48,4 +50,23 @@ test('packaged renderer refuses missing relative assets', async (t) => {
     () => verifyRendererBundle(directory),
     /missing from the build output/,
   )
+})
+
+test('CT-RELIABILITY-001 permits the Host-selected dynamic Core port', () => {
+  assert.doesNotThrow(() => verifyRendererConnectCSP(rendererCSP))
+})
+
+test('CT-SECURITY-001 refuses fixed-only, wildcard-host, and remote connect policies', () => {
+  for (const connectSources of [
+    "'self' http://127.0.0.1:43117 ws://127.0.0.1:43117",
+    "'self' http://*:* ws://*:*",
+    "'self' https://example.com",
+  ]) {
+    assert.throws(
+      () => verifyRendererConnectCSP(
+        `<meta http-equiv="Content-Security-Policy" content="connect-src ${connectSources};">`,
+      ),
+      /dynamic HTTP\/WebSocket ports on 127\.0\.0\.1/,
+    )
+  }
 })

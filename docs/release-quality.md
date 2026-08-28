@@ -14,7 +14,7 @@ npm run package -- --dir
 npm run smoke:release
 ```
 
-`npm run smoke:release` always rebuilds the Go core first, then starts the freshly built `build/aivo-core/aivo-core` binary and waits for `/health`. When a packaged app exists for the current platform, the smoke also verifies that the app bundle contains the core binary.
+`npm run smoke:release` always rebuilds the Go core first, then starts the freshly built `build/aivo-core/aivo-core` binary on an operating-system-assigned loopback port, validates its versioned readiness endpoint, and waits for `/health`. When a packaged app exists for the current platform, the smoke also verifies that the app bundle contains the core binary.
 
 ## Manual CI packaging
 

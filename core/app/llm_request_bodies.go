@@ -10,12 +10,8 @@ func responsesRequestBody(model string, messages []llmChatMessage, tools []domai
 	input := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
 		if message.Role == "tool" {
-			outputType := "function_call_output"
-			if strings.HasPrefix(strings.TrimSpace(message.Text), "{") && strings.Contains(message.Text, `"name":"apply_patch"`) {
-				outputType = "custom_tool_call_output"
-			}
 			input = append(input, map[string]any{
-				"type":    outputType,
+				"type":    "function_call_output",
 				"call_id": message.ToolCallID,
 				"output":  message.Text,
 			})
@@ -31,14 +27,6 @@ func responsesRequestBody(model string, messages []llmChatMessage, tools []domai
 					"call_id":   call.ID,
 					"name":      call.Name,
 					"arguments": string(call.Arguments),
-				}
-				if strings.HasPrefix(strings.TrimSpace(string(call.Arguments)), "*** Begin Patch") {
-					item = map[string]any{
-						"type":    "custom_tool_call",
-						"call_id": call.ID,
-						"name":    call.Name,
-						"input":   string(call.Arguments),
-					}
 				}
 				input = append(input, item)
 			}
@@ -144,15 +132,93 @@ func responsesServiceTier(serviceTier string) string {
 
 func responsesReasoningEffort(effort string) string {
 	switch normalizeReasoningEffort(effort) {
+	case "none":
+		return "none"
+	case "minimal":
+		return "minimal"
 	case "low":
 		return "low"
+	case "xhigh":
+		return "xhigh"
+	case "max":
+		return "max"
 	case "high":
 		return "high"
 	case "ultra":
-		return "high"
+		return "ultra"
 	case "medium":
 		return "medium"
 	default:
 		return ""
 	}
+}
+
+func applyCodexRequestCapabilities(body map[string]any, model domain.ModelInfo, tools []domain.ToolSpec, reasoningEffort, serviceTier string) {
+	if body == nil {
+		return
+	}
+	effort := codexEffectiveReasoningEffort(model, reasoningEffort)
+	if effort == "" || effort == "none" {
+		delete(body, "reasoning")
+	} else {
+		body["reasoning"] = map[string]any{"effort": effort}
+	}
+	if tier := codexEffectiveServiceTier(model, serviceTier); tier != "" {
+		body["service_tier"] = tier
+	} else {
+		delete(body, "service_tier")
+	}
+	if model.SupportsParallelToolCalls != nil && !*model.SupportsParallelToolCalls {
+		body["parallel_tool_calls"] = false
+	}
+	if model.SupportsVerbosity != nil && *model.SupportsVerbosity && codexVerbositySupported(model.DefaultVerbosity) {
+		body["text"] = map[string]any{"verbosity": model.DefaultVerbosity}
+	}
+	if !codexModelUsesResponsesLite(model) {
+		return
+	}
+	input, _ := body["input"].([]map[string]any)
+	if len(tools) > 0 {
+		input = append([]map[string]any{{
+			"type": "additional_tools", "role": "developer", "tools": responsesTools(tools),
+		}}, input...)
+	}
+	body["input"] = input
+	delete(body, "tools")
+	body["parallel_tool_calls"] = false
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if reasoning == nil {
+		reasoning = map[string]any{}
+	}
+	reasoning["context"] = "all_turns"
+	body["reasoning"] = reasoning
+}
+
+func codexEffectiveReasoningEffort(model domain.ModelInfo, requested string) string {
+	requested = normalizeReasoningEffort(requested)
+	if len(model.SupportedReasoningEfforts) == 0 {
+		return requested
+	}
+	if containsString(model.SupportedReasoningEfforts, requested) {
+		return requested
+	}
+	if containsString(model.SupportedReasoningEfforts, model.DefaultReasoningEffort) {
+		return model.DefaultReasoningEffort
+	}
+	return ""
+}
+
+func codexEffectiveServiceTier(model domain.ModelInfo, requested string) string {
+	requested = normalizeServiceTier(requested)
+	if requested == "default" {
+		return ""
+	}
+	declared := requested
+	if requested == "priority" {
+		declared = "fast"
+	}
+	if len(model.ServiceTiers) > 0 && !containsString(model.ServiceTiers, declared) && !containsString(model.ServiceTiers, requested) {
+		return ""
+	}
+	return requested
 }

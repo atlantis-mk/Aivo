@@ -466,7 +466,7 @@ func TestReplaySessionToolCallCreatesFreshToolCall(t *testing.T) {
 	}
 }
 
-func TestReplaySessionToolCallDoesNotTreatGlobalVisibilityAsRevocation(t *testing.T) {
+func TestReplaySessionCoreToolCallIgnoresLegacyGlobalPreference(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -489,7 +489,11 @@ func TestReplaySessionToolCallDoesNotTreatGlobalVisibilityAsRevocation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SetGlobalToolEnabled(ctx, domain.GlobalToolEnabledInput{Name: "bash", Enabled: false, WorkspaceRoot: root}); err != nil {
+	preferences, ok := service.store.(globalToolPreferenceStore)
+	if !ok {
+		t.Fatal("global tool preference store unavailable")
+	}
+	if err := preferences.SetGlobalToolEnabled(ctx, "bash", false); err != nil {
 		t.Fatal(err)
 	}
 

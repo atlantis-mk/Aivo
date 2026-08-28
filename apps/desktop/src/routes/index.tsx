@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { Navigate, createFileRoute } from '@tanstack/react-router'
+import { useEffect } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { SetupLoadingSkeleton } from '@/features/setup/setup-loading-skeleton'
 import { startupRouteFor } from '@/features/setup/setup-routing'
 import { useAppConfig } from '@/lib/app-config'
@@ -11,10 +12,12 @@ export const Route = createFileRoute('/')({
 
 function IndexRedirect() {
   const { config, loading } = useAppConfig()
+  const navigate = useNavigate()
 
-  if (loading) {
-    return <SetupLoadingSkeleton />
-  }
+  useEffect(() => {
+    if (loading) return
+    void navigate({ to: startupRouteFor(config), replace: true })
+  }, [config, loading, navigate])
 
-  return <Navigate to={startupRouteFor(config)} replace />
+  return <SetupLoadingSkeleton />
 }

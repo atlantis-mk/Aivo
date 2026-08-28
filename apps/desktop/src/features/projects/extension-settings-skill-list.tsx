@@ -5,6 +5,7 @@ import {
   File01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ export function SkillManagementGroup({
   candidates,
   loading,
   onDelete,
+  onEdit,
   onIgnore,
   onImport,
   onToggleEnabled,
@@ -57,15 +59,13 @@ export function SkillManagementGroup({
   candidates: SkillImportCandidate[];
   loading: boolean;
   onDelete: (skill: SkillEntry) => void;
+  onEdit: (skill: SkillEntry) => void;
   onIgnore: (candidate: SkillImportCandidate) => void;
   onImport: (candidate: SkillImportCandidate) => void;
   onToggleEnabled: (skill: SkillEntry, enabled: boolean) => void;
   skills: SkillEntry[];
 }) {
-  const visibleCandidates = candidates.filter(
-    (candidate) => candidate.status !== "imported",
-  );
-  if (skills.length === 0 && visibleCandidates.length === 0) {
+  if (skills.length === 0 && candidates.length === 0) {
     return <EmptyState label="没有已导入技能或可导入候选" />;
   }
 
@@ -77,7 +77,7 @@ export function SkillManagementGroup({
             <div className="text-sm font-medium">Aivo 技能</div>
             <Badge variant="outline">{skills.length}</Badge>
           </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {skills.map((skill) => (
               <Card
                 className="transition-colors hover:bg-muted/50 hover:ring-foreground/20"
@@ -99,6 +99,16 @@ export function SkillManagementGroup({
                       }
                       size="sm"
                     />
+                    <Button
+                      aria-label={`编辑 ${skill.name}`}
+                      disabled={loading}
+                      onClick={() => onEdit(skill)}
+                      size="icon-sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Pencil />
+                    </Button>
                     <Button
                       aria-label={`删除 ${skill.name}`}
                       disabled={loading}
@@ -123,14 +133,14 @@ export function SkillManagementGroup({
         </section>
       ) : null}
 
-      {visibleCandidates.length > 0 ? (
+      {candidates.length > 0 ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <div className="text-sm font-medium">兼容目录候选</div>
-            <Badge variant="outline">{visibleCandidates.length}</Badge>
+            <Badge variant="outline">{candidates.length}</Badge>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {visibleCandidates.map((candidate) => {
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {candidates.map((candidate) => {
               const unavailable =
                 candidate.status === "conflict" ||
                 candidate.status === "ignored";

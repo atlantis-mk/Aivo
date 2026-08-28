@@ -103,6 +103,26 @@ func TestResolveCompactionPressureUsesProviderContextAtDefaultEightyPercent(t *t
 	}
 }
 
+func TestResolveCompactionPressureHonorsDeclaredAutoCompactLimit(t *testing.T) {
+	service := NewService(&memoryProviderStore{modelCaches: map[string]domain.ProviderModelCache{
+		"openai": {ProviderID: "openai", Models: []domain.ModelInfo{{
+			ID: "gpt-codex", ProviderID: "openai", ContextLength: 272000, AutoCompactTokenLimit: 240000,
+		}}},
+	}})
+	defer service.Shutdown()
+	pressure := service.resolveCompactionPressure(
+		context.Background(), domain.Session{},
+		&domain.ModelRef{ProviderID: "openai", ModelID: "gpt-codex"},
+		domain.CompactionRuntimeConfig{ThresholdPercent: 100},
+	)
+	if pressure.ContextWindowTokens != 272000 || pressure.AutoCompactTokenLimit != 240000 || pressure.TriggerTokens != 240000 {
+		t.Fatalf("pressure = %#v", pressure)
+	}
+	if pressure.CapacitySource != "provider_cache" {
+		t.Fatalf("capacity source = %q", pressure.CapacitySource)
+	}
+}
+
 func TestModelVisibleHistoryUsesSummaryAndOnlyPostBoundaryMessages(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()

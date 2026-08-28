@@ -68,7 +68,7 @@ func TestAgentRequestedToolReplacementChangesNextProviderSnapshot(t *testing.T) 
 		case 1:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"replace_tools","type":"function","function":{"name":"tool_resolve","arguments":"{\"intent\":\"new capability\"}"}}]}}]}`))
 		case 2:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"sources\":[{\"kind\":\"extension\",\"id\":\"com.example.new\"}]}"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"resources\":[{\"kind\":\"tool\",\"id\":\"new_auto\"}]}"}}]}`))
 		default:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"replacement complete"}}]}`))
 		}
@@ -120,7 +120,7 @@ func TestAgentRequestedToolReplacementChangesNextProviderSnapshot(t *testing.T) 
 		t.Fatalf("next Provider tools = %#v", last)
 	}
 	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
-	if !initialized || len(automatic) != 4 || !automatic["new_auto"] || !automatic["aivo_projects_add"] || !automatic["aivo_projects_associate"] || !automatic["aivo_tools_register_mcp"] {
+	if !initialized || len(automatic) != 1 || !automatic["new_auto"] {
 		t.Fatalf("final automatic set = %#v initialized=%t", automatic, initialized)
 	}
 }

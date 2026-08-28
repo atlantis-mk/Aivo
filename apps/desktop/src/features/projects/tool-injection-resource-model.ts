@@ -5,6 +5,12 @@ export const toolInjectionResourceKinds = [
   "skill",
 ] as const;
 
+export const requiredCoreToolNames = ["read", "bash", "edit", "write"] as const;
+
+export function isRequiredCoreToolName(name?: string) {
+  return requiredCoreToolNames.some((coreName) => coreName === name);
+}
+
 export type ToolInjectionResourceKind =
   (typeof toolInjectionResourceKinds)[number];
 
@@ -25,9 +31,11 @@ export function isToolInjectionResourceKind(
 }
 
 export function isStandaloneToolResource(tool: {
+  activationPolicy?: string;
   source: string;
   sourceId?: string;
 }) {
+  if (tool.activationPolicy === "provider_declaration") return false;
   return (
     tool.source === "builtin" ||
     (tool.source === "extension" &&

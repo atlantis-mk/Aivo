@@ -1,5 +1,7 @@
 # Allow session-scoped control of Aivo core tools
 
+> Current direction: `CHG-2026-056-always-on-hidden-core-tools` replaces this unfinished behavior. The four required primitives are always active and omitted from management and selection surfaces; do not advance this Work's earlier core-tool toggle acceptance criteria.
+
 ## Problem or goal
 
 The tool activation dialog currently hides Aivo's four core coding tools and shows a separate MCP tab. Users need to turn eligible tools, including the core tools, on or off without using this dialog to manage MCP sources.

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
+  defaultActiveBuiltinToolNames,
   groupToolCatalogEntries,
   isToolCatalogGroupActive,
   isToolCatalogGroupUsed,
@@ -142,9 +143,7 @@ export function useToolActivationDialogState({
           servers,
         ]) => {
           if (cancelled) return;
-          const defaultCoreTools = catalogTools
-            .filter((tool) => tool.source === "builtin")
-            .map((tool) => tool.name);
+          const defaultCoreTools = defaultActiveBuiltinToolNames(catalogTools);
           const normalizedActiveTools = normalizeToolNames([
             ...activeTools.toolNames,
             ...(activeSessionId

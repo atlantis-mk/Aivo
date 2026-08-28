@@ -1,0 +1,29 @@
+schema: "2"
+id: "CHG-2026-059-personalized-assistant-name"
+title: "Persist a personalized assistant name"
+type: "migration"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Add a bounded Core-owned application name during initialization and carry it consistently into the desktop assistant and home surfaces through an explicit schema transition."
+requirements:
+  - "REQ-IDENTITY-001"
+tests:
+  - "AT-IDENTITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0031"
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-IDENTITY-001 Personalized assistant identity"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes: []
+boundaries:
+  - "CompleteInitialization RPC input and AppConfig response"
+  - "SQLite app_config schema v10 migration"
+  - "desktop initialization, assistant selector, and empty-home presentation"
+risks:
+  - "an invalid or missing name could leave initialization unusable or surface inconsistent labels"
+  - "schema migration must preserve existing configuration and produce a recoverable v9 backup"
+next: []

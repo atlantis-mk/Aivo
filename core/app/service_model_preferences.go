@@ -42,6 +42,13 @@ func (s *Service) UpdateModelPreferences(ctx context.Context, input domain.Model
 			cfg.ServiceTier = "default"
 		}
 	}
+	if strings.TrimSpace(input.DefaultPermissionMode) != "" {
+		mode, err := normalizePermissionMode(input.DefaultPermissionMode)
+		if err != nil {
+			return domain.AppConfig{}, err
+		}
+		cfg.DefaultPermissionMode = mode
+	}
 	if input.NativeTools != nil {
 		cfg.NativeTools = normalizeNativeToolsRuntimeConfig(*input.NativeTools)
 	}

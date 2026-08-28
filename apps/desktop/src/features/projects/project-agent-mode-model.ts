@@ -3,16 +3,19 @@ import type { AgentModeDefinition, AgentModeId } from "@/services/aivo";
 export const fallbackAgentModes: AgentModeDefinition[] = [
   {
     id: "assistant",
-    displayName: "Assistant",
+    displayName: "Aivo",
     description: "通用对话，必要时可编码",
     prompt: "",
   },
 ];
 
-export function agentModeShortLabel(mode: AgentModeDefinition) {
+export function agentModeShortLabel(
+  mode: AgentModeDefinition,
+  assistantName = "Aivo",
+) {
   switch (mode.id) {
     case "assistant":
-      return "助手";
+      return assistantName;
     case "summary":
       return "总结";
     case "title":
@@ -22,11 +25,11 @@ export function agentModeShortLabel(mode: AgentModeDefinition) {
   }
 }
 
-export function agentModeLabel(mode: AgentModeId | string) {
+export function agentModeLabel(mode: AgentModeId | string, assistantName = "Aivo") {
   const definition =
     fallbackAgentModes.find((item) => item.id === mode) ??
     fallbackAgentModes[0];
-  return agentModeShortLabel(definition);
+  return agentModeShortLabel(definition, assistantName);
 }
 
 export function normalizeAgentMode(

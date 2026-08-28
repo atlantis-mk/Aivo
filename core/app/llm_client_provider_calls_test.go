@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"aivo/core/domain"
@@ -51,6 +53,43 @@ func TestCallOpenAICompatibleUsesChatCompletionsStream(t *testing.T) {
 	}
 	if got.Text != "ok" {
 		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallChatGPTCodexUsesDeclaredResponsesLiteHeaderAndBody(t *testing.T) {
+	originalClient := http.DefaultClient
+	defer func() { http.DefaultClient = originalClient }()
+	http.DefaultClient = &http.Client{Transport: providerModelRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != chatGPTCodexResponsesURL || req.Header.Get("x-openai-internal-codex-responses-lite") != "true" {
+			t.Fatalf("request = %s headers=%#v", req.URL, req.Header)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := body["tools"]; ok || body["parallel_tool_calls"] != false {
+			t.Fatalf("body = %#v", body)
+		}
+		input, _ := body["input"].([]any)
+		if len(input) == 0 || input[0].(map[string]any)["type"] != "additional_tools" {
+			t.Fatalf("input = %#v", body["input"])
+		}
+		response := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\ndata: [DONE]\n\n"
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response)), Request: req}, nil
+	})}
+	lite := true
+	parallel := true
+	service := NewService(&memoryProviderStore{})
+	defer service.Shutdown()
+	response, err := service.callChatGPTCodex(
+		context.Background(), domain.ProviderConfig{ID: "openai"}, domain.ModelRef{ProviderID: "openai", ModelID: "gpt-lite"},
+		domain.ModelInfo{UseResponsesLite: &lite, SupportsParallelToolCalls: &parallel},
+		llmCredential{Method: "oauth-browser", AccessToken: "oauth-token", ExpiresAt: "2099-01-01T00:00:00Z"}, domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}}, []domain.ToolSpec{{Name: "read", InputSchema: map[string]any{"type": "object"}}},
+		"medium", "default", nil, nil,
+	)
+	if err != nil || response.Text != "ok" {
+		t.Fatalf("response = %+v err=%v", response, err)
 	}
 }
 

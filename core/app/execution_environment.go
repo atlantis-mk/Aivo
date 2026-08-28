@@ -10,8 +10,9 @@ import (
 )
 
 // ExecutionEnvironment owns the coherent filesystem, process, and artifact
-// namespace behind all four reserved primitives. Implementations must never
-// fall back to a different environment after selection.
+// namespace behind all four reserved primitives and optional built-in file
+// tools. Implementations must never fall back to a different environment after
+// selection.
 type ExecutionEnvironment interface {
 	Identity() string
 	ExecutePrimitive(context.Context, string, json.RawMessage, domain.ToolExecutionContext) domain.ToolResult

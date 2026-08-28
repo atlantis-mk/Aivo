@@ -1,0 +1,40 @@
+schema: "2"
+id: "CHG-2026-056-always-on-hidden-core-tools"
+title: "Keep core tools always enabled and out of selectors"
+type: "security"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Replace the unfinished session/global core-tool toggle behavior with one durable Host rule: read, bash, edit, and write remain mandatory coding primitives, are absent from management and activation surfaces, and cannot be disabled through persisted preferences or public desktop RPC calls."
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "REQ-WORKSPACE-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "AT-WORKSPACE-001"
+  - "AT-UI-001"
+adrs: []
+context_refs:
+  - "docs/02-scope-matrix.md"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-WORKSPACE-001 Sidebarless chat workspace"
+  - "docs/03-functional-requirements.md#NFR-UI-001 Responsive and complete states"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes:
+  - "CHG-2026-007-minimal-agent-tool-primitives"
+  - "CHG-2026-022-session-core-tool-controls"
+  - "CHG-2026-054-pi-style-file-tool-names"
+boundaries:
+  - "Hide read, bash, edit, and write from global tool settings, per-conversation activation, and composer resource selection while leaving optional tools independently manageable."
+  - "Reject global disable requests for the four required primitives, ignore legacy global disabled rows, and make session active-tool updates preserve all four primitives."
+  - "Ignore legacy disabledCoreTools metadata during request and Tool Snapshot assembly without changing tool permission prompts, workspace validation, execution authority, or Provider capability compatibility."
+risks:
+  - "A presentation-only filter would leave older clients or direct RPC callers able to disable a required primitive."
+  - "Persisted legacy preferences could continue suppressing a primitive after the switches disappear."
+  - "Over-broad filtering could hide optional built-ins or erase historical tool-call visibility."
+next: []

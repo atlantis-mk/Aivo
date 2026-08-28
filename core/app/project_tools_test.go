@@ -21,7 +21,7 @@ func TestBuiltinProjectExtensionPreservesFourCorePrimitives(t *testing.T) {
 		t.Fatal(err)
 	}
 	coreNames := map[string]bool{}
-	for _, spec := range coreRegistry.Specs() {
+	for _, spec := range AssembleToolSpecs(coreRegistry, coreRegistry.Specs()).Specs {
 		coreNames[spec.Name] = true
 	}
 	if len(coreNames) != 4 {
@@ -322,20 +322,31 @@ func TestProjectToolPermissionMatrixAndExactRememberScope(t *testing.T) {
 		t.Fatalf("remembered rejection = %#v", rejected)
 	}
 
-	autoSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "auto"})
+	legacySession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "legacy auto"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SetPermissionMode(ctx, domain.PermissionModeInput{SessionID: autoSession.ID, Mode: domain.PermissionModeAutoApprove}); err != nil {
+	if _, err := service.SetPermissionMode(ctx, domain.PermissionModeInput{SessionID: legacySession.ID, Mode: legacyPermissionModeAutoApprove}); err == nil {
+		t.Fatal("removed auto-approve mode was accepted")
+	}
+	if _, err := service.store.SavePermissionRule(ctx, domain.PermissionRule{
+		Scope: permissionModeScopePrefix + legacyPermissionModeAutoApprove, SessionID: legacySession.ID,
+		WorkspaceRoot: initial, ToolName: permissionRuleWildcard, Action: permissionActionWrite,
+		Decision: domain.PermissionDecisionAllow, Paths: []string{permissionRuleWildcard},
+	}); err != nil {
 		t.Fatal(err)
 	}
-	autoCtx := execCtx
-	autoCtx.SessionID = autoSession.ID
-	if got := engine.Evaluate(ctx, addTool, firstAddArgs, autoCtx); got.Decision != domain.PermissionDecisionAllow {
-		t.Fatalf("auto-approve add = %#v", got)
+	legacyMode, err := service.GetPermissionMode(ctx, legacySession.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := engine.Evaluate(ctx, associateTool, associateArgs, autoCtx); got.Decision != domain.PermissionDecisionAllow {
-		t.Fatalf("auto-approve associate = %#v", got)
+	if legacyMode.Mode != domain.PermissionModeRequestApproval {
+		t.Fatalf("legacy auto-approve mode = %q, want request approval", legacyMode.Mode)
+	}
+	legacyCtx := execCtx
+	legacyCtx.SessionID = legacySession.ID
+	if got := engine.Evaluate(ctx, addTool, firstAddArgs, legacyCtx); got.Decision != domain.PermissionDecisionAsk {
+		t.Fatalf("legacy auto-approve permission = %#v, want approval request", got)
 	}
 
 	fullSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "full"})

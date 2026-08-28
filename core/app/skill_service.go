@@ -35,7 +35,22 @@ func (s *Service) ScanProjectSkills(ctx context.Context, input domain.SkillScanI
 }
 
 func (s *Service) ListSkills(ctx context.Context, input domain.SkillListInput) (domain.SkillListResult, error) {
-	return s.ensureSkillManager().List(ctx, input)
+	hasCodexAccount := s.codexOAuthConfigured(ctx)
+	if hasCodexAccount {
+		s.syncCodexSystemSkillsForAccount(ctx)
+	}
+	result, err := s.ensureSkillManager().List(ctx, input)
+	if err != nil || hasCodexAccount {
+		return result, err
+	}
+	filtered := result.Entries[:0]
+	for _, skill := range result.Entries {
+		if skill.Source != domain.SkillSourceCodexSystem {
+			filtered = append(filtered, skill)
+		}
+	}
+	result.Entries = filtered
+	return result, nil
 }
 
 func (s *Service) ImportSkill(ctx context.Context, input domain.SkillImportInput) (domain.SkillEntry, error) {
@@ -48,6 +63,14 @@ func (s *Service) IgnoreSkillCandidatesByName(ctx context.Context, input domain.
 
 func (s *Service) SetSkillEnabled(ctx context.Context, input domain.SkillEnabledInput) (domain.SkillEntry, error) {
 	return s.ensureSkillManager().SetEnabled(ctx, input)
+}
+
+func (s *Service) GetManagedSkillForEdit(ctx context.Context, skillID string) (domain.SkillEditResult, error) {
+	return s.ensureSkillManager().GetForEdit(ctx, skillID)
+}
+
+func (s *Service) UpdateManagedSkill(ctx context.Context, input domain.SkillUpdateInput) (domain.SkillEditResult, error) {
+	return s.ensureSkillManager().Update(ctx, input)
 }
 
 func (s *Service) DeleteManagedSkill(ctx context.Context, skillID string) error {
@@ -83,6 +106,9 @@ func (s *Service) loadSkillIntoSession(ctx context.Context, input domain.LoadSki
 	skill, err := manager.Resolve(ctx, input.SkillID, input.Name, input.Scope)
 	if err != nil {
 		return loadedSkillResult{}, err
+	}
+	if skill.Source == domain.SkillSourceCodexSystem && !s.codexOAuthConfigured(ctx) {
+		return loadedSkillResult{}, errors.New("Codex system skill requires a connected Codex OAuth account")
 	}
 	if !skill.Enabled {
 		return loadedSkillResult{}, errors.New("skill is disabled")
@@ -137,7 +163,7 @@ func (s *Service) SetSessionActiveSkills(ctx context.Context, input domain.Sessi
 			continue
 		}
 		skill, err := manager.Resolve(ctx, id, "", "")
-		if err != nil || !skill.Enabled {
+		if err != nil || !skill.Enabled || (skill.Source == domain.SkillSourceCodexSystem && !s.codexOAuthConfigured(ctx)) {
 			continue
 		}
 		seen[id] = true
@@ -219,7 +245,7 @@ func (s *Service) activeSkills(ctx context.Context, sessionID string) ([]string,
 			continue
 		}
 		skill, err := manager.Resolve(ctx, id, "", "")
-		if err != nil || !skill.Enabled {
+		if err != nil || !skill.Enabled || (skill.Source == domain.SkillSourceCodexSystem && !s.codexOAuthConfigured(ctx)) {
 			continue
 		}
 		seen[id] = true

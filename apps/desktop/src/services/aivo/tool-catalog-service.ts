@@ -12,6 +12,12 @@ export type ToolCatalogEntry = {
   source: string;
   sourceId?: string;
   registrationId?: string;
+  activationPolicy?: string;
+  selectionGroup?: {
+    id: string;
+    name: string;
+    description?: string;
+  };
   enabled: boolean;
 };
 

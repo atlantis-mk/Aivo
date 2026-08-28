@@ -1,0 +1,41 @@
+schema: "2"
+id: "CHG-2026-052-provider-declared-capabilities"
+title: "Synchronize all Provider-declared tool capabilities"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Every supported Provider catalog that returns machine-readable tool capability declarations must drive Aivo model eligibility automatically without static inference or user activation"
+requirements:
+  - "REQ-PROVIDER-001"
+  - "REQ-TOOL-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "AT-TOOL-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0025"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001 Provider configuration and health"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Trust boundaries"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes:
+  - "CHG-2026-051-dynamic-provider-native-tools"
+boundaries:
+  - "authenticated Provider-specific model-catalog parsing and persisted tool-support declarations"
+  - "authoritative dynamic capability precedence over legacy static model metadata"
+  - "separation of client function-calling support from Provider-hosted native tools"
+risks:
+  - "Provider catalogs use incompatible schemas and may omit rather than deny a capability"
+  - "generic function-calling declarations could be mistaken for hosted execution authority"
+  - "richer public catalog endpoints can differ from configured inference endpoints"
+next:
+  - "parse Mistral function_calling, OpenRouter supported_parameters, and Cerebras public capabilities"
+  - "refresh every supported declarative catalog automatically before first model use"
+  - "make explicit dynamic tool support override static compatibility metadata"
+  - "cover supported, denied, absent, stale, failure, and persistence paths"

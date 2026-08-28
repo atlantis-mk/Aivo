@@ -1,0 +1,33 @@
+schema: "2"
+id: "CHG-2026-049-dynamic-packaged-core-port"
+title: "Use an owned dynamic port for packaged Core"
+type: "bug"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Bind each packaged desktop instance to its own operating-system-assigned loopback Core endpoint without reusing a fixed-port process."
+requirements:
+  - "NFR-RELIABILITY-001"
+  - "NFR-SECURITY-001"
+tests:
+  - "CT-RELIABILITY-001"
+  - "CT-SECURITY-001"
+adrs:
+  - "ADR-0023"
+context_refs:
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/04-architecture.md#Electron boundary"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/release-quality.md#Local Gates"
+related_changes: []
+boundaries:
+  - "Packaged Electron-to-Core local HTTP endpoint discovery and ownership"
+  - "Versioned child-process readiness output"
+  - "Renderer-visible loopback endpoint injection"
+risks:
+  - "A malformed or spoofed readiness record could retarget privileged local RPC calls"
+  - "Platform-specific child stdout or startup timing could prevent endpoint discovery"
+  - "Terminal and extension consumers could retain the obsolete fixed endpoint"
+next: []

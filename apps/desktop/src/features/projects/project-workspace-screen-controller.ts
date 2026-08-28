@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { toast } from "sonner";
 
 import { useProjectAgentRuntimeState } from "@/features/projects/project-agent-runtime-state";
 import { useProjectAssistantDeltaBuffer } from "@/features/projects/project-assistant-delta-buffer";
@@ -351,7 +352,6 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     addProjectToComposer,
     conversationTimelineHandlers,
     openParentSession,
-    openExtensionSettingsDrawer,
     openToolActivationDialog,
     selectChatConversation,
     startChatConversation,
@@ -372,6 +372,13 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     startNewConversation,
     startNewProjectConversation,
   });
+  const openNewConversationWindow = () => {
+    void window.aivo.openNewConversationWindow().catch((error: unknown) => {
+      toast.error(
+        error instanceof Error ? error.message : "无法打开新窗口对话。",
+      );
+    });
+  };
 
   return buildProjectWorkspaceScreenViewProps({
     dialogs: {
@@ -405,8 +412,8 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       activeProjectPage,
       conversationTitle,
       hasConversation: Boolean(activeSessionId),
+      onNewConversationWindow: openNewConversationWindow,
       onNewPage: startChatConversation,
-      onOpenExtensions: openExtensionSettingsDrawer,
     },
     mainTopBar: {
       activeProjectPage,

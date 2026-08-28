@@ -38,7 +38,7 @@ func (t *reservedPrimitiveTestTool) Execute(context.Context, json.RawMessage, do
 	return domain.ToolResult{Name: t.name, OK: true}
 }
 
-func TestCodingRegistryExposesExactlyFourPrimitivesInStableOrder(t *testing.T) {
+func TestCodingRegistryKeepsExactlyFourDefaultPrimitivesInStableOrder(t *testing.T) {
 	registry, err := NewCodingToolRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -48,11 +48,19 @@ func TestCodingRegistryExposesExactlyFourPrimitivesInStableOrder(t *testing.T) {
 	for _, spec := range specs {
 		names = append(names, spec.Name)
 	}
-	want := []string{"read", "bash", "edit", "write"}
+	want := []string{"read", "bash", "edit", "write", "grep", "find", "ls"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("tools = %v, want %v", names, want)
 	}
-	for _, removed := range []string{"apply_patch", "read_file", "edit_file", "write_file", ToolResolveName} {
+	assembly := AssembleToolSpecs(registry, registry.Specs())
+	defaultNames := make([]string, 0, len(assembly.Specs))
+	for _, spec := range assembly.Specs {
+		defaultNames = append(defaultNames, spec.Name)
+	}
+	if wantDefaults := []string{"read", "bash", "edit", "write"}; !reflect.DeepEqual(defaultNames, wantDefaults) {
+		t.Fatalf("default tools = %v, want %v", defaultNames, wantDefaults)
+	}
+	for _, removed := range []string{"read_file", "edit_file", "write_file", "search_files", "glob", "list_files", "apply_patch", ToolResolveName} {
 		if _, ok := registry.Get(removed); ok {
 			t.Fatalf("legacy tool %s is executable", removed)
 		}
@@ -140,8 +148,11 @@ func TestAlternateEnvironmentAtomicallyOwnsAllFourPrimitivesWithoutLocalFallback
 		"bash":  json.RawMessage(`{"command":"printf remote"}`),
 		"edit":  json.RawMessage(`{"path":"remote.txt","edits":[{"oldText":"a","newText":"b"}]}`),
 		"write": json.RawMessage(`{"path":"remote.txt","content":"remote"}`),
+		"grep":  json.RawMessage(`{"query":"remote"}`),
+		"find":  json.RawMessage(`{"pattern":"**/*.txt"}`),
+		"ls":    json.RawMessage(`{}`),
 	}
-	for _, name := range []string{"read", "bash", "edit", "write"} {
+	for _, name := range []string{"read", "bash", "edit", "write", "grep", "find", "ls"} {
 		tool, ok := registry.Get(name)
 		if !ok {
 			t.Fatalf("missing %s", name)
@@ -151,7 +162,7 @@ func TestAlternateEnvironmentAtomicallyOwnsAllFourPrimitivesWithoutLocalFallback
 			t.Fatalf("%s result = %#v, want explicit environment loss", name, result)
 		}
 	}
-	if !reflect.DeepEqual(environment.calls, []string{"read", "bash", "edit", "write"}) {
+	if !reflect.DeepEqual(environment.calls, []string{"read", "bash", "edit", "write", "grep", "find", "ls"}) {
 		t.Fatalf("environment calls = %v", environment.calls)
 	}
 	if _, err := os.Stat(filepath.Join(root, "remote.txt")); !os.IsNotExist(err) {

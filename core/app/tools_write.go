@@ -28,7 +28,7 @@ func NewWriteFileTool(workspaceRoot string) *WriteFileTool {
 func (t *WriteFileTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "write_file",
-		Description:          "Create one new file or completely overwrite one existing file inside the current workspace. Hard limit: content must be 150 lines or fewer; calls over 150 lines are rejected. Use this only for short, complete file writes when the full final content is known. For long documents, large replacements, generated specs, or coordinated multi-file changes, use apply_patch so the user can see a streaming draft with file and +N/-N line counts before it is applied. Do not use this for small targeted edits to an existing file; use edit_file. Creates parent directories automatically. This tool requires permission approval unless a saved approval covers the target path.",
+		Description:          "Create one new file or completely overwrite one existing file inside the current workspace. Hard limit: content must be 150 lines or fewer; calls over 150 lines are rejected. Use this only for short, complete file writes when the full final content is known. Do not use this for small targeted edits to an existing file; use edit_file. Creates parent directories automatically. This tool requires permission approval unless a saved approval covers the target path.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.write",
@@ -40,7 +40,7 @@ func (t *WriteFileTool) Spec() domain.ToolSpec {
 			"type": "object",
 			"properties": map[string]any{
 				"path":         map[string]any{"type": "string", "description": "Target file path relative to the workspace root. Parent directories are created automatically. Must not be absolute or escape the workspace."},
-				"content":      map[string]any{"type": "string", "description": "Complete final file content to write. Existing file content is fully replaced. Maximum 150 lines; use apply_patch for long generated documents or large replacements."},
+				"content":      map[string]any{"type": "string", "description": "Complete final file content to write. Existing file content is fully replaced. Maximum 150 lines."},
 				"expectedHash": map[string]any{"type": "string", "description": "Optional sha256 from a previous read_file snapshot. When provided, write_file refuses to overwrite the file if it changed."},
 			},
 			"required": []string{"path", "content"},
@@ -126,7 +126,7 @@ func NewEditFileTool(workspaceRoot string) *EditFileTool {
 func (t *EditFileTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "edit_file",
-		Description:          "Replace exact text in one existing workspace file. Hard limit: oldString and newString must each be 150 lines or fewer; calls over 150 lines are rejected. Use this only for focused single-file edits after reading the relevant current file content. When read_file returned a snapshot for this file, pass expectedHash so Aivo can edit without rereading and can reject stale writes safely. oldString must match the file exactly and must include enough surrounding context to be unique. If oldString appears multiple times, either provide more context or set replaceAll=true only when every occurrence should change. Do not use this to create files; use write_file. Do not use this for long replacements, multi-file changes, or add/delete/move changes; use apply_patch so the user can see a streaming draft with file and +N/-N line counts before the patch is applied. This tool requires permission approval unless a saved approval covers the target path.",
+		Description:          "Replace exact text in one existing workspace file. Hard limit: oldString and newString must each be 150 lines or fewer; calls over 150 lines are rejected. Use this only for focused single-file edits after reading the relevant current file content. When read_file returned a snapshot for this file, pass expectedHash so Aivo can edit without rereading and can reject stale writes safely. oldString must match the file exactly and must include enough surrounding context to be unique. If oldString appears multiple times, either provide more context or set replaceAll=true only when every occurrence should change. Do not use this to create files; use write_file. This tool requires permission approval unless a saved approval covers the target path.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: filesystemNamespaceDescription,
 		Capability:           "filesystem.write",
@@ -139,7 +139,7 @@ func (t *EditFileTool) Spec() domain.ToolSpec {
 			"properties": map[string]any{
 				"path":         map[string]any{"type": "string", "description": "Existing file path relative to the workspace root. Must not be absolute or escape the workspace."},
 				"oldString":    map[string]any{"type": "string", "description": "Exact text currently in the file. Must not be empty. Include surrounding lines when needed so the match is unique. Maximum 150 lines."},
-				"newString":    map[string]any{"type": "string", "description": "Replacement text. Use an empty string to delete the matched text. Must differ from oldString. Maximum 150 lines; use apply_patch for long replacements."},
+				"newString":    map[string]any{"type": "string", "description": "Replacement text. Use an empty string to delete the matched text. Must differ from oldString. Maximum 150 lines."},
 				"replaceAll":   map[string]any{"type": "boolean", "description": "Replace every exact occurrence. Defaults to false; set true only when all occurrences are intentionally identical edits."},
 				"expectedHash": map[string]any{"type": "string", "description": "Optional sha256 from read_file.snapshot.sha256. When provided, edit_file refuses to write if the file changed since that snapshot."},
 				"snapshotId":   map[string]any{"type": "string", "description": "Optional read_file snapshotId for traceability."},
@@ -219,89 +219,6 @@ func (t *EditFileTool) Execute(ctx context.Context, args json.RawMessage, execCt
 		},
 	}
 }
-
-type ApplyPatchTool struct {
-	workspaceRoot string
-}
-
-func NewApplyPatchTool(workspaceRoot string) *ApplyPatchTool {
-	return &ApplyPatchTool{workspaceRoot: workspaceRoot}
-}
-
-func (t *ApplyPatchTool) Spec() domain.ToolSpec {
-	return domain.ToolSpec{
-		Name:                 "apply_patch",
-		Description:          "Apply one Codex-style V4A patch inside the current workspace. Prefer this for long documents, large replacements, generated specs, structured edits, multi-file changes, add/delete/move operations, or several related changes that should be applied atomically. When exposed as a freeform tool, pass only the patch text, wrapped in *** Begin Patch and *** End Patch. JSON fallback providers must pass {\"patchText\":\"...\"}. While the model streams the patch, the app shows a live draft with touched files and +N/-N line counts before the patch is applied. This tool may create, modify, move, or delete files and requires permission approval unless a saved approval covers all touched paths.",
-		Kind:                 domain.ToolKindFreeform,
-		Format:               &domain.ToolFormat{Type: "grammar", Syntax: "lark", Definition: applyPatchLarkGrammar},
-		Namespace:            filesystemNamespace,
-		NamespaceDescription: filesystemNamespaceDescription,
-		Capability:           "filesystem.patch",
-		RiskLevel:            "high",
-		Category:             "filesystem",
-		Toolsets:             []string{"coding"},
-		RequiresWorkspace:    true,
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"patchText": map[string]any{"type": "string", "description": "Full V4A patch text. Must start with *** Begin Patch and end with *** End Patch. File paths inside the patch must be relative to the workspace root. Use this for long content so the app can preview touched files and line counts while arguments stream."},
-			},
-			"required": []string{"patchText"},
-		},
-	}
-}
-
-func (t *ApplyPatchTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
-	patchText, err := extractPatchText(args)
-	if err != nil {
-		return toolError("apply_patch", err)
-	}
-	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
-	changes, ok := preparedPatchPlanFor(execCtx.ToolCallID, patchText)
-	if !ok {
-		var err error
-		changes, err = buildPatchChanges(workspaceRoot, patchText)
-		if err != nil {
-			return toolError("apply_patch", err)
-		}
-	}
-	paths := patchChangePaths(changes)
-	for _, path := range paths {
-		if _, err := safeTargetForWrite(workspaceRoot, path); err != nil {
-			return toolError("apply_patch", err)
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return toolError("apply_patch", err)
-	}
-	if err := applyPatchChanges(workspaceRoot, changes); err != nil {
-		return toolError("apply_patch", err)
-	}
-	files := patchChangeResultFiles(workspaceRoot, changes)
-	return domain.ToolResult{
-		Name:       "apply_patch",
-		OK:         true,
-		Content:    patchApplySummary(changes),
-		Files:      files,
-		Structured: map[string]any{"files": files, "patchTextPreview": bounded(patchText, 4000)},
-	}
-}
-
-const applyPatchLarkGrammar = `start: begin_patch hunk+ end_patch
-begin_patch: "*** Begin Patch" LF
-end_patch: "*** End Patch" LF?
-hunk: add_hunk | delete_hunk | update_hunk
-add_hunk: "*** Add File: " filename LF add_line+
-delete_hunk: "*** Delete File: " filename LF
-update_hunk: "*** Update File: " filename LF change_move? change?
-filename: /(.+)/
-add_line: "+" /(.*)/ LF
-change_move: "*** Move to: " filename LF
-change: (change_context | change_line)+ eof_line?
-change_context: ("@@" | "@@ " /(.+)/) LF
-change_line: ("+" | "-" | " ") /(.*)/ LF
-eof_line: "*** End of File" LF
-%import common.LF`
 
 type GitStatusTool struct {
 	workspaceRoot string

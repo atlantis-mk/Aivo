@@ -42,6 +42,7 @@ type NativeToolsConfig struct {
 	CodeExecution NativeCodeExecutionConfig `json:"codeExecution,omitempty"`
 	FileSearch    NativeFileSearchConfig    `json:"fileSearch,omitempty"`
 	RemoteMCP     []NativeMCPToolConfig     `json:"remoteMcp,omitempty"`
+	Disabled      []string                  `json:"disabled,omitempty"`
 }
 
 type NativeToolToggle struct {
@@ -68,6 +69,8 @@ type NativeMCPToolConfig struct {
 
 const (
 	WebSearchModeDisabled  = "disabled"
+	WebSearchModeCached    = "cached"
+	WebSearchModeIndexed   = "indexed"
 	WebSearchModeLive      = "live"
 	WebSearchRouteAuto     = "auto"
 	WebSearchRouteLocal    = "local"

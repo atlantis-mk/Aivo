@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	"aivo/core/domain"
 )
 
@@ -215,8 +217,15 @@ func (m *memoryProviderStore) UpdateProjectDescription(context.Context, string, 
 	return domain.AssistantProject{}, nil
 }
 
-func (m *memoryProviderStore) CreateRuntimeSession(context.Context, domain.CreateSessionRequest) (domain.Session, error) {
-	return domain.Session{}, nil
+func (m *memoryProviderStore) CreateRuntimeSession(_ context.Context, input domain.CreateSessionRequest) (domain.Session, error) {
+	return domain.Session{
+		ID:          uuid.NewString(),
+		Type:        input.Type,
+		Source:      input.Source,
+		Title:       input.Title,
+		ProjectPath: input.ProjectPath,
+		AgentMode:   input.AgentMode,
+	}, nil
 }
 
 func (m *memoryProviderStore) GetRuntimeSession(context.Context, string) (domain.Session, error) {

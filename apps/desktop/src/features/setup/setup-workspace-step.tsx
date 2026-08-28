@@ -65,7 +65,7 @@ export function SetupWorkspaceStep({
       </div>
 
       <SetupStepNavigation
-        currentStep={3}
+        currentStep={4}
         helperText="选择项目后，对话仍会使用对应项目目录"
         onBack={onBack}
         onPrimary={() => void onComplete()}
@@ -76,6 +76,7 @@ export function SetupWorkspaceStep({
           </>
         }
         primaryDisabled={!path || saving}
+        totalSteps={4}
       />
     </section>
   );

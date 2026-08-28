@@ -13,7 +13,34 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 	hostedSearch := webSearch.Mode != domain.WebSearchModeDisabled && routeSupportsHostedWebSearch(ctx, s, route, specs)
 	hostedFetch := routeSupportsHostedWebFetch(ctx, s, route, specs)
 	out := make([]domain.ToolSpec, 0, len(specs))
+	model, modelKnown := s.modelInfoForRoute(ctx, route)
+	accountCapabilities := capabilitiesForProviderAccount(route)
 	for _, spec := range specs {
+		if (spec.ActivationPolicy == providerDeclarationActivationPolicy || spec.ActivationPolicy == providerAccountActivationPolicy) && nativeToolDisabled(nativeTools, spec.Name) {
+			continue
+		}
+		if spec.ActivationPolicy == providerDeclarationActivationPolicy && !isChatGPTCodexRoute(route) {
+			continue
+		}
+		if spec.ActivationPolicy == providerAccountActivationPolicy && !isChatGPTCodexRoute(route) {
+			continue
+		}
+		if isChatGPTCodexRoute(route) {
+			switch spec.Name {
+			case "bash":
+				if !modelKnown || !declaredModelCapabilitySupported(model, codexShellCapability) {
+					continue
+				}
+			case "web_search":
+				if spec.ActivationPolicy != providerDeclarationActivationPolicy || webSearch.Mode == domain.WebSearchModeDisabled || !modelKnown || !declaredModelCapabilitySupported(model, codexWebSearchCapability) {
+					continue
+				}
+			case CodexImagegenToolName:
+				if spec.ActivationPolicy != providerAccountActivationPolicy || !accountCapabilities.ImageGeneration || !accountCapabilities.NamespaceTools {
+					continue
+				}
+			}
+		}
 		switch spec.Name {
 		case "web_search":
 			if webSearch.Mode == domain.WebSearchModeDisabled {
@@ -22,13 +49,15 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 			switch webSearch.Route {
 			case domain.WebSearchRouteProvider:
 				if hostedSearch {
-					out = append(out, hostedWebSearchToolSpec(webSearch, route))
+					out = append(out, hostedWebSearchToolSpec(webSearch, route, model))
+				} else if isChatGPTCodexRoute(route) && modelKnown && codexModelUsesResponsesLite(model) {
+					out = append(out, localToolSpec(spec))
 				}
 			case domain.WebSearchRouteLocal:
 				out = append(out, localToolSpec(spec))
 			default:
 				if hostedSearch {
-					out = append(out, hostedWebSearchToolSpec(webSearch, route))
+					out = append(out, hostedWebSearchToolSpec(webSearch, route, model))
 				} else {
 					out = append(out, localToolSpec(spec))
 				}
@@ -46,8 +75,85 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 			out = append(out, spec)
 		}
 	}
-	_ = nativeTools // Hosted provider capabilities are extension candidates, never implicit core tools.
-	return out
+	if isChatGPTCodexRoute(route) && modelKnown && webSearch.Mode != domain.WebSearchModeDisabled && webSearch.Route != domain.WebSearchRouteLocal && !nativeToolDisabled(nativeTools, "web_search") && !codexModelUsesResponsesLite(model) && declaredModelCapabilitySupported(model, codexWebSearchCapability) && !toolSpecNamed(out, "web_search") {
+		out = append(out, hostedWebSearchToolSpec(webSearch, route, model))
+	}
+	return appendDynamicallyDiscoveredHostedToolSpecs(ctx, s, route, webSearch, nativeTools, out)
+}
+
+func declaredModelCapabilitySupported(model domain.ModelInfo, capability string) bool {
+	return containsString(model.DeclaredCapabilities, capability) && modelSupportsCapability(model, capability)
+}
+
+func (s *Service) providerDeclaredLocalToolActivations(ctx context.Context, requestedModel *domain.ModelRef) map[string]string {
+	if s == nil {
+		return nil
+	}
+	cfg, err := s.AppConfig(ctx)
+	if err != nil {
+		return nil
+	}
+	routes, err := s.ResolveModelRoutes(ctx, cfg, requestedModel)
+	if err != nil {
+		return nil
+	}
+	policy := normalizeProviderRuntimePolicy(cfg.ProviderPolicy)
+	webSearch := normalizeWebSearchRuntimeConfig(cfg.WebSearch)
+	if !providerPolicyBool(policy.EnableFallback) && len(routes) > 1 {
+		routes = routes[:1]
+	}
+	activations := map[string]string{}
+	for _, route := range routes {
+		if !isChatGPTCodexRoute(route) {
+			continue
+		}
+		accountCapabilities := capabilitiesForProviderAccount(route)
+		if accountCapabilities.ImageGeneration && accountCapabilities.NamespaceTools && !nativeToolDisabled(normalizeNativeToolsRuntimeConfig(cfg.NativeTools), CodexImagegenToolName) {
+			activations[CodexImagegenToolName] = "providerAccount"
+		}
+		s.ensureDynamicProviderCapabilities(ctx, route)
+		model, ok := s.modelInfoForRoute(ctx, route)
+		if ok && webSearch.Mode != domain.WebSearchModeDisabled && !nativeToolDisabled(normalizeNativeToolsRuntimeConfig(cfg.NativeTools), "web_search") && declaredModelCapabilitySupported(model, codexWebSearchCapability) && (webSearch.Route == domain.WebSearchRouteLocal || codexModelUsesResponsesLite(model)) {
+			activations["web_search"] = "providerCapability"
+		}
+	}
+	return activations
+}
+
+func appendDynamicallyDiscoveredHostedToolSpecs(ctx context.Context, service *Service, route ResolvedModelRoute, webSearch domain.WebSearchConfig, nativeConfig domain.NativeToolsConfig, specs []domain.ToolSpec) []domain.ToolSpec {
+	if service == nil {
+		return specs
+	}
+	model, ok := service.modelInfoForRoute(ctx, route)
+	if !ok {
+		return specs
+	}
+	discovered := dynamicallyDiscoveredNativeTools(model)
+	if len(discovered) == 0 {
+		return specs
+	}
+	disabled := map[string]bool{}
+	for _, name := range nativeConfig.Disabled {
+		disabled[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	providerID := normalizedRouteProviderID(route)
+	if (providerID != "anthropic" && providerID != "claude-code") || route.Transport != TransportAnthropicMessages {
+		return specs
+	}
+	if discovered["web_search"] && !disabled["web_search"] && webSearch.Mode != domain.WebSearchModeDisabled && !toolSpecNamed(specs, "web_search") {
+		specs = append(specs, hostedWebSearchToolSpec(webSearch, route, model))
+	}
+	if discovered["web_fetch"] && !disabled["web_fetch"] && !toolSpecNamed(specs, "web_fetch") {
+		specs = append(specs, hostedWebFetchToolSpec(route))
+	}
+	if discovered["code_execution"] && !disabled["code_execution"] && !toolSpecNamed(specs, "code_execution") {
+		specs = append(specs, domain.ToolSpec{
+			Name: "code_execution", Description: "Run code in the active model provider's hosted sandbox.",
+			Hosted:     &domain.HostedToolSpec{Type: "code_execution_20250825"},
+			Capability: "hosted.code", Category: "hosted", RequiresNetwork: true,
+		})
+	}
+	return specs
 }
 
 func routeSupportsHostedWebSearch(ctx context.Context, service *Service, route ResolvedModelRoute, specs []domain.ToolSpec) bool {
@@ -59,6 +165,9 @@ func routeSupportsHostedWebSearch(ctx context.Context, service *Service, route R
 		return false
 	}
 	providerID := normalizedRouteProviderID(route)
+	if isChatGPTCodexRoute(route) {
+		return !codexModelUsesResponsesLite(model) && declaredModelCapabilitySupported(model, codexWebSearchCapability)
+	}
 	switch route.Transport {
 	case TransportOpenAIResponses, TransportAzureOpenAI:
 		return modelSupportsCapability(model, "web_search") && (providerID == "openai" || providerID == "azure-openai")
@@ -195,11 +304,20 @@ func sanitizeHostedToolName(value string) string {
 	return out
 }
 
-func hostedWebSearchToolSpec(config domain.WebSearchConfig, route ResolvedModelRoute) domain.ToolSpec {
-	externalWebAccess := true
+func hostedWebSearchToolSpec(config domain.WebSearchConfig, route ResolvedModelRoute, model domain.ModelInfo) domain.ToolSpec {
+	externalWebAccess := config.Mode != domain.WebSearchModeCached
+	var indexedWebAccess *bool
+	if config.Mode == domain.WebSearchModeIndexed {
+		indexed := true
+		indexedWebAccess = &indexed
+	}
 	hostedType := "web_search"
 	providerID := normalizedRouteProviderID(route)
 	allowedDomains := append([]string(nil), config.AllowedDomains...)
+	var searchContentTypes []string
+	if isChatGPTCodexRoute(route) && model.WebSearchToolType == "text_and_image" {
+		searchContentTypes = []string{"text", "image"}
+	}
 	switch providerID {
 	case "anthropic", "claude-code":
 		hostedType = "web_search_20250305"
@@ -216,16 +334,22 @@ func hostedWebSearchToolSpec(config domain.WebSearchConfig, route ResolvedModelR
 		Name:        "web_search",
 		Description: "Search the public web using the active model provider's hosted web search capability.",
 		Hosted: &domain.HostedToolSpec{
-			Type:              hostedType,
-			ExternalWebAccess: &externalWebAccess,
-			SearchContextSize: config.SearchContextSize,
-			AllowedDomains:    allowedDomains,
-			UserLocation:      cloneWebSearchUserLocation(config.UserLocation),
+			Type:               hostedType,
+			ExternalWebAccess:  &externalWebAccess,
+			IndexedWebAccess:   indexedWebAccess,
+			SearchContextSize:  config.SearchContextSize,
+			SearchContentTypes: searchContentTypes,
+			AllowedDomains:     allowedDomains,
+			UserLocation:       cloneWebSearchUserLocation(config.UserLocation),
 		},
 		Capability:      "web.search",
 		Category:        "web",
 		RequiresNetwork: true,
 	}
+}
+
+func codexModelUsesResponsesLite(model domain.ModelInfo) bool {
+	return model.UseResponsesLite != nil && *model.UseResponsesLite
 }
 
 func hostedWebFetchToolSpec(route ResolvedModelRoute) domain.ToolSpec {
@@ -292,7 +416,7 @@ func normalizeWebSearchRuntimeConfig(config domain.WebSearchConfig) domain.WebSe
 	if strings.TrimSpace(config.Mode) == "" {
 		config.Mode = domain.WebSearchModeLive
 	}
-	if config.Mode != domain.WebSearchModeDisabled && config.Mode != domain.WebSearchModeLive {
+	if config.Mode != domain.WebSearchModeDisabled && config.Mode != domain.WebSearchModeCached && config.Mode != domain.WebSearchModeIndexed && config.Mode != domain.WebSearchModeLive {
 		config.Mode = domain.WebSearchModeLive
 	}
 	if strings.TrimSpace(config.Route) == "" {
@@ -334,6 +458,7 @@ func normalizeWebSearchDomains(values []string) []string {
 }
 
 func normalizeNativeToolsRuntimeConfig(config domain.NativeToolsConfig) domain.NativeToolsConfig {
+	config.Disabled = normalizeStringList(config.Disabled)
 	config.CodeExecution.ContainerID = strings.TrimSpace(config.CodeExecution.ContainerID)
 	config.CodeExecution.FileIDs = normalizeStringList(config.CodeExecution.FileIDs)
 	config.FileSearch.VectorStoreIDs = normalizeStringList(config.FileSearch.VectorStoreIDs)
@@ -357,6 +482,16 @@ func normalizeNativeToolsRuntimeConfig(config domain.NativeToolsConfig) domain.N
 		config.RemoteMCP = out
 	}
 	return config
+}
+
+func nativeToolDisabled(config domain.NativeToolsConfig, name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, disabled := range config.Disabled {
+		if strings.ToLower(strings.TrimSpace(disabled)) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeStringList(values []string) []string {

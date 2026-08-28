@@ -82,6 +82,9 @@ func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatTo
 		execCtx.ToolCallID = call.ID
 	}
 	spec := tool.Spec()
+	if namespace := strings.TrimSpace(call.Namespace); namespace != "" && namespace != strings.TrimSpace(spec.Namespace) {
+		return r.finish(call, start, toolFailure(call.ID, name, "tool_namespace_mismatch", fmt.Sprintf("tool %s is not registered in namespace %s", name, namespace)), false)
+	}
 	if isLongRunningInteractionSpec(spec) {
 		timeout = 24 * time.Hour
 	}
@@ -345,7 +348,7 @@ func isShellPermissionSpec(spec domain.ToolSpec) bool {
 
 func isLongRunningInteractionSpec(spec domain.ToolSpec) bool {
 	return (spec.Category == "interaction" && spec.Capability == "user.question") ||
-		spec.Name == ExecCommandToolName || spec.Name == WriteStdinToolName
+		spec.Name == ExecCommandToolName || spec.Name == WriteStdinToolName || spec.Name == CodexImagegenToolName
 }
 
 func (r *ToolRuntime) finish(call domain.ChatToolCall, start time.Time, result domain.ToolResult, truncated bool) domain.ToolResult {

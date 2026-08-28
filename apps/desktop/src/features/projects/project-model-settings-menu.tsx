@@ -66,6 +66,7 @@ export function ModelSettingsMenu({
   });
   const groupedModels = groupModelOptionsByProvider(filteredModels);
   const activeModelKey = modelOptionKey(currentProviderId, modelId);
+  const activeModel = modelOptions.find((model) => model.id === modelId);
 
   return (
     <>
@@ -92,6 +93,7 @@ export function ModelSettingsMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <ReasoningEffortMenuItems
+            model={activeModel}
             onReasoningEffortSelect={onReasoningEffortSelect}
             reasoningEffort={reasoningEffort}
           />
@@ -111,6 +113,7 @@ export function ModelSettingsMenu({
           />
           {showServiceTier ? (
             <ServiceTierSubmenu
+              model={activeModel}
               onServiceTierSelect={onServiceTierSelect}
               serviceTier={serviceTier}
             />

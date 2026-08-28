@@ -63,9 +63,24 @@ test("composer project mentions include existing projects with the current proje
   });
 });
 
-test("composer tool mentions include only globally enabled builtin tools", () => {
-  assert.equal(isPromptMentionBuiltinTool({ enabled: true, source: "builtin" }), true);
+test("composer tool mentions omit required core tools and include optional enabled tools", () => {
+  assert.equal(
+    isPromptMentionBuiltinTool({ enabled: true, name: "read", source: "builtin" }),
+    false,
+  );
+  assert.equal(
+    isPromptMentionBuiltinTool({ enabled: true, name: "grep", source: "builtin" }),
+    true,
+  );
   assert.equal(isPromptMentionBuiltinTool({ enabled: false, source: "builtin" }), false);
+  assert.equal(
+    isPromptMentionBuiltinTool({
+      activationPolicy: "provider_declaration",
+      enabled: true,
+      source: "builtin",
+    }),
+    false,
+  );
   assert.equal(isPromptMentionBuiltinTool({ enabled: true, source: "extension" }), false);
   assert.equal(
     isPromptMentionBuiltinTool({

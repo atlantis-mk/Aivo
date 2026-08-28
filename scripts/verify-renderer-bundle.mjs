@@ -6,6 +6,11 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const localReferencePattern = /\b(?:href|src)=(['"])(.*?)\1/g
+const allowedConnectSources = new Set([
+  "'self'",
+  'http://127.0.0.1:*',
+  'ws://127.0.0.1:*',
+])
 
 function isExternalReference(reference) {
   return /^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(reference)
@@ -18,6 +23,7 @@ export function verifyRendererBundle(outputDirectory) {
   }
 
   const html = fs.readFileSync(indexPath, 'utf8')
+  verifyRendererConnectCSP(html)
   const references = [...html.matchAll(localReferencePattern)].map((match) => match[2])
   if (references.length === 0) {
     throw new Error('Renderer entry point contains no local asset references.')
@@ -41,6 +47,32 @@ export function verifyRendererBundle(outputDirectory) {
   }
 
   return references
+}
+
+export function verifyRendererConnectCSP(html) {
+  const meta = [...html.matchAll(/<meta\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .find((tag) => /\bhttp-equiv\s*=\s*(['"])Content-Security-Policy\1/i.test(tag))
+  if (!meta) {
+    throw new Error('Renderer Content Security Policy meta tag is missing.')
+  }
+  const content = meta.match(/\bcontent\s*=\s*(['"])(.*?)\1/i)?.[2] ?? ''
+  const connectDirective = content
+    .split(';')
+    .map((directive) => directive.trim().split(/\s+/))
+    .find(([name]) => name === 'connect-src')
+  if (!connectDirective) {
+    throw new Error('Renderer Content Security Policy connect-src directive is missing.')
+  }
+  const sources = connectDirective.slice(1)
+  if (
+    sources.length !== allowedConnectSources.size ||
+    sources.some((source) => !allowedConnectSources.has(source))
+  ) {
+    throw new Error(
+      "Renderer connect-src must allow only 'self' and dynamic HTTP/WebSocket ports on 127.0.0.1.",
+    )
+  }
 }
 
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? '')) {

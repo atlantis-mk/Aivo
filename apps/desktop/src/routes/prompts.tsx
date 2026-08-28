@@ -231,23 +231,25 @@ function PromptManagementRoute() {
 
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-background text-foreground">
-      <header className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b px-3" data-app-drag>
+      <header className="relative z-50 flex h-9 shrink-0 items-center gap-2 border-b px-3" data-app-drag>
         <WindowControls />
-        <Link
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          onClick={(event) => { if (!canLeaveDraft()) event.preventDefault(); }}
-          to="/projects/chat"
-          data-app-no-drag
-        >
-          <ArrowLeft className="size-4" /> 返回主页
-        </Link>
+        <Button asChild size="sm" variant="ghost">
+          <Link
+            data-app-no-drag
+            onClick={(event) => { if (!canLeaveDraft()) event.preventDefault(); }}
+            to="/projects/chat"
+          >
+            <ArrowLeft data-icon="inline-start" />
+            返回主页
+          </Link>
+        </Button>
         <div className="mx-auto flex items-center gap-2 text-sm font-semibold">
           <FileCode2 className="size-4" /> 提示词管理
         </div>
         <div className="flex items-center gap-1" data-app-no-drag>
           <NewPromptDialog agentModes={agentModes} onCreated={() => void load()} />
           <Button aria-label="重新加载提示词目录" onClick={() => void load(true)} size="icon" variant="ghost">
-            <RefreshCw className="size-4" />
+            <RefreshCw />
           </Button>
           <Button
             aria-label="打开提示词目录"
@@ -255,7 +257,7 @@ function PromptManagementRoute() {
             size="icon"
             variant="ghost"
           >
-            <FolderOpen className="size-4" />
+            <FolderOpen />
           </Button>
         </div>
       </header>

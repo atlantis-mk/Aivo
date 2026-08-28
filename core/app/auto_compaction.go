@@ -15,11 +15,12 @@ const (
 )
 
 type compactionPressure struct {
-	ContextWindowTokens int
-	TriggerTokens       int
-	RetainTokens        int
-	ThresholdPercent    int
-	CapacitySource      string
+	ContextWindowTokens   int
+	AutoCompactTokenLimit int
+	TriggerTokens         int
+	RetainTokens          int
+	ThresholdPercent      int
+	CapacitySource        string
 }
 
 type compactionPlan struct {
@@ -68,7 +69,7 @@ func (s *Service) resolveCompactionPressure(ctx context.Context, session domain.
 			selectedModel = appConfig.DefaultModel
 		}
 	}
-	contextTokens, source := s.modelContextLength(ctx, selectedModel)
+	contextTokens, autoCompactTokenLimit, source := s.modelCompactionLimits(ctx, selectedModel)
 	if contextTokens <= 0 {
 		contextTokens = fallbackCompactionContextTokens
 		source = "safe_estimate"
@@ -78,6 +79,9 @@ func (s *Service) resolveCompactionPressure(ctx context.Context, session domain.
 		threshold = defaultCompactionThresholdPercent
 	}
 	trigger := contextTokens * threshold / 100
+	if autoCompactTokenLimit > 0 && autoCompactTokenLimit < trigger {
+		trigger = autoCompactTokenLimit
+	}
 	if config.ReserveTokens > 0 {
 		reservedLimit := contextTokens - config.ReserveTokens
 		if reservedLimit > 0 && reservedLimit < trigger {
@@ -89,30 +93,36 @@ func (s *Service) resolveCompactionPressure(ctx context.Context, session domain.
 		retain = trigger / 2
 	}
 	return compactionPressure{
-		ContextWindowTokens: contextTokens,
-		TriggerTokens:       trigger,
-		RetainTokens:        retain,
-		ThresholdPercent:    threshold,
-		CapacitySource:      source,
+		ContextWindowTokens:   contextTokens,
+		AutoCompactTokenLimit: autoCompactTokenLimit,
+		TriggerTokens:         trigger,
+		RetainTokens:          retain,
+		ThresholdPercent:      threshold,
+		CapacitySource:        source,
 	}
 }
 
 func (s *Service) modelContextLength(ctx context.Context, model *domain.ModelRef) (int, string) {
+	contextTokens, _, source := s.modelCompactionLimits(ctx, model)
+	return contextTokens, source
+}
+
+func (s *Service) modelCompactionLimits(ctx context.Context, model *domain.ModelRef) (int, int, string) {
 	if model == nil || strings.TrimSpace(model.ModelID) == "" {
-		return 0, ""
+		return 0, 0, ""
 	}
 	providerID := s.normalizeProviderID(model.ProviderID)
-	if definition, ok := s.providerDefinition(providerID); ok {
-		if info, found := findModelInfo(definition.Models, model.ModelID); found && info.ContextLength > 0 {
-			return info.ContextLength, "provider_catalog"
-		}
-	}
 	if cache, err := s.store.LoadProviderModelCache(ctx, providerID); err == nil && cache != nil {
 		if info, found := findModelInfo(cache.Models, model.ModelID); found && info.ContextLength > 0 {
-			return info.ContextLength, "provider_cache"
+			return info.ContextLength, info.AutoCompactTokenLimit, "provider_cache"
 		}
 	}
-	return 0, ""
+	if definition, ok := s.providerDefinition(providerID); ok {
+		if info, found := findModelInfo(definition.Models, model.ModelID); found && info.ContextLength > 0 {
+			return info.ContextLength, info.AutoCompactTokenLimit, "provider_catalog"
+		}
+	}
+	return 0, 0, ""
 }
 
 func automaticCompactionPlan(events []domain.SessionEvent, latest *domain.SessionSummary, pressure compactionPressure) (compactionPlan, bool) {

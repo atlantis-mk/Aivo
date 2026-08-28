@@ -6,38 +6,48 @@ import (
 )
 
 type ToolSpec struct {
-	Name                 string          `json:"name"`
-	Description          string          `json:"description"`
-	InputSchema          map[string]any  `json:"inputSchema"`
-	Hosted               *HostedToolSpec `json:"hosted,omitempty"`
-	Kind                 string          `json:"kind,omitempty"`
-	Format               *ToolFormat     `json:"format,omitempty"`
-	Namespace            string          `json:"namespace,omitempty"`
-	NamespaceDescription string          `json:"namespaceDescription,omitempty"`
-	Capability           string          `json:"capability,omitempty"`
-	RiskLevel            string          `json:"riskLevel,omitempty"`
-	Category             string          `json:"category,omitempty"`
-	Toolsets             []string        `json:"toolsets,omitempty"`
-	RequiresWorkspace    bool            `json:"requiresWorkspace,omitempty"`
-	RequiresNetwork      bool            `json:"requiresNetwork,omitempty"`
-	TouchesSecrets       bool            `json:"touchesSecrets,omitempty"`
-	ActivationPolicy     string          `json:"activationPolicy,omitempty"`
-	ImplementationHash   string          `json:"-"`
+	Name                 string              `json:"name"`
+	Description          string              `json:"description"`
+	InputSchema          map[string]any      `json:"inputSchema"`
+	Hosted               *HostedToolSpec     `json:"hosted,omitempty"`
+	Kind                 string              `json:"kind,omitempty"`
+	Format               *ToolFormat         `json:"format,omitempty"`
+	Strict               *bool               `json:"strict,omitempty"`
+	Namespace            string              `json:"namespace,omitempty"`
+	NamespaceDescription string              `json:"namespaceDescription,omitempty"`
+	Capability           string              `json:"capability,omitempty"`
+	RiskLevel            string              `json:"riskLevel,omitempty"`
+	Category             string              `json:"category,omitempty"`
+	Toolsets             []string            `json:"toolsets,omitempty"`
+	RequiresWorkspace    bool                `json:"requiresWorkspace,omitempty"`
+	RequiresNetwork      bool                `json:"requiresNetwork,omitempty"`
+	TouchesSecrets       bool                `json:"touchesSecrets,omitempty"`
+	ActivationPolicy     string              `json:"activationPolicy,omitempty"`
+	SelectionGroup       *ToolSelectionGroup `json:"selectionGroup,omitempty"`
+	ImplementationHash   string              `json:"-"`
+}
+
+type ToolSelectionGroup struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type HostedToolSpec struct {
-	Type              string                 `json:"type"`
-	ExternalWebAccess *bool                  `json:"externalWebAccess,omitempty"`
-	SearchContextSize string                 `json:"searchContextSize,omitempty"`
-	AllowedDomains    []string               `json:"allowedDomains,omitempty"`
-	UserLocation      *WebSearchUserLocation `json:"userLocation,omitempty"`
-	MaxUses           int                    `json:"maxUses,omitempty"`
-	VectorStoreIDs    []string               `json:"vectorStoreIds,omitempty"`
-	FileIDs           []string               `json:"fileIds,omitempty"`
-	ContainerID       string                 `json:"containerId,omitempty"`
-	ServerURL         string                 `json:"serverUrl,omitempty"`
-	ServerLabel       string                 `json:"serverLabel,omitempty"`
-	AllowedTools      []string               `json:"allowedTools,omitempty"`
+	Type               string                 `json:"type"`
+	ExternalWebAccess  *bool                  `json:"externalWebAccess,omitempty"`
+	IndexedWebAccess   *bool                  `json:"indexedWebAccess,omitempty"`
+	SearchContextSize  string                 `json:"searchContextSize,omitempty"`
+	SearchContentTypes []string               `json:"searchContentTypes,omitempty"`
+	AllowedDomains     []string               `json:"allowedDomains,omitempty"`
+	UserLocation       *WebSearchUserLocation `json:"userLocation,omitempty"`
+	MaxUses            int                    `json:"maxUses,omitempty"`
+	VectorStoreIDs     []string               `json:"vectorStoreIds,omitempty"`
+	FileIDs            []string               `json:"fileIds,omitempty"`
+	ContainerID        string                 `json:"containerId,omitempty"`
+	ServerURL          string                 `json:"serverUrl,omitempty"`
+	ServerLabel        string                 `json:"serverLabel,omitempty"`
+	AllowedTools       []string               `json:"allowedTools,omitempty"`
 }
 
 type WebSearchUserLocation struct {
@@ -61,6 +71,7 @@ const (
 
 type ChatToolCall struct {
 	ID        string          `json:"id"`
+	Namespace string          `json:"namespace,omitempty"`
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
 }
@@ -163,6 +174,8 @@ type ToolExecutionContext struct {
 	ExpectedRegistrations map[string]ToolRegistrationIdentity `json:"expectedRegistrations,omitempty"`
 	ToolSnapshot          *ToolSnapshot                       `json:"toolSnapshot,omitempty"`
 	BridgeCallDepth       int                                 `json:"bridgeCallDepth,omitempty"`
+	ActiveModel           *ModelRef                           `json:"activeModel,omitempty"`
+	RecentImages          []MessageAttachment                 `json:"-"`
 }
 
 type Tool interface {
@@ -182,6 +195,13 @@ type ChatResponse struct {
 	Text      string         `json:"text"`
 	ToolCalls []ChatToolCall `json:"toolCalls,omitempty"`
 	Usage     *TokenUsage    `json:"usage,omitempty"`
+	Sources   []ChatSource   `json:"sources,omitempty"`
+}
+
+type ChatSource struct {
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+	RefID string `json:"refId,omitempty"`
 }
 
 type TokenUsage struct {

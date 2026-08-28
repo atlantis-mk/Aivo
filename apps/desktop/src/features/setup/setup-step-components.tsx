@@ -64,6 +64,7 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
         helperText="敏感操作会先征得你的确认"
         onPrimary={onNext}
         primaryContent="开始设置"
+        totalSteps={4}
       />
     </section>
   );

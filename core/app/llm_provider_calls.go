@@ -14,13 +14,14 @@ import (
 	"aivo/core/domain"
 )
 
-func (s *Service) callChatGPTCodex(ctx context.Context, provider domain.ProviderConfig, model domain.ModelRef, credential llmCredential, requestProfile domain.ProviderRequestProfile, messages []llmChatMessage, tools []domain.ToolSpec, reasoningEffort string, serviceTier string, onDelta func(string), onToolDelta func(domain.ChatToolCall)) (domain.ChatResponse, error) {
+func (s *Service) callChatGPTCodex(ctx context.Context, provider domain.ProviderConfig, model domain.ModelRef, modelInfo domain.ModelInfo, credential llmCredential, requestProfile domain.ProviderRequestProfile, messages []llmChatMessage, tools []domain.ToolSpec, reasoningEffort string, serviceTier string, onDelta func(string), onToolDelta func(domain.ChatToolCall)) (domain.ChatResponse, error) {
 	access, accountID, err := s.validOpenAIAccessToken(ctx, credential)
 	if err != nil {
 		return domain.ChatResponse{}, err
 	}
 	body := responsesRequestBody(model.ModelID, messages, tools, reasoningEffort, serviceTier)
 	applyRequestProfile(body, requestProfile, provider, model.ModelID)
+	applyCodexRequestCapabilities(body, modelInfo, tools, reasoningEffort, serviceTier)
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return domain.ChatResponse{}, err
@@ -34,6 +35,9 @@ func (s *Service) callChatGPTCodex(ctx context.Context, provider domain.Provider
 	applyRequestProfileHeaders(req, requestProfile, provider, model.ModelID)
 	req.Header.Set("Authorization", "Bearer "+access)
 	req.Header.Set("User-Agent", openAIUserAgent)
+	if codexModelUsesResponsesLite(modelInfo) {
+		req.Header.Set("x-openai-internal-codex-responses-lite", "true")
+	}
 	if accountID != "" {
 		req.Header.Set("ChatGPT-Account-Id", accountID)
 	}

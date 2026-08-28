@@ -4,14 +4,72 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:5173 ws://127.0.0.1:5173 http://127.0.0.1:43117 ws://127.0.0.1:43117 http://localhost:43117 ws://localhost:43117;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*;"
     />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>desktop</title>
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        background: #ffffff;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      .aivo-boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #71717a;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 14px;
+      }
+
+      .aivo-boot-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .aivo-boot-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #e4e4e7;
+        border-top-color: #71717a;
+        border-radius: 9999px;
+        animation: aivo-boot-spin 700ms linear infinite;
+      }
+
+      @keyframes aivo-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .aivo-boot-spinner {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="aivo-boot" role="status" aria-label="Aivo 正在加载">
+        <div class="aivo-boot-content">
+          <span class="aivo-boot-spinner" aria-hidden="true"></span>
+          <span>加载中</span>
+        </div>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

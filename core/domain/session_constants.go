@@ -75,7 +75,6 @@ const (
 	QuestionRequestStatusRejected = "rejected"
 
 	PermissionModeRequestApproval = "request_approval"
-	PermissionModeAutoApprove     = "auto_approve"
 	PermissionModeFullAccess      = "full_access"
 )
 

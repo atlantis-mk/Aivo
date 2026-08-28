@@ -171,14 +171,17 @@ export function useExtensionSettingsState({
     }
   }
 
-  async function toggleTool(toolName: string, enabled: boolean) {
+  async function toggleTools(toolNames: string[], enabled: boolean) {
     catalog.setLoading(true);
     catalog.setError("");
     try {
-      await setGlobalToolEnabled(toolName, enabled, workspaceRoot ?? "");
+      for (const toolName of toolNames) {
+        await setGlobalToolEnabled(toolName, enabled, workspaceRoot ?? "");
+      }
       await catalog.reload();
     } catch (err) {
       catalog.setError(err instanceof Error ? err.message : String(err));
+      await catalog.reload();
     } finally {
       catalog.setLoading(false);
     }
@@ -264,7 +267,7 @@ export function useExtensionSettingsState({
     setSection,
     skills: catalog.skills,
     toggleSkillEnabled,
-    toggleTool,
+    toggleTools,
     visibleAgentModes,
     visibleAllTools,
     visibleExtensions,

@@ -36,7 +36,7 @@ func TestGenerateChatResponseFallsBackToConfiguredModel(t *testing.T) {
 
 	resp, activeModel, err := service.GenerateChatResponseStream(context.Background(), domain.ChatRequest{
 		Messages: []domain.ChatMessage{{Role: "user", Text: "hello"}},
-	}, nil, "", "", nil)
+	}, nil, "none", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestGenerateChatResponseFallsBackForStreamingBeforeOutput(t *testing.T) {
 	var deltas []string
 	resp, activeModel, err := service.GenerateChatResponseStream(context.Background(), domain.ChatRequest{
 		Messages: []domain.ChatMessage{{Role: "user", Text: "hello"}},
-	}, nil, "", "", func(delta string) {
+	}, nil, "none", "", func(delta string) {
 		deltas = append(deltas, delta)
 	})
 	if err != nil {

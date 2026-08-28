@@ -294,9 +294,14 @@ func (s *ExtensionSupervisor) RegisterReadyTools(id string, registry *Registry) 
 		return errors.New("extension is not ready")
 	}
 	tools := make([]domain.Tool, 0, len(item.loaded.Manifest.Contributes.Tools))
+	selectionGroups := extensionToolSelectionGroups(item.loaded.Manifest)
 	for _, contribution := range item.loaded.Manifest.Contributes.Tools {
 		groupDescription := strings.TrimSpace(item.loaded.Manifest.Description)
 		spec := domain.ToolSpec{Name: contribution.Name, Description: contribution.Description, InputSchema: domain.CloneRawMap(item.loaded.ToolSchemas[contribution.Name]), Namespace: generatedToolName("extension", id), NamespaceDescription: groupDescription, Capability: contribution.Capability, Category: "extension", Toolsets: []string{"coding", "extension"}, ActivationPolicy: firstNonEmpty(contribution.Activation, "auto"), ImplementationHash: item.loaded.Integrity}
+		if group, ok := selectionGroups[contribution.Name]; ok {
+			groupCopy := group
+			spec.SelectionGroup = &groupCopy
+		}
 		tools = append(tools, &extensionTool{supervisor: s, extensionID: id, generation: item.loaded.Integrity, spec: spec})
 	}
 	return registry.RegisterScopedBatch(tools, domain.ToolSourceExtension, id, item.loaded.Manifest.Version)

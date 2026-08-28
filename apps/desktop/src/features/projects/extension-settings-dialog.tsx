@@ -28,6 +28,9 @@ import {
   AgentModeManagementGroup,
 } from "@/features/projects/extension-settings-agent-modes";
 import { cn } from "@/lib/utils";
+import { groupToolCatalogEntries } from "@/features/projects/project-tool-activation-model";
+import { SkillEditorDialog } from "@/features/projects/extension-settings-skill-editor";
+import type { SkillEntry } from "@/services/aivo";
 
 type ExtensionSettingsDialogProps = {
   open: boolean;
@@ -75,6 +78,7 @@ export function ExtensionSettingsContent({
   workspaceRoot,
 }: ExtensionSettingsContentProps) {
   const [agentModeManagerOpen, setAgentModeManagerOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<SkillEntry>();
   const {
     agentModeEditorOpen,
     agentModes,
@@ -106,7 +110,7 @@ export function ExtensionSettingsContent({
     setSection,
     skills,
     toggleSkillEnabled,
-    toggleTool,
+    toggleTools,
     visibleAllTools,
     visibleExtensions,
     visibleServers,
@@ -131,6 +135,16 @@ export function ExtensionSettingsContent({
         onInstalled={reload}
         onOpenChange={setExtensionInstallOpen}
         open={extensionInstallOpen}
+      />
+      <SkillEditorDialog
+        onOpenChange={(open) => {
+          if (!open) setEditingSkill(undefined);
+        }}
+        onSaved={async () => {
+          await reload();
+        }}
+        open={Boolean(editingSkill)}
+        skill={editingSkill}
       />
       <Dialog open={agentModeEditorOpen} onOpenChange={setAgentModeEditorOpen}>
         <AgentModeEditorDialog
@@ -193,14 +207,13 @@ export function ExtensionSettingsContent({
           extensionCount={extensions.length}
           loading={loading}
           onAdd={openAddDialog}
-          onManageAgentModes={() => setAgentModeManagerOpen(true)}
           onQueryChange={setQuery}
           onReload={() => void reload()}
           query={query}
           section={section}
           serverCount={servers.length}
           skillCount={skills.length}
-          toolCount={visibleTools.length}
+          toolCount={groupToolCatalogEntries(visibleTools, {}).length}
         />
 
         {error ? (
@@ -217,11 +230,12 @@ export function ExtensionSettingsContent({
           activeToolSet={activeToolSet}
           loading={loading}
           onDeleteSkill={deleteSkill}
+          onEditSkill={setEditingSkill}
           onIgnoreSkillCandidate={ignoreSkillCandidate}
           onImportSkillCandidate={importSkillCandidate}
           onReload={reload}
           onToggleSkillEnabled={toggleSkillEnabled}
-          onToggleTool={toggleTool}
+          onToggleTool={toggleTools}
           query={query}
           sessionId={sessionId}
           visibleAllTools={visibleAllTools}

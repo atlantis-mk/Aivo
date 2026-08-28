@@ -45,7 +45,10 @@ func isRegisteredDeferrableTool(registry *Registry, name string) bool {
 		if entry.Name != name {
 			continue
 		}
-		spec := domain.ToolSpec{Name: entry.Name, Category: entry.Category, Toolsets: entry.Toolsets}
+		if entry.ActivationPolicy == providerDeclarationActivationPolicy || entry.ActivationPolicy == providerAccountActivationPolicy {
+			return false
+		}
+		spec := domain.ToolSpec{Name: entry.Name, Category: entry.Category, Toolsets: entry.Toolsets, ActivationPolicy: entry.ActivationPolicy}
 		return isDeferrableToolSpec(spec, domain.ToolRegistrationIdentity{Source: entry.Source})
 	}
 	return false
@@ -66,13 +69,19 @@ func toolCatalogListItem(entry domain.ToolCatalogEntry) map[string]any {
 }
 
 func isToolCatalogEntryDeferrable(entry domain.ToolCatalogEntry) bool {
-	spec := domain.ToolSpec{Name: entry.Name, Category: entry.Category, Toolsets: entry.Toolsets}
+	if entry.ActivationPolicy == providerDeclarationActivationPolicy || entry.ActivationPolicy == providerAccountActivationPolicy {
+		return false
+	}
+	spec := domain.ToolSpec{Name: entry.Name, Category: entry.Category, Toolsets: entry.Toolsets, ActivationPolicy: entry.ActivationPolicy}
 	return !isBridgeToolName(entry.Name) && isDeferrableToolSpec(spec, domain.ToolRegistrationIdentity{Source: entry.Source})
 }
 
 func isStandaloneToolCatalogEntry(entry domain.ToolCatalogEntry) bool {
-	return entry.Source == domain.ToolSourceBuiltin ||
-		(entry.Source == domain.ToolSourceExtension && strings.HasPrefix(entry.SourceID, "aivo."))
+	if entry.ActivationPolicy == providerDeclarationActivationPolicy || entry.ActivationPolicy == providerAccountActivationPolicy {
+		return false
+	}
+	return entry.SelectionGroup == nil && (entry.Source == domain.ToolSourceBuiltin ||
+		(entry.Source == domain.ToolSourceExtension && strings.HasPrefix(entry.SourceID, "aivo.")))
 }
 
 func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionContext, source string, category string, riskLevel string) []domain.ToolCatalogEntry {
@@ -84,6 +93,9 @@ func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionConte
 	riskLevel = strings.ToLower(strings.TrimSpace(riskLevel))
 	out := []domain.ToolCatalogEntry{}
 	for _, entry := range registry.CatalogEntries() {
+		if entry.ActivationPolicy == providerDeclarationActivationPolicy || entry.ActivationPolicy == providerAccountActivationPolicy {
+			continue
+		}
 		spec := domain.ToolSpec{
 			Name: entry.Name, Description: entry.Description, InputSchema: entry.InputSchema,
 			Namespace: entry.Namespace, Capability: entry.Capability, RiskLevel: entry.RiskLevel,
@@ -160,7 +172,10 @@ func deferrableCatalogEntries(registry *Registry) []domain.ToolCatalogEntry {
 	}
 	out := []domain.ToolCatalogEntry{}
 	for _, entry := range registry.CatalogEntries() {
-		spec := domain.ToolSpec{Name: entry.Name, Category: entry.Category, Toolsets: entry.Toolsets}
+		if entry.ActivationPolicy == providerDeclarationActivationPolicy || entry.ActivationPolicy == providerAccountActivationPolicy {
+			continue
+		}
+		spec := domain.ToolSpec{Name: entry.Name, Category: entry.Category, Toolsets: entry.Toolsets, ActivationPolicy: entry.ActivationPolicy}
 		if isBridgeToolName(entry.Name) || !isDeferrableToolSpec(spec, domain.ToolRegistrationIdentity{Source: entry.Source}) {
 			continue
 		}

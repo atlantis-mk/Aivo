@@ -5,7 +5,11 @@ import type {
   MCPServerListItem,
   ToolCatalogEntry,
 } from "@/services/aivo";
-import { isStandaloneToolResource } from "./tool-injection-resource-model.ts";
+import {
+  isRequiredCoreToolName,
+  isStandaloneToolResource,
+  requiredCoreToolNames,
+} from "./tool-injection-resource-model.ts";
 
 type ToolActivationSourceMetadata = {
   description?: string;
@@ -15,6 +19,7 @@ type ToolActivationSourceMetadata = {
 
 export type ToolCatalogGroup = {
   description?: string;
+  grouped: boolean;
   id: string;
   label: string;
   section: Exclude<ExtensionSettingsSection, "skills">;
@@ -32,7 +37,16 @@ export function usedToolNamesFromTurns(turns: ConversationTurn[]) {
 }
 
 export function isToggleableCatalogTool(tool: ToolCatalogEntry) {
-  return tool.enabled && !isBridgeCatalogTool(tool);
+  return (
+    tool.enabled &&
+    !isRequiredCoreToolName(tool.name) &&
+    tool.activationPolicy !== "provider_declaration" &&
+    !isBridgeCatalogTool(tool)
+  );
+}
+
+export function defaultActiveBuiltinToolNames(_tools: ToolCatalogEntry[]) {
+  return [...requiredCoreToolNames];
 }
 
 export function groupToolCatalogEntries(
@@ -41,19 +55,25 @@ export function groupToolCatalogEntries(
 ) {
   const groups = new Map<string, ToolCatalogGroup>();
   for (const tool of tools) {
-    const baseSection = toolActivationSection(tool);
+    const metadataSection =
+      tool.source === "mcp" || tool.category === "mcp" ? "mcp" : "extensions";
     const metadata = tool.sourceId
-      ? sourceMetadata[`${baseSection}:${tool.sourceId}`]
+      ? sourceMetadata[`${metadataSection}:${tool.sourceId}`]
       : undefined;
     const section = toolActivationSection(tool, metadata);
-    const id = `${section}:${tool.source}:${tool.sourceId || tool.namespace || tool.category || tool.name}`;
-    const label =
-      metadata?.label ||
-      tool.namespace ||
-      tool.sourceId ||
-      toolCategoryLabel(tool);
+    const selectionGroup = tool.selectionGroup;
+    const grouped = Boolean(selectionGroup);
+    const id = grouped
+      ? `${section}:group:${selectionGroup!.id}`
+      : `${section}:tool:${tool.name}`;
+    const label = grouped
+      ? selectionGroup!.name || metadata?.label || selectionGroup!.id
+      : tool.name;
     const group = groups.get(id) ?? {
-      description: metadata?.description,
+      description: grouped
+        ? selectionGroup?.description || metadata?.description
+        : tool.description || tool.capability,
+      grouped,
       id,
       label,
       section,
@@ -143,13 +163,6 @@ function isBridgeCatalogTool(tool: ToolCatalogEntry) {
     "tool_detail",
     "tool_call",
   ].includes(tool.name);
-}
-
-function toolCategoryLabel(tool: ToolCatalogEntry) {
-  if (tool.source === "mcp") return "MCP";
-  if (tool.source === "extension") return "扩展";
-  if (tool.category) return tool.category;
-  return "工具";
 }
 
 function toolActivationSection(

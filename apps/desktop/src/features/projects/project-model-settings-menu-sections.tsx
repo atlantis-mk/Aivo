@@ -12,8 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  MODEL_REASONING_EFFORT_OPTIONS,
-  MODEL_SERVICE_TIER_OPTIONS,
+  reasoningEffortOptionsForModel,
+  serviceTierOptionsForModel,
 } from "@/features/projects/project-model-settings-menu-model";
 import {
   getModelLabel,
@@ -31,16 +31,18 @@ type GroupedModelOptions = {
 };
 
 export function ReasoningEffortMenuItems({
+  model,
   onReasoningEffortSelect,
   reasoningEffort,
 }: {
+  model?: ModelInfo;
   onReasoningEffortSelect: (reasoningEffort: string) => void;
   reasoningEffort: string;
 }) {
   return (
     <>
       <DropdownMenuLabel>推理</DropdownMenuLabel>
-      {MODEL_REASONING_EFFORT_OPTIONS.map((level) => (
+      {reasoningEffortOptionsForModel(model).map((level) => (
         <DropdownMenuItem
           key={level.value}
           onSelect={(event: Event) => {
@@ -145,9 +147,11 @@ export function ModelPickerSubmenu({
 }
 
 export function ServiceTierSubmenu({
+  model,
   onServiceTierSelect,
   serviceTier,
 }: {
+  model?: ModelInfo;
   onServiceTierSelect: (serviceTier: string) => void;
   serviceTier: string;
 }) {
@@ -155,7 +159,7 @@ export function ServiceTierSubmenu({
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>速度</DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
-        {MODEL_SERVICE_TIER_OPTIONS.map((tier) => (
+        {serviceTierOptionsForModel(model).map((tier) => (
           <DropdownMenuItem
             key={tier.value}
             onSelect={(event: Event) => {

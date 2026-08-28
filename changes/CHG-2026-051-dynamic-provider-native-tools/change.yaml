@@ -1,0 +1,42 @@
+schema: "2"
+id: "CHG-2026-051-dynamic-provider-native-tools"
+title: "Dynamically bridge Provider-native tools"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Provider-returned model capabilities must become eligible Provider-native tools without manual activation while preserving trust, explicit disablement, and unknown-capability safety"
+requirements:
+  - "REQ-PROVIDER-001"
+  - "REQ-TOOL-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "AT-TOOL-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0024"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001 Provider configuration and health"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Trust boundaries"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes:
+  - "CHG-2026-033-settings-provider-management"
+  - "CHG-2026-037-intent-scoped-tool-injection"
+boundaries:
+  - "authenticated Provider model-catalog parsing and persisted capability metadata"
+  - "automatic Provider-hosted server-tool declarations outside local execution Tool Snapshots"
+  - "allowlisted Provider/transport/tool-version adapters and explicit configuration disablement"
+risks:
+  - "incomplete remote capability metadata could be mistaken for unsupported or supported behavior"
+  - "Provider tool protocol versions can change independently of model IDs"
+  - "automatically available hosted tools can add Provider-side processing and usage charges"
+next:
+  - "parse authoritative native-tool metadata from Provider model catalogs that expose it"
+  - "refresh missing or expired capability metadata automatically before first model use"
+  - "bridge only explicit supported native tools through allowlisted Provider adapters"
+  - "cover unknown, disabled, refresh-failure, persistence, and serialization paths"

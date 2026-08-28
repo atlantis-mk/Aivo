@@ -9,5 +9,5 @@ enabled: true
 用户意图：
 {{intent}}
 
-候选 MCP 与扩展：
+候选工具资源（ID：显示名｜说明）：
 {{candidates}}

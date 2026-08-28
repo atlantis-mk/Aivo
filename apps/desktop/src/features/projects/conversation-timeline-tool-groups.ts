@@ -86,7 +86,7 @@ export function filterVisibleToolCalls(toolCalls: domain.ToolCall[]) {
     const toolCall = toolCalls[index];
     if (hiddenToolCallNames.has(toolCall.name)) continue;
 
-    if (toolCall.name === "glob") {
+    if (toolCall.name === "find" || toolCall.name === "glob") {
       const pattern = stringArg(toolCall.arguments ?? {}, "pattern")
         .trim()
         .toLowerCase();
@@ -95,7 +95,7 @@ export function filterVisibleToolCalls(toolCalls: domain.ToolCall[]) {
       continue;
     }
 
-    if (toolCall.name === "search_files") {
+    if (toolCall.name === "grep" || toolCall.name === "search_files") {
       const query = stringArg(toolCall.arguments ?? {}, "query")
         .trim()
         .toLowerCase();
@@ -112,11 +112,15 @@ export function filterVisibleToolCalls(toolCalls: domain.ToolCall[]) {
 
 export function toolCallKind(toolCall: domain.ToolCall) {
   switch (toolCall.name) {
+    case "read":
     case "read_file":
       return "read";
+    case "find":
+    case "grep":
     case "glob":
     case "search_files":
       return "search";
+    case "ls":
     case "list_files":
       return "list";
     case "tool_resolve":
@@ -129,7 +133,8 @@ export function toolCallKind(toolCall: domain.ToolCall) {
       return "tool-detail";
     case "tool_call":
       return "tool-bridge";
-    case "apply_patch":
+    case "write":
+    case "edit":
     case "write_file":
     case "edit_file":
       return "write";

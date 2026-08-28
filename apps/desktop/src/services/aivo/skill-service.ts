@@ -45,6 +45,11 @@ export type SkillListResult = {
   candidates?: SkillImportCandidate[];
 };
 
+export type SkillEditResult = {
+  skill: SkillEntry;
+  content: string;
+};
+
 export type SessionActiveSkillsResult = {
   sessionId: string;
   skillIds: string[];
@@ -78,6 +83,19 @@ export function ignoreSkillCandidatesByName(name: string) {
 
 export function setSkillEnabled(skillId: string, enabled: boolean) {
   return invoke<SkillEntry>("SetSkillEnabled", { skillId, enabled });
+}
+
+export function getManagedSkillForEdit(skillId: string) {
+  return invoke<SkillEditResult>("GetManagedSkillForEdit", skillId);
+}
+
+export function updateManagedSkill(input: {
+  skillId: string;
+  description: string;
+  content: string;
+  expectedContentHash: string;
+}) {
+  return invoke<SkillEditResult>("UpdateManagedSkill", input);
 }
 
 export function deleteManagedSkill(skillId: string) {

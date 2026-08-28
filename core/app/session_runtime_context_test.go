@@ -193,6 +193,50 @@ func TestCreateCodingSessionDefaultsToAssistantAgent(t *testing.T) {
 	}
 }
 
+func TestNewCodingSessionsInheritSavedPermissionModePreference(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	if _, err := service.UpdateModelPreferences(ctx, domain.ModelPreferencesInput{DefaultPermissionMode: domain.PermissionModeFullAccess}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstMode, err := service.GetPermissionMode(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstMode.Mode != domain.PermissionModeFullAccess {
+		t.Fatalf("first mode = %q, want full access", firstMode.Mode)
+	}
+	if _, err := service.UpdateModelPreferences(ctx, domain.ModelPreferencesInput{DefaultPermissionMode: domain.PermissionModeRequestApproval}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMode, err := service.GetPermissionMode(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondMode.Mode != domain.PermissionModeRequestApproval {
+		t.Fatalf("second mode = %q, want request approval", secondMode.Mode)
+	}
+	firstMode, err = service.GetPermissionMode(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstMode.Mode != domain.PermissionModeFullAccess {
+		t.Fatalf("existing session mode = %q, want unchanged full access", firstMode.Mode)
+	}
+	if _, err := service.UpdateModelPreferences(ctx, domain.ModelPreferencesInput{DefaultPermissionMode: legacyPermissionModeAutoApprove}); err == nil {
+		t.Fatal("removed automatic approval mode was accepted as a default preference")
+	}
+}
+
 func TestSubmitSessionMessageRecreatesDeletedInitialWorkspace(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
@@ -466,7 +510,7 @@ func TestSubmitSessionMessageSendsTextAttachmentToProvider(t *testing.T) {
 		for _, message := range body.Messages {
 			content, _ := message.Content.(string)
 			if message.Role == domain.EventRoleSystem && contains(content, "Host tool-group selector") {
-				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"sources\":[]}"}}]}`))
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"resources\":[]}"}}]}`))
 				return
 			}
 		}

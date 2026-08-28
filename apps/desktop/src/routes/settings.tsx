@@ -6,6 +6,7 @@ import { AiCloud01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowLeft, RefreshCw, Settings } from 'lucide-react'
 import { WindowControls } from '@/components/app-top-bar-controls'
+import { Button } from '@/components/ui/button'
 import {
   Sidebar,
   SidebarContent,
@@ -29,16 +30,14 @@ function SettingsRoute() {
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
-      <header className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b px-3" data-app-drag>
+      <header className="relative z-50 flex h-9 shrink-0 items-center gap-2 border-b px-3" data-app-drag>
         <WindowControls />
-        <Link
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          data-app-no-drag
-          to="/projects/chat"
-        >
-          <ArrowLeft className="size-4" />
-          返回主页
-        </Link>
+        <Button asChild size="sm" variant="ghost">
+          <Link data-app-no-drag to="/projects/chat">
+            <ArrowLeft data-icon="inline-start" />
+            返回主页
+          </Link>
+        </Button>
         <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2 text-sm font-semibold">
           <Settings className="size-4" />
           设置

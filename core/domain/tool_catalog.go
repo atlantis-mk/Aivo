@@ -10,23 +10,24 @@ const (
 )
 
 type ToolCatalogEntry struct {
-	Name                 string         `json:"name"`
-	Description          string         `json:"description,omitempty"`
-	InputSchema          map[string]any `json:"inputSchema,omitempty"`
-	Namespace            string         `json:"namespace,omitempty"`
-	NamespaceDescription string         `json:"namespaceDescription,omitempty"`
-	Capability           string         `json:"capability,omitempty"`
-	RiskLevel            string         `json:"riskLevel,omitempty"`
-	Category             string         `json:"category,omitempty"`
-	Toolsets             []string       `json:"toolsets,omitempty"`
-	Source               string         `json:"source"`
-	SourceID             string         `json:"sourceId,omitempty"`
-	RegistrationID       string         `json:"registrationId,omitempty"`
-	SchemaHash           string         `json:"schemaHash,omitempty"`
-	Version              string         `json:"version,omitempty"`
-	Enabled              bool           `json:"enabled"`
-	ActivationPolicy     string         `json:"activationPolicy,omitempty"`
-	ImplementationHash   string         `json:"implementationHash,omitempty"`
+	Name                 string              `json:"name"`
+	Description          string              `json:"description,omitempty"`
+	InputSchema          map[string]any      `json:"inputSchema,omitempty"`
+	Namespace            string              `json:"namespace,omitempty"`
+	NamespaceDescription string              `json:"namespaceDescription,omitempty"`
+	Capability           string              `json:"capability,omitempty"`
+	RiskLevel            string              `json:"riskLevel,omitempty"`
+	Category             string              `json:"category,omitempty"`
+	Toolsets             []string            `json:"toolsets,omitempty"`
+	Source               string              `json:"source"`
+	SourceID             string              `json:"sourceId,omitempty"`
+	RegistrationID       string              `json:"registrationId,omitempty"`
+	SchemaHash           string              `json:"schemaHash,omitempty"`
+	Version              string              `json:"version,omitempty"`
+	Enabled              bool                `json:"enabled"`
+	ActivationPolicy     string              `json:"activationPolicy,omitempty"`
+	SelectionGroup       *ToolSelectionGroup `json:"selectionGroup,omitempty"`
+	ImplementationHash   string              `json:"implementationHash,omitempty"`
 }
 
 type ToolCatalogInput struct {

@@ -8,24 +8,26 @@ type schemaVersionRow struct {
 func (schemaVersionRow) TableName() string { return "schema_version" }
 
 type appConfigRow struct {
-	ID                   int    `gorm:"primaryKey;column:id"`
-	Initialized          int    `gorm:"column:initialized;not null;default:0"`
-	InitialWorkspacePath string `gorm:"column:initial_workspace_path"`
-	ProviderID           string `gorm:"column:provider_id"`
-	ProviderType         string `gorm:"column:provider_type"`
-	BaseURL              string `gorm:"column:base_url"`
-	APIKeyEnv            string `gorm:"column:api_key_env"`
-	Model                string `gorm:"column:model"`
-	AuxiliaryModel       string `gorm:"column:auxiliary_model"`
-	ReasoningEffort      string `gorm:"column:reasoning_effort"`
-	ServiceTier          string `gorm:"column:service_tier"`
-	FallbackModels       string `gorm:"column:fallback_models"`
-	ProviderPolicy       string `gorm:"column:provider_policy"`
-	WebSearch            string `gorm:"column:web_search"`
-	NativeTools          string `gorm:"column:native_tools"`
-	Headers              string `gorm:"column:headers"`
-	RequestParams        string `gorm:"column:request_params"`
-	UpdatedAt            string `gorm:"column:updated_at;not null"`
+	ID                    int    `gorm:"primaryKey;column:id"`
+	Initialized           int    `gorm:"column:initialized;not null;default:0"`
+	AppName               string `gorm:"column:app_name"`
+	InitialWorkspacePath  string `gorm:"column:initial_workspace_path"`
+	ProviderID            string `gorm:"column:provider_id"`
+	ProviderType          string `gorm:"column:provider_type"`
+	BaseURL               string `gorm:"column:base_url"`
+	APIKeyEnv             string `gorm:"column:api_key_env"`
+	Model                 string `gorm:"column:model"`
+	AuxiliaryModel        string `gorm:"column:auxiliary_model"`
+	ReasoningEffort       string `gorm:"column:reasoning_effort"`
+	ServiceTier           string `gorm:"column:service_tier"`
+	DefaultPermissionMode string `gorm:"column:default_permission_mode"`
+	FallbackModels        string `gorm:"column:fallback_models"`
+	ProviderPolicy        string `gorm:"column:provider_policy"`
+	WebSearch             string `gorm:"column:web_search"`
+	NativeTools           string `gorm:"column:native_tools"`
+	Headers               string `gorm:"column:headers"`
+	RequestParams         string `gorm:"column:request_params"`
+	UpdatedAt             string `gorm:"column:updated_at;not null"`
 }
 
 func (appConfigRow) TableName() string { return "app_config" }

@@ -1,0 +1,43 @@
+schema: "2"
+id: "CHG-2026-053-codex-native-tool-bridge"
+title: "Bridge Codex-declared local tools"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Codex OAuth model declarations must automatically and safely control Aivo local shell and apply-patch tool exposure without manual activation or API-key route leakage"
+requirements:
+  - "REQ-PROVIDER-001"
+  - "REQ-TOOL-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "AT-TOOL-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0026"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001 Provider configuration and health"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Trust boundaries"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/provider-backend.md#Core Responsibilities"
+related_changes:
+  - "CHG-2026-051-dynamic-provider-native-tools"
+  - "CHG-2026-052-provider-declared-capabilities"
+boundaries:
+  - "authenticated ChatGPT Codex model-catalog metadata controls local executable tool exposure"
+  - "OpenAI OAuth and API-key routes share a Provider identity but must not share Codex execution eligibility"
+  - "Provider declarations may narrow exposure but never grant execution outside the Registry, Tool Snapshot, mode, and permission boundaries"
+risks:
+  - "stale or malformed remote metadata could expose a local process or filesystem mutation tool"
+  - "OAuth catalog metadata could leak into the OpenAI API-key route through the shared model cache"
+  - "fallback routing could advertise a tool not frozen into the current Tool Snapshot"
+next:
+  - "parse Codex shell_type and apply_patch_tool_type as known-versus-supported declarations"
+  - "automatically refresh missing or stale declarations on first OAuth Codex use"
+  - "activate and snapshot apply_patch only for an eligible declared Codex route while preserving the four default primitives"
+  - "gate bash and apply_patch request serialization by the active Codex declaration and cover route isolation"

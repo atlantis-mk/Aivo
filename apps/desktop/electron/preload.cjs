@@ -1,6 +1,13 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
-const CORE_URL = process.env.AIVO_CORE_URL || 'http://127.0.0.1:43117'
+const CORE_URL_ARGUMENT_PREFIX = '--aivo-core-url='
+const coreUrlArguments = process.argv.filter((value) => value.startsWith(CORE_URL_ARGUMENT_PREFIX))
+if (coreUrlArguments.length > 1) {
+  throw new Error('Packaged Core endpoint argument must appear at most once')
+}
+const CORE_URL = coreUrlArguments.length === 1
+  ? coreUrlArguments[0].slice(CORE_URL_ARGUMENT_PREFIX.length)
+  : process.env.AIVO_CORE_URL || 'http://127.0.0.1:43117'
 const MAX_COMPOSER_LOCAL_RESOURCES = 32
 
 async function invoke(method, ...args) {
@@ -52,6 +59,7 @@ contextBridge.exposeInMainWorld('aivo', {
   },
   openExternal: (target) => ipcRenderer.invoke('aivo:open-external', target),
   openPath: (target) => ipcRenderer.invoke('aivo:open-path', target),
+  openNewConversationWindow: () => ipcRenderer.invoke('aivo:new-conversation-window'),
   focusWindow: () => ipcRenderer.invoke('aivo:focus-window'),
   toggleMaximize: () => ipcRenderer.invoke('aivo:toggle-maximize'),
   exportDiagnostics: () => ipcRenderer.invoke('aivo:export-diagnostics'),

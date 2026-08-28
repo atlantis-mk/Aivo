@@ -22,6 +22,7 @@ import {
   defaultModelForProvider,
   providerRefreshInput,
 } from "@/features/setup/setup-provider-models";
+import { modelSelectionAfterCatalogRefresh } from "@/features/setup/setup-model-refresh-selection";
 import {
   modelsForActiveProvider,
   oauthReady,
@@ -134,7 +135,9 @@ export function useSetupProviderStepState({
         input.providerId,
       );
       if (refreshedDefault) {
-        setSelectedModelId(refreshedDefault);
+        setSelectedModelId((current) =>
+          modelSelectionAfterCatalogRefresh(current, refreshedDefault),
+        );
       }
     },
     [catalog, onRefreshModels, selectedModelId],

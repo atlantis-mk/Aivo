@@ -1,0 +1,31 @@
+schema: "2"
+id: "BUG-2026-050-dynamic-core-csp"
+title: "Allow the owned dynamic Core through desktop CSP"
+type: "bug"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Keep the packaged renderer's Content Security Policy aligned with its validated operating-system-assigned Core endpoint."
+requirements:
+  - "NFR-RELIABILITY-001"
+  - "NFR-SECURITY-001"
+tests:
+  - "CT-RELIABILITY-001"
+  - "CT-SECURITY-001"
+adrs:
+  - "ADR-0023"
+context_refs:
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001 Lifecycle and data recovery"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001 Secret and privilege isolation"
+  - "docs/04-architecture.md#Electron boundary"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/release-quality.md#Local Gates"
+related_changes:
+  - "CHG-2026-049-dynamic-packaged-core-port"
+boundaries:
+  - "Packaged renderer Content Security Policy for the Host-selected Core endpoint"
+risks:
+  - "An overly broad CSP source could allow renderer connections outside the IPv4 loopback host"
+  - "A source-only test could miss Chromium's interpretation of the wildcard port"
+next: []

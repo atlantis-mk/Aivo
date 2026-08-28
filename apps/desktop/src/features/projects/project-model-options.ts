@@ -134,9 +134,13 @@ export function normalizeModelId(
 
 export function normalizeReasoningEffort(effort: string | undefined) {
   if (
+    effort === "none" ||
+    effort === "minimal" ||
     effort === "low" ||
     effort === "medium" ||
     effort === "high" ||
+    effort === "xhigh" ||
+    effort === "max" ||
     effort === "ultra"
   )
     return effort;
@@ -149,12 +153,20 @@ export function normalizeReasoningEffort(effort: string | undefined) {
 
 export function reasoningEffortLabel(effort: string) {
   switch (normalizeReasoningEffort(effort)) {
+    case "none":
+      return "无";
+    case "minimal":
+      return "最小";
     case "low":
       return "低";
     case "high":
       return "高";
     case "ultra":
       return "超高";
+    case "xhigh":
+      return "特高";
+    case "max":
+      return "最大";
     default:
       return "中";
   }
@@ -162,11 +174,19 @@ export function reasoningEffortLabel(effort: string) {
 
 export function normalizeServiceTier(serviceTier: string | undefined) {
   if (serviceTier === "priority" || serviceTier === "fast") return "priority";
+  if (serviceTier === "flex") return "flex";
   return "default";
 }
 
 export function serviceTierLabel(serviceTier: string) {
-  return normalizeServiceTier(serviceTier) === "priority" ? "快速" : "标准";
+  switch (normalizeServiceTier(serviceTier)) {
+    case "priority":
+      return "快速";
+    case "flex":
+      return "弹性";
+    default:
+      return "标准";
+  }
 }
 
 export function normalizePermissionMode(
@@ -174,7 +194,6 @@ export function normalizePermissionMode(
 ): PermissionMode {
   if (
     mode === "request_approval" ||
-    mode === "auto_approve" ||
     mode === "full_access"
   ) {
     return mode;

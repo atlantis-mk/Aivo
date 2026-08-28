@@ -69,8 +69,17 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 	var lastErr error
 	for fallbackIndex, route := range routes {
 		route = applyChatRequestGenerationSettings(route, chatRequest)
+		s.ensureDynamicProviderCapabilities(ctx, route)
 		routeChatRequest := chatRequest
 		routeChatRequest.Tools = s.toolsForModelRoute(ctx, cfg, route, chatRequest.Tools)
+		if isChatGPTCodexRoute(route) {
+			if modelInfo, ok := s.modelInfoForRoute(ctx, route); ok {
+				if err := validateCodexInputModalities(modelInfo, chatMessages); err != nil {
+					lastErr = err
+					continue
+				}
+			}
+		}
 		if err := validateProviderToolIdentities(routeChatRequest.Tools, chatMessages); err != nil {
 			return domain.ChatResponse{}, nil, err
 		}
@@ -90,7 +99,8 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 			switch route.Transport {
 			case TransportOpenAIResponses:
 				if isOAuthCredential(route.Credential) {
-					response, err = s.callChatGPTCodex(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
+					modelInfo, _ := s.modelInfoForRoute(ctx, route)
+					response, err = s.callChatGPTCodex(ctx, route.Provider, route.Model, modelInfo, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
 					break
 				}
 				response, err = callOpenAICompatible(ctx, route.Provider, route.Model, route.Credential, route.Definition.RequestProfile, chatMessages, routeChatRequest.Tools, reasoningEffort, serviceTier, routeOnDelta, onToolDelta)
@@ -128,6 +138,20 @@ func (s *Service) GenerateChatResponseStreamWithToolDelta(ctx context.Context, c
 		lastErr = errors.New("provider request failed")
 	}
 	return domain.ChatResponse{}, nil, lastErr
+}
+
+func validateCodexInputModalities(model domain.ModelInfo, messages []llmChatMessage) error {
+	if len(model.Modalities) == 0 || containsString(model.Modalities, "image") {
+		return nil
+	}
+	for _, message := range messages {
+		for _, attachment := range message.Attachments {
+			if isImageAttachmentMIME(attachment.MIMEType) {
+				return errors.New("model capability unsupported: selected Codex model does not accept image input")
+			}
+		}
+	}
+	return nil
 }
 
 func applyChatRequestGenerationSettings(route ResolvedModelRoute, request domain.ChatRequest) ResolvedModelRoute {

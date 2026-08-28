@@ -7,6 +7,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Archive,
+  AppWindow,
   Ellipsis,
   FilePenLine,
   FileText,
@@ -32,6 +33,8 @@ import { ProjectTopBarIconButton } from "@/features/projects/project-workspace-l
 import { cn } from "@/lib/utils";
 import { ProjectWorktreeDialog } from "@/features/projects/project-worktree-dialog";
 import { projectNameFromPath } from "@/features/projects/project-sidebar-model";
+import { appNameFromConfig } from "@/lib/app-identity";
+import { useAppConfig } from "@/lib/app-config";
 
 export { SubagentSessionActionBar } from "@/features/projects/project-subagent-session-action-bar";
 export function ProjectTopBar({
@@ -39,8 +42,8 @@ export function ProjectTopBar({
   hasConversation,
   historyContent,
   isConversationPinned,
+  onNewConversationWindow,
   onNewPage,
-  onOpenExtensions,
   onArchiveConversation,
   onTogglePinnedConversation,
   pageTitle,
@@ -51,8 +54,8 @@ export function ProjectTopBar({
   hasConversation: boolean;
   historyContent: ReactNode;
   isConversationPinned: boolean;
+  onNewConversationWindow: () => void;
   onNewPage: () => void;
-  onOpenExtensions: () => void;
   onArchiveConversation: () => void;
   onTogglePinnedConversation: () => void;
   pageIcon?: React.ReactNode;
@@ -60,10 +63,11 @@ export function ProjectTopBar({
   repositoryPath?: string;
   sessionId?: string;
 }) {
+  const appName = appNameFromConfig(useAppConfig((state) => state.config));
   const isMac = window.aivo?.platform === "darwin";
   const projectLabel = repositoryPath
     ? projectNameFromPath(repositoryPath)
-    : "Aivo";
+    : appName;
   const conversationLabel =
     pageTitle || (hasConversation ? conversationTitle.trim() || "未命名会话" : "新对话");
 
@@ -72,16 +76,25 @@ export function ProjectTopBar({
       className="pointer-events-auto relative flex h-full min-w-0 items-center border-b border-border/60 bg-background text-foreground"
       data-app-drag
     >
-      <div className="flex min-w-0 items-center gap-aivo-2 px-aivo-3" data-app-no-drag>
+      <div className="flex min-w-0 items-center gap-aivo-2" data-app-no-drag>
         <ProjectWindowControls isMac={isMac} />
         <Button
           onClick={onNewPage}
-          size="default"
+          size="sm"
           type="button"
           variant="outline"
         >
           <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} />
           <span className="hidden sm:inline">新对话</span>
+        </Button>
+        <Button
+          onClick={onNewConversationWindow}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <AppWindow />
+          <span className="hidden sm:inline">新窗口对话</span>
         </Button>
         <ProjectHistoryPopover>{historyContent}</ProjectHistoryPopover>
       </div>
@@ -109,11 +122,13 @@ export function ProjectTopBar({
       </div>
 
       <div
-        className="relative z-20 ml-auto flex items-center gap-aivo-1"
+        className="relative z-20 ml-auto flex items-center gap-aivo-1 pr-aivo-3"
         data-app-no-drag
       >
-        <ProjectTopBarIconButton aria-label="打开扩展" onClick={onOpenExtensions}>
-          <Plug />
+        <ProjectTopBarIconButton asChild aria-label="打开扩展">
+          <Link to="/extensions">
+            <Plug />
+          </Link>
         </ProjectTopBarIconButton>
         <ProjectTopBarIconButton asChild aria-label="管理提示词">
           <Link to="/prompts">
@@ -167,7 +182,7 @@ function ProjectHistoryPopover({ children }: { children: ReactNode }) {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          size="default"
+          size="sm"
           type="button"
           variant="outline"
         >

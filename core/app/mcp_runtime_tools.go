@@ -15,6 +15,7 @@ func (m *MCPManager) registerMCPResourceUtilityTools(ctx context.Context, regist
 		return
 	}
 	base := generatedToolName("mcp", "host", firstNonEmptyApp(server.ID, server.Name))
+	selectionGroup := mcpToolSelectionGroup(server)
 	utilities := []MCPResourceUtilityTool{
 		{manager: m, server: server, kind: "list_resources", spec: domain.ToolSpec{
 			Name: generatedToolName(base, "list_resources"), Description: "List resources exposed by MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
@@ -22,7 +23,7 @@ func (m *MCPManager) registerMCPResourceUtilityTools(ctx context.Context, regist
 				"cursor": map[string]any{"type": "string", "description": "Optional pagination cursor returned by a previous resources/list call."},
 			}, "additionalProperties": false},
 			Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
-			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", ImplementationHash: mcpResourceAdapterImplementationHash(server, "list_resources"),
+			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", SelectionGroup: cloneToolSelectionGroup(selectionGroup), ImplementationHash: mcpResourceAdapterImplementationHash(server, "list_resources"),
 		}},
 		{manager: m, server: server, kind: "list_resource_templates", spec: domain.ToolSpec{
 			Name: generatedToolName(base, "list_resource_templates"), Description: "List resource templates exposed by MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
@@ -30,7 +31,7 @@ func (m *MCPManager) registerMCPResourceUtilityTools(ctx context.Context, regist
 				"cursor": map[string]any{"type": "string", "description": "Optional pagination cursor returned by a previous resources/templates/list call."},
 			}, "additionalProperties": false},
 			Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
-			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", ImplementationHash: mcpResourceAdapterImplementationHash(server, "list_resource_templates"),
+			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", SelectionGroup: cloneToolSelectionGroup(selectionGroup), ImplementationHash: mcpResourceAdapterImplementationHash(server, "list_resource_templates"),
 		}},
 		{manager: m, server: server, kind: "read_resource", spec: domain.ToolSpec{
 			Name: generatedToolName(base, "read_resource"), Description: "Read a resource URI from MCP server " + firstNonEmptyApp(server.DisplayName, server.Name, server.ID) + ".",
@@ -38,7 +39,7 @@ func (m *MCPManager) registerMCPResourceUtilityTools(ctx context.Context, regist
 				"uri": map[string]any{"type": "string", "description": "Exact MCP resource URI to read."},
 			}, "required": []string{"uri"}, "additionalProperties": false},
 			Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description, Capability: "mcp.read", RiskLevel: "low",
-			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", ImplementationHash: mcpResourceAdapterImplementationHash(server, "read_resource"),
+			Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio, ActivationPolicy: "auto", SelectionGroup: cloneToolSelectionGroup(selectionGroup), ImplementationHash: mcpResourceAdapterImplementationHash(server, "read_resource"),
 		}},
 	}
 	for i := range utilities {

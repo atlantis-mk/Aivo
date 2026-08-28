@@ -4,15 +4,18 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { createDesktopUpdater } = require('./desktop-updater.cjs')
+const { coreURLArgument, parseCoreReadyLine } = require('./core-endpoint.cjs')
 const { createExtensionViewManager, registerExtensionScheme } = require('./extension-views.cjs')
 
 registerExtensionScheme()
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 const isMac = process.platform === 'darwin'
-const coreUrl = process.env.AIVO_CORE_URL || 'http://127.0.0.1:43117'
+let coreUrl = process.env.AIVO_CORE_URL || 'http://127.0.0.1:43117'
+const rendererBackgroundColor = '#ffffff'
 const maxComposerAttachmentBytes = 50 * 1024 * 1024
 const maxComposerLocalResources = 32
+const newConversationWindowOffset = 28
 
 app.setName('Aivo')
 
@@ -20,6 +23,7 @@ let coreProcess = null
 let logFile = null
 let extensionViewManager = null
 let desktopUpdater = null
+let startupWindow = null
 
 function configureApplicationMenu() {
   if (!isMac) {
@@ -230,9 +234,9 @@ function initializeDiagnostics() {
   })
 }
 
-async function isCoreHealthy() {
+async function isCoreHealthy(target = coreUrl) {
   try {
-    const response = await fetch(`${coreUrl}/health`, {
+    const response = await fetch(`${target}/health`, {
       signal: AbortSignal.timeout(500),
     })
     return response.ok
@@ -251,11 +255,6 @@ async function startPackagedCore() {
     return
   }
 
-  if (await isCoreHealthy()) {
-    appendLog('info', 'using existing healthy core', { coreUrl })
-    return
-  }
-
   const corePath = resolvePackagedCorePath()
   if (!fs.existsSync(corePath)) {
     throw new Error(`Packaged core binary was not found at ${corePath}`)
@@ -263,9 +262,47 @@ async function startPackagedCore() {
 
   coreProcess = spawn(corePath, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      AIVO_CORE_ADDR: '127.0.0.1:0',
+      AIVO_CORE_READY_STDOUT: '1',
+    },
   })
 
-  coreProcess.stdout.on('data', (chunk) => appendLog('info', 'core stdout', { output: chunk.toString().trimEnd() }))
+  let stdoutBuffer = ''
+  let announcedCoreUrl = ''
+  let readinessError = null
+  coreProcess.once('error', (error) => {
+    readinessError = error instanceof Error ? error : new Error(String(error))
+    appendLog('error', 'core process error', { error: readinessError.message })
+  })
+  coreProcess.stdout.on('data', (chunk) => {
+    const output = chunk.toString()
+    appendLog('info', 'core stdout', { output: output.trimEnd() })
+    stdoutBuffer += output
+    if (stdoutBuffer.length > 8_192) {
+      readinessError = new Error('Packaged Core readiness output exceeded its bound')
+      return
+    }
+    let newline = stdoutBuffer.indexOf('\n')
+    while (newline >= 0) {
+      const line = stdoutBuffer.slice(0, newline).trimEnd()
+      stdoutBuffer = stdoutBuffer.slice(newline + 1)
+      try {
+        const nextCoreUrl = parseCoreReadyLine(line)
+        if (nextCoreUrl) {
+          if (announcedCoreUrl) {
+            throw new Error('Packaged Core emitted more than one readiness record')
+          }
+          announcedCoreUrl = nextCoreUrl
+        }
+      } catch (error) {
+        readinessError = error instanceof Error ? error : new Error(String(error))
+        if (coreProcess && coreProcess.exitCode === null && coreProcess.signalCode === null) coreProcess.kill()
+      }
+      newline = stdoutBuffer.indexOf('\n')
+    }
+  })
   coreProcess.stderr.on('data', (chunk) => appendLog('error', 'core stderr', { output: chunk.toString().trimEnd() }))
   coreProcess.once('exit', (code, signal) => {
     appendLog(code === 0 ? 'info' : 'error', 'core exited', { code, signal })
@@ -273,7 +310,12 @@ async function startPackagedCore() {
   })
 
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (await isCoreHealthy()) {
+    if (readinessError) {
+      if (coreProcess && coreProcess.exitCode === null && coreProcess.signalCode === null) coreProcess.kill()
+      throw readinessError
+    }
+    if (announcedCoreUrl && await isCoreHealthy(announcedCoreUrl)) {
+      coreUrl = announcedCoreUrl
       appendLog('info', 'packaged core is healthy', { coreUrl })
       return
     }
@@ -283,15 +325,49 @@ async function startPackagedCore() {
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
 
-  throw new Error(`Packaged core did not become healthy at ${coreUrl}`)
+  if (coreProcess && coreProcess.exitCode === null && coreProcess.signalCode === null) coreProcess.kill()
+  throw new Error('Packaged Core did not announce a healthy dynamic loopback endpoint')
 }
 
-function createWindow() {
+function createStartupWindow() {
+  const startupWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 960,
+    minHeight: 640,
+    show: false,
+    backgroundColor: rendererBackgroundColor,
+    title: 'Aivo',
+    frame: isMac,
+    ...(isMac
+      ? {
+          titleBarStyle: 'hidden',
+          trafficLightPosition: { x: 10, y: 10 },
+        }
+      : {}),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  startupWindow.once('ready-to-show', () => {
+    if (!startupWindow.isDestroyed()) startupWindow.show()
+  })
+  startupWindow.loadFile(path.join(__dirname, 'startup.html'))
+  return startupWindow
+}
+
+function createWindow(initialRoute = '', position) {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 960,
     minHeight: 640,
+    show: false,
+    backgroundColor: rendererBackgroundColor,
+    ...(position ? { x: position.x, y: position.y } : {}),
     title: 'Aivo',
     frame: isMac,
     ...(isMac
@@ -302,16 +378,33 @@ function createWindow() {
       : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: app.isPackaged && !process.env.AIVO_CORE_URL
+        ? [coreURLArgument(coreUrl)]
+        : [],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   })
 
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow.isDestroyed()) return
+    if (startupWindow && !startupWindow.isDestroyed()) {
+      mainWindow.setBounds(startupWindow.getBounds())
+      mainWindow.show()
+      startupWindow.destroy()
+      startupWindow = null
+      return
+    }
+    mainWindow.show()
+  })
+
   if (isDev) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+    const rendererUrl = new URL(initialRoute || '/', process.env.VITE_DEV_SERVER_URL)
+    mainWindow.loadURL(rendererUrl.toString())
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    const loadOptions = initialRoute ? { hash: initialRoute } : undefined
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), loadOptions)
   }
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -325,9 +418,24 @@ function createWindow() {
 
 function requireMainRenderer(event) {
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
-    throw new Error('Update capability is available only to the main Aivo renderer')
+    throw new Error('Desktop capability is available only to the main Aivo renderer')
   }
 }
+
+ipcMain.handle('aivo:new-conversation-window', (event) => {
+  requireMainRenderer(event)
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender)
+  const sourcePosition = sourceWindow?.getPosition()
+  createWindow(
+    '/projects/chat',
+    sourcePosition
+      ? {
+          x: sourcePosition[0] + newConversationWindowOffset,
+          y: sourcePosition[1] + newConversationWindowOffset,
+        }
+      : undefined,
+  )
+})
 
 ipcMain.handle('aivo:update:get-state', (event) => {
   requireMainRenderer(event)
@@ -530,15 +638,20 @@ ipcMain.handle('aivo:toggle-maximize', (event) => {
 app.whenReady().then(async () => {
   configureApplicationMenu()
   initializeDiagnostics()
+  startupWindow = createStartupWindow()
   try {
     await startPackagedCore()
   } catch (error) {
+    if (startupWindow && !startupWindow.isDestroyed()) startupWindow.destroy()
+    startupWindow = null
     const message = error instanceof Error ? error.message : String(error)
     appendLog('error', 'core startup failed', { error: message })
     dialog.showErrorBox(
       'Aivo core failed to start',
-      `${message}\n\nThe desktop UI will open, but agent features require the local core service.`,
+      `${message}\n\nAivo will close because the packaged desktop requires its owned local Core service.`,
     )
+    app.quit()
+    return
   }
 
   extensionViewManager = createExtensionViewManager({ ipcMain, coreUrl })

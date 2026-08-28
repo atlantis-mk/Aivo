@@ -78,12 +78,33 @@ export function ToolActivationToolList({
                   <ItemDescription>{group.description}</ItemDescription>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{group.tools.length} 个工具</Badge>
+                  {group.grouped ? (
+                    <Badge variant="secondary">{group.tools.length} 个工具</Badge>
+                  ) : null}
                   {partiallyActive ? (
                     <Badge variant="outline">部分激活</Badge>
                   ) : null}
                   {used ? <Badge variant="outline">已使用</Badge> : null}
                 </div>
+                {group.grouped ? (
+                  <div
+                    aria-label={`${group.label} 的工具`}
+                    className="mt-2 grid gap-1 rounded-md border bg-muted/30 px-3 py-2"
+                  >
+                    {group.tools.map((tool) => (
+                      <div className="min-w-0" key={tool.name}>
+                        <div className="truncate text-xs font-medium">
+                          {tool.name}
+                        </div>
+                        {tool.description ? (
+                          <div className="line-clamp-1 text-xs text-muted-foreground">
+                            {tool.description}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </ItemContent>
               <ItemActions>
                 <Switch

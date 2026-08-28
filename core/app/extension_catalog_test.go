@@ -15,6 +15,7 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 		phase6EchoTool{spec: domain.ToolSpec{Name: "edit", Description: "Edit file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.write", Toolsets: []string{"coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "write", Description: "Write file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.write", Toolsets: []string{"coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "update_plan", Description: "Update plan", InputSchema: map[string]any{"type": "object"}, Category: "plan", Capability: "plan.write", Toolsets: []string{"safe", "personal"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: "ask_user", Description: "Ask user", InputSchema: map[string]any{"type": "object"}, Category: "interaction", Capability: "user.question", Toolsets: []string{"safe", "personal", "coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "automation_list", Description: "List automations", InputSchema: map[string]any{"type": "object"}, Category: "automation", Capability: "scheduler.read", Toolsets: []string{"safe", "personal"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "extension_echo", Description: "Echo extension text", InputSchema: map[string]any{"type": "object"}, Category: "extension", Capability: "extension.read", Toolsets: []string{"extension", "coding"}}},
 	} {
@@ -30,7 +31,7 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 	for _, spec := range assembly.Specs {
 		names[spec.Name]++
 	}
-	for _, name := range []string{"read", "bash", "edit", "write"} {
+	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user"} {
 		if names[name] != 1 {
 			t.Fatalf("visible %s count = %d; specs = %#v", name, names[name], assembly.Specs)
 		}
@@ -40,7 +41,7 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 			t.Fatalf("legacy bridge tool %s was directly visible: %#v", name, assembly.Specs)
 		}
 	}
-	for _, name := range []string{"update_plan", "automation_list", "extension_echo"} {
+	for _, name := range []string{"automation_list", "extension_echo"} {
 		if names[name] != 0 {
 			t.Fatalf("long-tail tool %s was directly visible: %#v", name, assembly.Specs)
 		}
@@ -117,7 +118,7 @@ func TestPreCallActivationSeparatesManualAutomaticAndManualOnlyPolicies(t *testi
 	}
 }
 
-func TestListToolCatalogWithoutWorkspaceHasNoLegacyExecutors(t *testing.T) {
+func TestListToolCatalogWithoutWorkspaceContainsGloballyManageableBuiltins(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	entries, err := service.ListToolCatalog(context.Background(), domain.ToolCatalogInput{})
 	if err != nil {
@@ -131,15 +132,32 @@ func TestListToolCatalogWithoutWorkspaceHasNoLegacyExecutors(t *testing.T) {
 		if !names[name] {
 			t.Fatalf("global catalog missing builtin project extension tool %q; entries = %#v", name, entries)
 		}
+		entry, _ := catalogEntryNamed(entries, name)
+		if entry.SelectionGroup == nil || entry.SelectionGroup.ID != "extension_aivo_projects_projects" || entry.SelectionGroup.Name != "Aivo Projects" {
+			t.Fatalf("builtin project tool %q group = %#v", name, entry.SelectionGroup)
+		}
 	}
 	if !names[toolRegistrationMCPName] {
 		t.Fatalf("global catalog missing builtin tool registration extension tool %q; entries = %#v", toolRegistrationMCPName, entries)
 	}
+	if registrationTool, _ := catalogEntryNamed(entries, toolRegistrationMCPName); registrationTool.SelectionGroup != nil {
+		t.Fatalf("individual builtin tool unexpectedly grouped: %#v", registrationTool)
+	}
+	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"} {
+		if !names[name] {
+			t.Fatalf("global catalog missing manageable builtin tool %q; entries = %#v", name, entries)
+		}
+	}
+	for _, legacy := range []string{"search_files", "glob", "list_files"} {
+		if names[legacy] {
+			t.Fatalf("global catalog still exposes removed tool name %q; entries = %#v", legacy, entries)
+		}
+	}
 	if names["aivo_tools_list_mcp"] {
 		t.Fatalf("global catalog still exposes removed MCP source-list tool; entries = %#v", entries)
 	}
-	if len(names) != 4 {
-		t.Fatalf("global catalog exposes tools other than the builtin Host extensions; entries = %#v", entries)
+	if len(names) != 13 {
+		t.Fatalf("global catalog does not contain nine core/optional builtins and builtin Host extensions; entries = %#v", entries)
 	}
 }
 
@@ -151,6 +169,16 @@ func TestToolRegistryReservesHostSelectionControlName(t *testing.T) {
 	}
 	if err := registry.RegisterScoped(NewToolResolveTool(registry, nil, nil), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
 		t.Fatalf("Host control registration failed: %v", err)
+	}
+}
+
+func TestToolRegistryReservesDefaultHostControlNames(t *testing.T) {
+	for _, name := range []string{"update_plan", "ask_user"} {
+		registry := NewRegistry()
+		tool := phase6EchoTool{spec: domain.ToolSpec{Name: name, InputSchema: map[string]any{"type": "object"}, Toolsets: []string{"coding"}}}
+		if err := registry.RegisterScoped(tool, domain.ToolSourceExtension, "malicious", "v1"); err == nil {
+			t.Fatalf("extension registered the Host-owned %s name", name)
+		}
 	}
 }
 
@@ -184,7 +212,7 @@ func TestListToolCatalogWithoutWorkspaceAdaptsCachedEnabledMCPTools(t *testing.T
 	if names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
 		t.Fatalf("catalog did not expose the namespaced MCP adapters; entries = %#v", entries)
 	}
-	if adapted.Source != domain.ToolSourceMCP || adapted.SourceID != "cached-mcp" || adapted.ActivationPolicy != "auto" || adapted.ImplementationHash == "" {
+	if adapted.Source != domain.ToolSourceMCP || adapted.SourceID != "cached-mcp" || adapted.ActivationPolicy != "auto" || adapted.ImplementationHash == "" || adapted.SelectionGroup == nil || adapted.SelectionGroup.ID != "mcp_group_cached_mcp" || adapted.SelectionGroup.Name != "Cached MCP" {
 		t.Fatalf("MCP adapter identity = %#v, want a frozen auto MCP registration with the exact server ID", adapted)
 	}
 }
@@ -212,9 +240,14 @@ func TestListToolCatalogWithWorkspaceContainsCoreAndCachedEnabledExtensions(t *t
 	for _, entry := range entries {
 		names[entry.Name] = true
 	}
-	for _, name := range []string{"read", "bash", "edit", "write"} {
+	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"} {
 		if !names[name] {
 			t.Fatalf("missing %s; entries = %#v", name, entries)
+		}
+	}
+	for _, legacy := range []string{"search_files", "glob", "list_files"} {
+		if names[legacy] {
+			t.Fatalf("workspace catalog still exposes removed tool name %q; entries = %#v", legacy, entries)
 		}
 	}
 	for _, name := range []string{projectQueryToolName, projectAddToolName, projectAssociateToolName} {
@@ -228,7 +261,7 @@ func TestListToolCatalogWithWorkspaceContainsCoreAndCachedEnabledExtensions(t *t
 	if names["aivo_tools_list_mcp"] {
 		t.Fatalf("workspace catalog still exposes removed MCP source-list tool; entries = %#v", entries)
 	}
-	if len(names) != 12 || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
-		t.Fatalf("workspace catalog does not contain four core tools plus builtin Host extensions and MCP adapter contributions; entries = %#v", entries)
+	if len(names) != 17 || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
+		t.Fatalf("workspace catalog does not contain nine core/optional builtins, builtin Host extensions, and MCP adapter contributions; entries = %#v", entries)
 	}
 }

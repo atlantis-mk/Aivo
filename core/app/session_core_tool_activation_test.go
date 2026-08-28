@@ -7,7 +7,7 @@ import (
 	"aivo/core/domain"
 )
 
-func TestSessionCoreToolActivationDefaultsAndCanDisableOneTool(t *testing.T) {
+func TestSessionCoreToolsStayActiveWhenOmittedFromManualSelection(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -20,24 +20,53 @@ func TestSessionCoreToolActivationDefaultsAndCanDisableOneTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsToolNames(active.CoreToolNames, "read", "bash", "edit", "write") {
+	if !containsToolNames(active.CoreToolNames, "read", "bash", "edit", "write", "update_plan", "ask_user") {
 		t.Fatalf("default core tools = %#v, want all core tools", active.CoreToolNames)
 	}
 
 	updated, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{
 		SessionID: session.ID,
-		ToolNames: []string{"read", "edit", "write", "extension_notes"},
+		ToolNames: []string{"extension_notes"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if containsToolNames(updated.CoreToolNames, "bash") || !containsToolNames(updated.CoreToolNames, "read", "edit", "write") || !containsToolNames(updated.ToolNames, "extension_notes") {
+	if !containsToolNames(updated.CoreToolNames, "read", "bash", "edit", "write", "update_plan", "ask_user") || !containsToolNames(updated.ToolNames, "extension_notes") {
 		t.Fatalf("updated active tools = %#v, core = %#v", updated.ToolNames, updated.CoreToolNames)
 	}
 
 	disabled := service.disabledCoreTools(ctx, session.ID)
-	if !disabled["bash"] || len(disabled) != 1 {
-		t.Fatalf("disabled core tools = %#v, want only bash", disabled)
+	if len(disabled) != 0 {
+		t.Fatalf("disabled core tools = %#v, want none", disabled)
+	}
+}
+
+func TestSessionCoreToolsIgnoreLegacyDisabledMetadata(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := service.store.GetSessionExecutionState(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Metadata == nil {
+		state.Metadata = map[string]any{}
+	}
+	state.Metadata[sessionMetadataDisabledCoreTools] = []string{"bash", "write", "update_plan", "ask_user"}
+	if _, err := service.store.UpsertSessionExecutionState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := service.GetSessionActiveTools(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsToolNames(active.CoreToolNames, "read", "bash", "edit", "write", "update_plan", "ask_user") {
+		t.Fatalf("legacy metadata suppressed required core tools: %#v", active.CoreToolNames)
 	}
 }
 

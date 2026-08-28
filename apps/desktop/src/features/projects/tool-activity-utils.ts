@@ -19,10 +19,6 @@ export function normalizeActivityPath(path: string | undefined) {
   return (path || "").replaceAll("\\", "/").replace(/^\.\/+/, "");
 }
 
-export function draftFileTabId(toolCallId: string, index: number) {
-  return `file:${toolCallId}:draft:${index}`;
-}
-
 export function commandEntryId(toolCallId: string, index: number) {
   return `command-entry:${toolCallId}:${index}`;
 }

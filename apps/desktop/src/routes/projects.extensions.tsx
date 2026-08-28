@@ -1,11 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/projects/extensions')({
-  component: ProjectExtensionsRoute,
+  beforeLoad: () => {
+    throw redirect({ to: '/extensions' })
+  },
 })
-
-function ProjectExtensionsRoute() {
-  return null
-}

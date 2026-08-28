@@ -470,12 +470,13 @@ func (m *MCPManager) registerEnabledTools(ctx context.Context, registry *Registr
 			continue
 		}
 		for _, tool := range tools {
+			selectionGroup := mcpToolSelectionGroup(server)
 			spec := domain.ToolSpec{
 				Name: mcpToolName(server, tool), Description: tool.Description, InputSchema: tool.InputSchema,
 				Namespace: mcpServerToolPrefix(server), NamespaceDescription: server.Description,
 				Capability: firstNonEmptyApp(tool.Capability, "mcp.read"), RiskLevel: firstNonEmptyApp(tool.RiskLevel, "medium"),
 				Category: "mcp", Toolsets: []string{"mcp", "coding"}, RequiresNetwork: server.Transport != domain.MCPTransportStdio,
-				ActivationPolicy: "auto", ImplementationHash: mcpAdapterImplementationHash(server, tool),
+				ActivationPolicy: "auto", SelectionGroup: selectionGroup, ImplementationHash: mcpAdapterImplementationHash(server, tool),
 			}
 			if registerErr := registry.RegisterScoped(&MCPRuntimeTool{manager: m, server: server, tool: tool, spec: spec}, domain.ToolSourceMCP, server.ID, firstNonEmptyApp(tool.TimeUpdated, server.TimeUpdated, "v1")); registerErr != nil {
 				m.diagnostic(ctx, server.ID, "error", "MCP tool registration failed", map[string]any{"tool": tool.Name, "error": registerErr.Error()})

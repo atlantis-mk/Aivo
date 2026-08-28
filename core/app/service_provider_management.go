@@ -311,6 +311,10 @@ func (s *Service) DeleteProviderAccount(ctx context.Context, accountID string) (
 }
 
 func (s *Service) CompleteInitialization(ctx context.Context, input domain.CompleteInitializationInput) (domain.AppConfig, error) {
+	appName, err := domain.ResolveInitializationAppName(input.AppName)
+	if err != nil {
+		return domain.AppConfig{}, err
+	}
 	requestedWorkspacePath := strings.TrimSpace(input.InitialWorkspacePath)
 	if requestedWorkspacePath == "" {
 		var err error
@@ -328,6 +332,7 @@ func (s *Service) CompleteInitialization(ctx context.Context, input domain.Compl
 		return domain.AppConfig{}, err
 	}
 	cfg.Initialized = true
+	cfg.AppName = appName
 	cfg.InitialWorkspacePath = workspacePath
 	if input.Provider != nil {
 		cfg.Provider = input.Provider

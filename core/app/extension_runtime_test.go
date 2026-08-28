@@ -49,6 +49,62 @@ func TestLoadExtensionManifestV2IsDeclarativeAndHashesSchemas(t *testing.T) {
 	}
 }
 
+func TestLoadExtensionManifestSupportsExplicitToolGroups(t *testing.T) {
+	root := t.TempDir()
+	writeTestExtensionManifest(t, root, map[string]any{
+		"schemaVersion": 2, "id": "com.example.calendar", "name": "Calendar", "version": "1.0.0", "apiVersion": "2",
+		"runtime": map[string]any{"type": "builtin"},
+		"contributes": map[string]any{
+			"tools": []any{
+				map[string]any{"name": "calendar_list", "description": "List events", "schema": map[string]any{"type": "object"}},
+				map[string]any{"name": "calendar_update", "description": "Update events", "schema": map[string]any{"type": "object"}},
+				map[string]any{"name": "calendar_health", "description": "Check health", "schema": map[string]any{"type": "object"}},
+			},
+			"toolGroups": []any{map[string]any{
+				"id": "events", "name": "Calendar Events", "description": "Read and update calendar events",
+				"tools": []any{"calendar_list", "calendar_update"},
+			}},
+		},
+	})
+	loaded, err := LoadExtensionManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := extensionToolSelectionGroups(loaded.Manifest)
+	wantID := generatedToolName("extension", "com.example.calendar", "events")
+	if len(groups) != 2 || groups["calendar_list"].ID != wantID || groups["calendar_list"].Name != "Calendar Events" || groups["calendar_update"].ID != wantID {
+		t.Fatalf("selection groups = %#v", groups)
+	}
+	if _, grouped := groups["calendar_health"]; grouped {
+		t.Fatalf("ungrouped tool was assigned a group: %#v", groups)
+	}
+}
+
+func TestLoadExtensionManifestRejectsInvalidToolGroups(t *testing.T) {
+	for name, toolGroups := range map[string][]any{
+		"undeclared member": {map[string]any{"id": "events", "name": "Events", "tools": []any{"calendar_missing"}}},
+		"duplicate membership": {
+			map[string]any{"id": "events", "name": "Events", "tools": []any{"calendar_list"}},
+			map[string]any{"id": "updates", "name": "Updates", "tools": []any{"calendar_list"}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeTestExtensionManifest(t, root, map[string]any{
+				"schemaVersion": 2, "id": "com.example.calendar", "name": "Calendar", "version": "1.0.0", "apiVersion": "2",
+				"runtime": map[string]any{"type": "builtin"},
+				"contributes": map[string]any{
+					"tools":      []any{map[string]any{"name": "calendar_list", "description": "List events", "schema": map[string]any{"type": "object"}}},
+					"toolGroups": toolGroups,
+				},
+			})
+			if _, err := LoadExtensionManifest(root); err == nil {
+				t.Fatalf("accepted invalid tool groups %#v", toolGroups)
+			}
+		})
+	}
+}
+
 func TestLoadExtensionManifestRejectsReservedNamesAndEscapingAssets(t *testing.T) {
 	root := t.TempDir()
 	writeTestExtensionManifest(t, root, map[string]any{

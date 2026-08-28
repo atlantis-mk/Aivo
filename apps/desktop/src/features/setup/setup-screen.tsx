@@ -13,6 +13,7 @@ import {
   ConnectedAccountsBar,
 } from "@/features/setup/setup-connected-accounts";
 import { SetupLoadingSkeleton } from "@/features/setup/setup-loading-skeleton";
+import { SetupNameStep } from "@/features/setup/setup-name-step";
 import { hasCompletedInitialization } from "@/features/setup/setup-routing";
 import { ProviderConnectionDialogs } from "@/features/setup/provider-connection-dialogs";
 import type {
@@ -36,11 +37,16 @@ import { SetupWorkspaceStep } from "@/features/setup/setup-workspace-step";
 import { resolveSetupWorkspacePath } from "@/features/setup/setup-workspace-path";
 import { completePreviewInitialization } from "@/lib/preview-state";
 import {
+  appNameFromConfig,
+  canSubmitAppName,
+  limitAppNameInput,
+} from "@/lib/app-identity";
+import {
   completeInitialization,
   selectProjectDirectory,
 } from "@/services/aivo";
 
-type SetupStep = "welcome" | "provider" | "workspace" | "complete";
+type SetupStep = "welcome" | "name" | "provider" | "workspace" | "complete";
 
 export function SetupScreen() {
   const { catalog, config, loading, setCatalog, setConfig, setError, error } =
@@ -48,10 +54,14 @@ export function SetupScreen() {
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState<SetupStep>("welcome");
   const [providerValidated, setProviderValidated] = useState(false);
+  const [appName, setAppName] = useState("Aivo");
   const [initialWorkspacePath, setInitialWorkspacePath] = useState("");
 
   useEffect(() => {
     const workspaceConfig = config as AppConfigWithAuxiliary | null;
+    setAppName((current) =>
+      current === "Aivo" ? appNameFromConfig(workspaceConfig) : current,
+    );
     const savedPath = workspaceConfig?.initialWorkspacePath?.trim() ?? "";
     const suggestedPath = resolveSetupWorkspacePath(workspaceConfig);
     if (suggestedPath) {
@@ -98,13 +108,16 @@ export function SetupScreen() {
   }
 
   async function finishInitialization() {
-    if (!initialWorkspacePath) return;
+    if (!initialWorkspacePath || !canSubmitAppName(appName)) return;
     setSaving(true);
     setError("");
     try {
       const nextConfig = hasAppBridge()
-        ? await completeInitialization({ initialWorkspacePath })
-        : completePreviewInitialization(initialWorkspacePath);
+        ? await completeInitialization({
+            appName: appName.trim(),
+            initialWorkspacePath,
+          })
+        : completePreviewInitialization(initialWorkspacePath, appName.trim());
       setConfig(nextConfig);
       setStep("complete");
     } catch (err) {
@@ -123,12 +136,19 @@ export function SetupScreen() {
     <main className="min-h-dvh overflow-x-hidden bg-background text-foreground">
       <div className="window-title-drag-region" />
       {step === "welcome" ? (
-        <WelcomeStep onNext={() => navigateToStep("provider")} />
+        <WelcomeStep onNext={() => navigateToStep("name")} />
+      ) : step === "name" ? (
+        <SetupNameStep
+          name={appName}
+          onBack={() => navigateToStep("welcome")}
+          onChange={(value) => setAppName(limitAppNameInput(value))}
+          onNext={() => navigateToStep("provider")}
+        />
       ) : step === "provider" ? (
         <ProviderStep
           config={config as AppConfigWithAuxiliary | null}
           error={error}
-          onBack={() => navigateToStep("welcome")}
+          onBack={() => navigateToStep("name")}
           onContinue={completeProviderDialog}
           onNextPage={() => navigateToStep("workspace")}
           onResetValidation={() => setProviderValidated(false)}
@@ -285,11 +305,12 @@ function ProviderStep({
 
       {!activeProvider ? (
         <SetupStepNavigation
-          currentStep={2}
+          currentStep={3}
           helperText="之后可在设置中继续添加或管理服务"
           onBack={onBack}
           onPrimary={onNextPage}
           primaryContent="继续"
+          totalSteps={4}
         />
       ) : null}
 

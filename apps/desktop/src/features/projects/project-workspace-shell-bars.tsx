@@ -30,8 +30,8 @@ export function ProjectWorkspaceTopBar({
   historyContent,
   isConversationPinned,
   onArchiveConversation,
+  onNewConversationWindow,
   onNewPage,
-  onOpenExtensions,
   onTogglePinnedConversation,
   repositoryPath,
   sessionId,
@@ -42,8 +42,8 @@ export function ProjectWorkspaceTopBar({
   historyContent: ReactNode;
   isConversationPinned: boolean;
   onArchiveConversation: () => void;
+  onNewConversationWindow: () => void;
   onNewPage: () => void;
-  onOpenExtensions: () => void;
   onTogglePinnedConversation: () => void;
   repositoryPath?: string;
   sessionId?: string;
@@ -58,8 +58,8 @@ export function ProjectWorkspaceTopBar({
       historyContent={historyContent}
       isConversationPinned={isConversationPinned}
       onArchiveConversation={onArchiveConversation}
+      onNewConversationWindow={onNewConversationWindow}
       onNewPage={onNewPage}
-      onOpenExtensions={onOpenExtensions}
       onTogglePinnedConversation={onTogglePinnedConversation}
       pageIcon={pageIcon}
       pageTitle={pageTitle}

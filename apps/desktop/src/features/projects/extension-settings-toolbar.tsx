@@ -1,13 +1,6 @@
-import { Bot, MoreHorizontal, Plus, RefreshCw, Search } from "lucide-react";
+import { Plus, RefreshCw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   InputGroup,
   InputGroupAddon,
@@ -21,7 +14,6 @@ export function ExtensionSettingsToolbar({
   extensionCount,
   loading,
   onAdd,
-  onManageAgentModes,
   onQueryChange,
   onReload,
   query,
@@ -33,7 +25,6 @@ export function ExtensionSettingsToolbar({
   extensionCount: number;
   loading: boolean;
   onAdd: () => void;
-  onManageAgentModes: () => void;
   onQueryChange: (query: string) => void;
   onReload: () => void;
   query: string;
@@ -73,6 +64,17 @@ export function ExtensionSettingsToolbar({
           />
         </InputGroup>
         <Button
+          aria-label="刷新"
+          disabled={loading}
+          onClick={onReload}
+          size="icon"
+          title="刷新"
+          type="button"
+          variant="ghost"
+        >
+          <RefreshCw className={loading ? "animate-spin" : undefined} />
+        </Button>
+        <Button
           aria-label={addButtonLabel(section)}
           onClick={onAdd}
           size="icon"
@@ -82,25 +84,6 @@ export function ExtensionSettingsToolbar({
         >
           <Plus />
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button aria-label="扩展操作" size="icon" variant="ghost">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={onManageAgentModes}>
-                <Bot />
-                管理 Agent 模式
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={loading} onSelect={onReload}>
-                <RefreshCw />
-                刷新
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
     </div>
   );

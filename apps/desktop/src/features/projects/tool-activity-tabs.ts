@@ -9,7 +9,6 @@ export function toolActivityTabsFromToolCall(
   switch (toolCall.name) {
     case "write_file":
     case "edit_file":
-    case "apply_patch":
       return writeFileTabs(toolCall);
     case "bash":
     case "exec_command":

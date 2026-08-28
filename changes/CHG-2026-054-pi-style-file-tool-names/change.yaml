@@ -1,0 +1,46 @@
+schema: "2"
+id: "CHG-2026-054-pi-style-file-tool-names"
+title: "Adopt pi-style optional file tool names"
+type: "migration"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Coordinate the Provider-visible list_files/glob/search_files identity reset with global preferences, conversation activation, auxiliary selection, and desktop controls."
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "REQ-WORKSPACE-001"
+  - "REQ-EXTENSION-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "AT-WORKSPACE-001"
+  - "AT-EXTENSION-001"
+adrs:
+  - "ADR-0002"
+  - "ADR-0011"
+  - "ADR-0020"
+  - "ADR-0028"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-WORKSPACE-001 Sidebarless chat workspace"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes:
+  - "CHG-2026-015-global-provider-safe-tool-names"
+  - "CHG-2026-025-global-tool-eligibility"
+  - "CHG-2026-030-replaceable-session-tool-selection"
+  - "CHG-2026-037-intent-scoped-tool-injection"
+boundaries:
+  - "Reset the optional built-in canonical identities list_files/glob/search_files to ls/find/grep without Provider wire or execution aliases."
+  - "Expose the three renamed standalone tools to global visibility management, per-conversation manual activation, and initial auxiliary selection."
+  - "Keep read, bash, edit, and write as the only default coding primitives."
+risks:
+  - "Historical selections and global preference rows under the removed development-only names no longer affect the renamed registrations."
+  - "A stale Provider tool call using an old name must fail snapshot and registry validation rather than reach an aliased executor."
+next:
+  - "Rename tool specs, results, tests, and user-facing descriptions to grep, find, and ls."
+  - "Verify global and conversation catalogs list the optional built-ins and preserve independent enablement state."
+  - "Verify auxiliary selection injects eligible standalone tools while respecting global visibility."

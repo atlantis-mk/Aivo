@@ -66,6 +66,7 @@ func shouldReadEventStream(req *http.Request, resp *http.Response) bool {
 
 type streamedToolCall struct {
 	ID        string
+	Namespace string
 	Name      string
 	Arguments string
 }
@@ -78,6 +79,7 @@ func readLLMEventStream(reader io.Reader, onDelta func(string), onToolDelta func
 	var rawLines []string
 	var toolCalls []domain.ChatToolCall
 	var usage *domain.TokenUsage
+	var sources []domain.ChatSource
 	responseTools := map[string]*streamedToolCall{}
 	chatTools := map[int]*streamedToolCall{}
 	anthropicTools := map[int]*streamedToolCall{}
@@ -102,6 +104,7 @@ func readLLMEventStream(reader io.Reader, onDelta func(string), onToolDelta func
 		if nextUsage := extractTokenUsage(event); nextUsage != nil {
 			usage = mergeTokenUsage(usage, nextUsage)
 		}
+		sources = appendUniqueChatSources(sources, extractResponseSources(event)...)
 		toolCalls = appendUniqueToolCalls(toolCalls, updateResponsesStreamToolCalls(responseTools, event, onToolDelta)...)
 		toolCalls = appendUniqueToolCalls(toolCalls, updateChatCompletionsStreamToolCalls(chatTools, event, onToolDelta)...)
 		toolCalls = appendUniqueToolCalls(toolCalls, updateAnthropicStreamToolCalls(anthropicTools, event, onToolDelta)...)
@@ -143,16 +146,19 @@ func readLLMEventStream(reader io.Reader, onDelta func(string), onToolDelta func
 	toolCalls = appendUniqueToolCalls(toolCalls, finishChatCompletionsStreamToolCalls(chatTools)...)
 	toolCalls = appendUniqueToolCalls(toolCalls, finishIndexedStreamToolCalls(anthropicTools)...)
 	if len(deltas) > 0 {
-		return domain.ChatResponse{Text: strings.Join(deltas, ""), ToolCalls: toolCalls, Usage: usage}, nil
+		text := appendResponseSources(strings.Join(deltas, ""), sources)
+		return domain.ChatResponse{Text: text, ToolCalls: toolCalls, Usage: usage, Sources: sources}, nil
 	}
 	if len(completed) > 0 {
-		text := strings.Join(completed, "\n")
-		return domain.ChatResponse{Text: text, ToolCalls: toolCalls, Usage: usage}, nil
+		text := appendResponseSources(strings.Join(completed, "\n"), sources)
+		return domain.ChatResponse{Text: text, ToolCalls: toolCalls, Usage: usage, Sources: sources}, nil
 	}
 	if len(rawLines) > 0 {
 		response := extractChatResponse([]byte(strings.Join(rawLines, "\n")))
 		response.ToolCalls = appendUniqueToolCalls(toolCalls, response.ToolCalls...)
 		response.Usage = mergeTokenUsage(response.Usage, usage)
+		response.Sources = appendUniqueChatSources(sources, response.Sources...)
+		response.Text = appendResponseSources(stripResponseSources(response.Text), response.Sources)
 		if strings.TrimSpace(response.Text) != "" {
 			return response, nil
 		}
@@ -160,7 +166,27 @@ func readLLMEventStream(reader io.Reader, onDelta func(string), onToolDelta func
 			return response, nil
 		}
 	}
-	return domain.ChatResponse{ToolCalls: toolCalls, Usage: usage}, nil
+	return domain.ChatResponse{ToolCalls: toolCalls, Usage: usage, Sources: sources}, nil
+}
+
+func appendUniqueChatSources(existing []domain.ChatSource, next ...domain.ChatSource) []domain.ChatSource {
+	seen := make(map[string]bool, len(existing)+len(next))
+	out := make([]domain.ChatSource, 0, len(existing)+len(next))
+	for _, source := range append(append([]domain.ChatSource(nil), existing...), next...) {
+		if source.URL == "" || seen[source.URL] || len(out) >= maxResponseSources {
+			continue
+		}
+		seen[source.URL] = true
+		out = append(out, source)
+	}
+	return out
+}
+
+func stripResponseSources(text string) string {
+	if index := strings.LastIndex(text, "\n\nSources:\n"); index >= 0 {
+		return strings.TrimSpace(text[:index])
+	}
+	return text
 }
 
 func previewLogText(text string, limit int) string {
@@ -186,6 +212,7 @@ func updateResponsesStreamToolCalls(tools map[string]*streamedToolCall, event ma
 		}
 		tools[key] = &streamedToolCall{
 			ID:        firstString(item, "call_id", "id"),
+			Namespace: firstString(item, "namespace"),
 			Name:      firstString(item, "name"),
 			Arguments: argumentStringFromAny(firstNonNil(item["arguments"], item["input"])),
 		}
@@ -264,6 +291,9 @@ func updateResponsesStreamToolCalls(tools map[string]*streamedToolCall, event ma
 	}
 	if name := firstString(item, "name"); name != "" {
 		tool.Name = name
+	}
+	if namespace := firstString(item, "namespace"); namespace != "" {
+		tool.Namespace = namespace
 	}
 	if args, _ := item["arguments"].(string); args != "" {
 		tool.Arguments = args
@@ -406,7 +436,7 @@ func (call streamedToolCall) toChatToolCall() domain.ChatToolCall {
 	if args == "" {
 		args = "{}"
 	}
-	return domain.ChatToolCall{ID: id, Name: call.Name, Arguments: json.RawMessage(args)}
+	return domain.ChatToolCall{ID: id, Namespace: call.Namespace, Name: call.Name, Arguments: json.RawMessage(args)}
 }
 
 func appendUniqueToolCalls(existing []domain.ChatToolCall, next ...domain.ChatToolCall) []domain.ChatToolCall {
@@ -432,7 +462,7 @@ func appendUniqueToolCalls(existing []domain.ChatToolCall, next ...domain.ChatTo
 }
 
 func toolCallKey(call domain.ChatToolCall) string {
-	return firstNonEmpty(call.ID, call.Name) + "\x00" + call.Name
+	return firstNonEmpty(call.ID, call.Name) + "\x00" + call.Namespace + "\x00" + call.Name
 }
 
 func numberAsInt(value any) (int, bool) {

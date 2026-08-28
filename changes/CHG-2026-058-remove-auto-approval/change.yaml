@@ -1,0 +1,34 @@
+schema: "2"
+id: "CHG-2026-058-remove-auto-approval"
+title: "Remove automatic approval permission mode"
+type: "security"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Remove the auto-approve authorization path across Core and desktop while defining fail-closed handling for historical stored mode values."
+requirements:
+  - "REQ-TOOL-001"
+  - "REQ-PROJECT-003"
+  - "NFR-SECURITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-TOOL-001"
+  - "AT-PROJECT-003"
+  - "CT-SECURITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0030"
+context_refs:
+  - "docs/02-scope-matrix.md#Aivo scope matrix"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-PROJECT-003 Agent project catalog and immutable session binding"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes: []
+boundaries:
+  - "Removes auto_approve from the Core permission contract and desktop permission selector"
+  - "Maps historical persisted auto_approve mode rules to request_approval without a schema migration"
+risks:
+  - "A historical auto_approve rule could continue granting operations if compatibility handling is not fail-closed"
+  - "A stale renderer or RPC caller could retain the removed authority if Core still accepts the old value"
+next: []

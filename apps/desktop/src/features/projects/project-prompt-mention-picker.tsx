@@ -6,6 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PromptMentionIcon } from "@/features/projects/project-prompt-mention-icon";
 import { filterPromptMentionActions, filterPromptMentionItems, groupPromptMentionItems, isPromptMentionBuiltinTool, promptMentionProjectItems, type PromptMentionAction, type PromptMentionItem, type PromptMentionProject } from "@/features/projects/project-prompt-mention-model";
+import { groupToolCatalogEntries } from "@/features/projects/project-tool-activation-model";
 import { hasAppBridge } from "@/lib/app-config";
 import { listMCPServers } from "@/services/aivo/mcp-service";
 import { listExtensionInstalls } from "@/services/aivo/extension-service";
@@ -49,9 +50,30 @@ export function PromptMentionPicker({ activeIndex, onSelect, onSelectAction, pro
       const extensions = extensionsResult.status === "fulfilled"
         ? extensionsResult.value
         : [];
+      const toolResources = groupToolCatalogEntries(
+        tools.filter(isPromptMentionBuiltinTool),
+        {},
+      );
       setCatalogItems([
         ...skills.filter((skill) => skill.enabled).map((skill) => ({ detail: skill.description, id: `skill:${skill.id}`, label: skill.name, reference: { id: skill.id, kind: "skill" as const, token: skill.name }, token: skill.name, type: "技能" as const })),
-        ...tools.filter(isPromptMentionBuiltinTool).map((tool) => ({ detail: tool.description || tool.namespace, id: `tool:${tool.name}`, label: tool.name, reference: { id: tool.name, kind: "tool" as const, token: tool.name }, token: tool.name, type: "工具" as const })),
+        ...toolResources.map((resource) => {
+          const firstTool = resource.tools[0]!;
+          const resourceID = resource.grouped
+            ? firstTool.selectionGroup!.id
+            : firstTool.name;
+          return {
+            detail: resource.description,
+            id: `tool:${resourceID}`,
+            label: resource.label,
+            reference: {
+              id: resourceID,
+              kind: "tool" as const,
+              token: resource.label,
+            },
+            token: resource.label,
+            type: "工具" as const,
+          };
+        }),
         ...extensions.filter((extension) => extension.enabled).map((extension) => {
           const token = extension.summary.name || extension.id;
           return { detail: extension.summary.description, id: `extension:${extension.id}`, label: token, reference: { id: extension.id, kind: "extension" as const, token }, token, type: "扩展" as const };

@@ -19,9 +19,10 @@ const (
 	permissionActionShell = "shell"
 	permissionActionTest  = "test"
 
-	permissionModeScopePrefix = "permission_mode:"
-	permissionRuleWildcard    = "*"
-	permissionApprovalKeyPath = "approvalKey:"
+	permissionModeScopePrefix       = "permission_mode:"
+	legacyPermissionModeAutoApprove = "auto_approve"
+	permissionRuleWildcard          = "*"
+	permissionApprovalKeyPath       = "approvalKey:"
 )
 
 type PermissionStore interface {
@@ -199,19 +200,8 @@ func (e *PermissionEngine) savedDecision(ctx context.Context, execCtx domain.Too
 			return rule.Decision
 		}
 	}
-	switch latestPermissionMode(rules) {
-	case domain.PermissionModeRequestApproval:
+	if latestPermissionModeIsLegacyAutoApprove(rules) {
 		return ""
-	case domain.PermissionModeAutoApprove:
-		if toolName == projectAddToolName || toolName == projectAssociateToolName {
-			return domain.PermissionDecisionAllow
-		}
-	case domain.PermissionModeFullAccess:
-		// Commands that violate non-bypassable safety checks are rejected while
-		// preparing their execution context. Reaching this point means the tool is
-		// allowed to run, so full access must not turn an unclassified shell command
-		// back into an approval request.
-		return domain.PermissionDecisionAllow
 	}
 	for _, rule := range rules {
 		if isPermissionModeRule(rule) || !permissionRuleApplies(rule, toolName, action) {
@@ -223,6 +213,16 @@ func (e *PermissionEngine) savedDecision(ctx context.Context, execCtx domain.Too
 			}
 		}
 	}
+	switch latestPermissionMode(rules) {
+	case domain.PermissionModeRequestApproval:
+		return ""
+	case domain.PermissionModeFullAccess:
+		// Commands that violate non-bypassable safety checks are rejected while
+		// preparing their execution context. Reaching this point means the tool is
+		// allowed to run, so full access must not turn an unclassified shell command
+		// back into an approval request.
+		return domain.PermissionDecisionAllow
+	}
 	return ""
 }
 
@@ -233,6 +233,22 @@ func latestPermissionMode(rules []domain.PermissionRule) string {
 		}
 	}
 	return ""
+}
+
+func latestPermissionModeIsLegacyAutoApprove(rules []domain.PermissionRule) bool {
+	for _, rule := range rules {
+		if !strings.HasPrefix(rule.Scope, permissionModeScopePrefix) {
+			continue
+		}
+		rawMode := strings.TrimSpace(strings.TrimPrefix(rule.Scope, permissionModeScopePrefix))
+		if rawMode == legacyPermissionModeAutoApprove {
+			return true
+		}
+		if permissionModeFromRule(rule) != "" {
+			return false
+		}
+	}
+	return false
 }
 
 func (s *Service) ListPermissionRequests(ctx context.Context, sessionID string, status string) ([]domain.PermissionRequest, error) {

@@ -6,7 +6,6 @@ import {
   type ToolFileChange,
 } from "./tool-activity-types";
 import {
-  draftFileTabId,
   fileStateKey,
   fileTabId,
   normalizeToolStatus,
@@ -55,9 +54,6 @@ export function annotateToolActivityTabsWithFileStates(
 }
 
 export function writeFileTabs(toolCall: domain.ToolCall): ToolActivityFileTab[] {
-  if (toolCall.name === "apply_patch" && toolCall.result?.draft === true) {
-    return applyPatchDraftTabs(toolCall);
-  }
   const files = getToolCallFileChanges(toolCall);
   if (files.length > 0) {
     return files.map((file) => ({
@@ -109,46 +105,6 @@ export function writeFileTabs(toolCall: domain.ToolCall): ToolActivityFileTab[] 
       timeUpdated: toolCall.timeUpdated,
     },
   ];
-}
-
-function applyPatchDraftTabs(toolCall: domain.ToolCall): ToolActivityFileTab[] {
-  const files = getToolCallFileChanges(toolCall);
-  const patchTextPreview = previewText(
-    stringValue(toolCall.result?.patchTextPreview),
-    FILE_PREVIEW_CHARS,
-  );
-  const draftFiles =
-    files.length > 0
-      ? files
-      : [
-          {
-            path: "apply_patch",
-            type: "update",
-            additions: 0,
-            deletions: 0,
-          },
-        ];
-  return draftFiles.map((file, index) => ({
-    id: draftFileTabId(toolCall.id, index),
-    kind: "file",
-    draft: true,
-    toolCallId: toolCall.id,
-    turnId: toolCall.turnId,
-    toolName: toolCall.name,
-    path: file.fullPath || file.path || "apply_patch",
-    relativePath: file.path,
-    movePath: file.moveFullPath || file.movePath,
-    relativeMovePath: file.movePath,
-    operation: file.type,
-    status: "running",
-    contentPreview: patchTextPreview,
-    diff: patchTextPreview,
-    additions: file.additions,
-    deletions: file.deletions,
-    error: toolCall.error || stringValue(toolCall.result?.error),
-    timeCreated: toolCall.timeCreated,
-    timeUpdated: toolCall.timeUpdated,
-  }));
 }
 
 function getToolCallFileChanges(toolCall: domain.ToolCall): ToolFileChange[] {

@@ -104,10 +104,6 @@ func decodeToolCallArguments(call domain.ChatToolCall) map[string]any {
 	if err := json.Unmarshal(call.Arguments, &args); err == nil {
 		return args
 	}
-	if call.Name == "apply_patch" {
-		args["patchText"] = string(call.Arguments)
-		args["freeform"] = true
-	}
 	return args
 }
 
@@ -121,7 +117,11 @@ func summarizeToolResult(result domain.ToolResult) string {
 func buildToolCallsPayload(calls []domain.ChatToolCall) []map[string]any {
 	out := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
-		out = append(out, map[string]any{"id": call.ID, "name": call.Name, "arguments": string(call.Arguments)})
+		item := map[string]any{"id": call.ID, "name": call.Name, "arguments": string(call.Arguments)}
+		if namespace := strings.TrimSpace(call.Namespace); namespace != "" {
+			item["namespace"] = namespace
+		}
+		out = append(out, item)
 	}
 	return out
 }

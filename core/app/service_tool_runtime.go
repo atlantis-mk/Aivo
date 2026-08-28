@@ -2,38 +2,9 @@ package app
 
 import (
 	"context"
-	"strings"
 
 	"aivo/core/domain"
 )
-
-func (s *Service) emitApplyPatchDraft(sessionID string, turnID string, workspaceRoot string, call domain.ChatToolCall) {
-	if s.onToolCallUpdated == nil || call.Name != "apply_patch" || strings.TrimSpace(call.ID) == "" {
-		return
-	}
-	patchText, files := applyPatchDraftFiles(call.Arguments, workspaceRoot)
-	if strings.TrimSpace(patchText) == "" && len(files) == 0 {
-		return
-	}
-	now := domain.NowString(s.now())
-	result := map[string]any{"draft": true}
-	if len(files) > 0 {
-		result["files"] = files
-	}
-	if strings.TrimSpace(patchText) != "" {
-		result["patchTextPreview"] = bounded(patchText, 4000)
-	}
-	s.onToolCallUpdated(sessionID, turnID, domain.ToolCall{
-		ID:          call.ID,
-		SessionID:   sessionID,
-		TurnID:      turnID,
-		Name:        call.Name,
-		Status:      domain.ToolCallStatusRunning,
-		Result:      result,
-		TimeCreated: now,
-		TimeUpdated: now,
-	}, false)
-}
 
 func (s *Service) recordToolCallStarted(ctx context.Context, sessionID string, turnID string, call domain.ChatToolCall, identity domain.ToolRegistrationIdentity) error {
 	args := toolCallArgumentsMap(call)
@@ -104,7 +75,16 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 			bashTool.SetPersistentCWDHooks(s.loadAgentShellCWD, s.saveAgentShellCWD)
 		}
 	}
+	if err := registerDefaultHostControlTools(registry, s); err != nil {
+		return nil, nil
+	}
 	if err := registry.RegisterScoped(NewToolResolveTool(registry, s.resolveSessionToolReplacement, s.replaceAutoSelectedTools), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
+		return nil, nil
+	}
+	if err := registry.Register(NewCodexWebSearchTool(s)); err != nil {
+		return nil, nil
+	}
+	if err := registry.Register(NewCodexImageGenerationTool(s)); err != nil {
 		return nil, nil
 	}
 	if s.extensionSupervisor != nil {

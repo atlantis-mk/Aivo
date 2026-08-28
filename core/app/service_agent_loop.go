@@ -71,6 +71,11 @@ func (s *Service) runAssistantAgentLoop(
 			resolved.Context = strings.TrimSpace(explicitResourceContext + "\n\n" + resolved.Context)
 		}
 		if registry != nil {
+			for name, source := range s.providerDeclaredLocalToolActivations(ctx, requestedModel) {
+				if resolved.ToolActivations[name] == "" {
+					resolved.ToolActivations[name] = source
+				}
+			}
 			if len(modeDef.Subagents) > 0 {
 				resolved.ToolActivations["agent_delegate_task"] = "modeAssociation"
 			}
@@ -101,7 +106,6 @@ func (s *Service) runAssistantAgentLoop(
 			if call.ID != "" || call.Name != "" || len(call.Arguments) > 0 {
 				markFirstToken()
 			}
-			s.emitApplyPatchDraft(input.SessionID, turn.ID, strings.TrimSpace(cc.ProjectPath), call)
 		})
 		requestCompletedAt := time.Now()
 		if err != nil {
@@ -142,10 +146,12 @@ func (s *Service) runAssistantAgentLoop(
 			results := executeBoundedParallelToolCalls(ctx, resp.ToolCalls, limit, func(call domain.ChatToolCall) domain.ToolResult {
 				return runtime.ExecuteWithContext(ctx, call, domain.ToolExecutionContext{
 					WorkspaceRoot: strings.TrimSpace(cc.ProjectPath), SessionID: input.SessionID, TurnID: turn.ID,
-					AgentMode: modeDef.ID, AllowedToolsets: allowedToolsets,
+					ActiveModel: model,
+					AgentMode:   modeDef.ID, AllowedToolsets: allowedToolsets,
 					PermissionScope:       firstNonEmpty(input.PermissionScope, permissionScopeForAgent(modeDef)),
 					ExpectedRegistrations: expectedRegistrations,
 					ToolSnapshot:          &toolSnapshot,
+					RecentImages:          recentImageAttachments(messages, 5),
 				})
 			})
 			for index, call := range resp.ToolCalls {
@@ -163,6 +169,7 @@ func (s *Service) runAssistantAgentLoop(
 			} else {
 				result = runtime.ExecuteWithContext(ctx, call, domain.ToolExecutionContext{
 					WorkspaceRoot:         strings.TrimSpace(cc.ProjectPath),
+					ActiveModel:           model,
 					SessionID:             input.SessionID,
 					TurnID:                turn.ID,
 					AgentMode:             modeDef.ID,
@@ -170,6 +177,7 @@ func (s *Service) runAssistantAgentLoop(
 					PermissionScope:       firstNonEmpty(input.PermissionScope, permissionScopeForAgent(modeDef)),
 					ExpectedRegistrations: expectedRegistrations,
 					ToolSnapshot:          &toolSnapshot,
+					RecentImages:          recentImageAttachments(messages, 5),
 				})
 			}
 			_ = s.recordToolResult(ctx, input.SessionID, turn.ID, call, result)
@@ -186,6 +194,26 @@ func (s *Service) runAssistantAgentLoop(
 			}
 		}
 	}
+}
+
+func recentImageAttachments(messages []domain.ChatMessage, limit int) []domain.MessageAttachment {
+	if limit <= 0 {
+		return nil
+	}
+	out := make([]domain.MessageAttachment, 0, limit)
+	for i := len(messages) - 1; i >= 0 && len(out) < limit; i-- {
+		attachments := messages[i].Attachments
+		for j := len(attachments) - 1; j >= 0 && len(out) < limit; j-- {
+			attachment := attachments[j]
+			if strings.EqualFold(strings.TrimSpace(attachment.Kind), "image") && isImageAttachmentMIME(attachment.MIMEType) && strings.TrimSpace(attachment.Data) != "" {
+				out = append(out, attachment)
+			}
+		}
+	}
+	for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
+		out[left], out[right] = out[right], out[left]
+	}
+	return out
 }
 
 func (s *Service) recordInitialToolSelection(ctx context.Context, sessionID, turnID string, resources []hostToolSelectionResource, lifetime string) error {

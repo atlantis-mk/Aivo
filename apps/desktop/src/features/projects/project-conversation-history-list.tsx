@@ -1,7 +1,14 @@
-import { Archive } from "lucide-react";
+import { Archive, History } from "lucide-react";
 
 import { AnimatedTitle } from "@/components/animated-title";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import {
   Item,
   ItemContent,
@@ -38,6 +45,22 @@ export function ProjectConversationHistoryList({
       parseTime(right.timeUpdated || right.timeCreated).getTime() -
       parseTime(left.timeUpdated || left.timeCreated).getTime(),
   );
+
+  if (!orderedConversations.length) {
+    return (
+      <Empty className="min-h-40 rounded-none px-6 py-10">
+        <EmptyMedia variant="icon">
+          <History />
+        </EmptyMedia>
+        <EmptyHeader>
+          <EmptyTitle>暂无历史记录</EmptyTitle>
+          <EmptyDescription>
+            开始新对话后，对话会显示在这里。
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
   return (
     <ScrollArea className="max-h-[min(72vh,560px)] w-full min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-[min(72vh,560px)] [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">

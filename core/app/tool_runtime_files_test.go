@@ -292,16 +292,6 @@ func TestRememberedPermissionAppliesToNewSessionInWorkspace(t *testing.T) {
 	}
 }
 
-func TestApplyPatchRejectsLegacyPatchArgument(t *testing.T) {
-	root := t.TempDir()
-	tool := NewApplyPatchTool(root)
-	patch := "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch\n"
-	result := tool.Execute(context.Background(), json.RawMessage(`{"patch":`+strconv.Quote(patch)+`}`), domain.ToolExecutionContext{WorkspaceRoot: root})
-	if result.OK || result.ToolError == nil || !strings.Contains(result.Error, "patchText is required") {
-		t.Fatalf("result = %#v, want patchText required failure", result)
-	}
-}
-
 func TestWriteFileToolCreatesFile(t *testing.T) {
 	root := t.TempDir()
 	tool := NewWriteFileTool(root)
@@ -329,7 +319,7 @@ func TestWriteFileToolRejectsContentOverLineLimit(t *testing.T) {
 	tool := NewWriteFileTool(root)
 	content := strings.Repeat("line\n", maxDirectWriteLines+1)
 	result := tool.Execute(context.Background(), json.RawMessage(`{"path":"docs/long.md","content":`+strconv.Quote(content)+`}`), domain.ToolExecutionContext{WorkspaceRoot: root})
-	if result.OK || result.ToolError == nil || !strings.Contains(result.Error, "exceeds 150 lines") || !strings.Contains(result.Error, "apply_patch") {
+	if result.OK || result.ToolError == nil || !strings.Contains(result.Error, "exceeds 150 lines") {
 		t.Fatalf("result = %#v, want line limit failure", result)
 	}
 	if _, err := os.Stat(filepath.Join(root, "docs", "long.md")); !errors.Is(err, os.ErrNotExist) {
@@ -401,23 +391,6 @@ func TestEditFileToolRejectsStaleExpectedHash(t *testing.T) {
 	}
 }
 
-func TestApplyPatchToolAcceptsFreeformRawPatch(t *testing.T) {
-	root := t.TempDir()
-	tool := NewApplyPatchTool(root)
-	patch := "*** Begin Patch\n*** Add File: docs/spec.md\n+hello\n*** End Patch\n"
-	result := tool.Execute(context.Background(), json.RawMessage(patch), domain.ToolExecutionContext{WorkspaceRoot: root})
-	if !result.OK {
-		t.Fatalf("apply_patch failed: %#v", result)
-	}
-	content, err := os.ReadFile(filepath.Join(root, "docs", "spec.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "hello\n" {
-		t.Fatalf("content = %q, want hello", content)
-	}
-}
-
 func TestEditFileToolRejectsReplacementOverLineLimit(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "README.md")
@@ -427,7 +400,7 @@ func TestEditFileToolRejectsReplacementOverLineLimit(t *testing.T) {
 	tool := NewEditFileTool(root)
 	replacement := strings.Repeat("line\n", maxDirectEditArgLines+1)
 	result := tool.Execute(context.Background(), json.RawMessage(`{"path":"README.md","oldString":"start\n","newString":`+strconv.Quote(replacement)+`}`), domain.ToolExecutionContext{WorkspaceRoot: root})
-	if result.OK || result.ToolError == nil || !strings.Contains(result.Error, "exceeds 150 lines") || !strings.Contains(result.Error, "apply_patch") {
+	if result.OK || result.ToolError == nil || !strings.Contains(result.Error, "exceeds 150 lines") {
 		t.Fatalf("result = %#v, want line limit failure", result)
 	}
 	content, _ := os.ReadFile(target)

@@ -26,7 +26,7 @@ func (s *Service) globallyDisabledToolNames(ctx context.Context) (map[string]boo
 	disabled := make(map[string]bool, len(names))
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if name != "" {
+		if name != "" && !isReservedCoreToolName(name) {
 			disabled[name] = true
 		}
 	}
@@ -68,6 +68,9 @@ func (s *Service) SetGlobalToolEnabled(ctx context.Context, input domain.GlobalT
 	name := strings.TrimSpace(input.Name)
 	if err := validateCanonicalToolName(name); err != nil {
 		return domain.ToolCatalogEntry{}, err
+	}
+	if isReservedCoreToolName(name) && !input.Enabled {
+		return domain.ToolCatalogEntry{}, errors.New("required core tools cannot be disabled")
 	}
 	entries, err := s.ListToolCatalog(ctx, domain.ToolCatalogInput{WorkspaceRoot: strings.TrimSpace(input.WorkspaceRoot)})
 	if err != nil {

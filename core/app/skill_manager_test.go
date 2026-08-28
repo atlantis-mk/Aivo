@@ -117,6 +117,94 @@ func TestSkillListDoesNotScanImplicitly(t *testing.T) {
 	}
 }
 
+func TestManagedSkillEditSavesDescriptionAndInstructions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	root := filepath.Join(home, ".aivo", "skills", "editable-skill")
+	writeSkill(t, root, "editable-skill", "Original description", "Original instructions.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
+	if err != nil || len(list.Entries) != 1 {
+		t.Fatalf("skills = %+v, err = %v", list.Entries, err)
+	}
+
+	editor, err := service.GetManagedSkillForEdit(ctx, list.Entries[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.UpdateManagedSkill(ctx, domain.SkillUpdateInput{
+		SkillID: editor.Skill.ID, Description: "Updated description", Content: "Use the updated workflow.", ExpectedContentHash: editor.Skill.ContentHash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Skill.Name != "editable-skill" || updated.Skill.Description != "Updated description" || updated.Content != "Use the updated workflow." {
+		t.Fatalf("updated = %+v", updated)
+	}
+	if updated.Skill.ContentHash == editor.Skill.ContentHash {
+		t.Fatal("content hash did not change")
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `description: "Updated description"`) || !strings.Contains(text, "Use the updated workflow.") {
+		t.Fatalf("saved SKILL.md = %q", text)
+	}
+}
+
+func TestManagedSkillEditRejectsStaleRevisionAndOutsidePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	root := filepath.Join(home, ".aivo", "skills", "stale-skill")
+	writeSkill(t, root, "stale-skill", "Original", "Original instructions.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
+	if err != nil || len(list.Entries) != 1 {
+		t.Fatalf("skills = %+v, err = %v", list.Entries, err)
+	}
+	editor, err := service.GetManagedSkillForEdit(ctx, list.Entries[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSkill(t, root, "stale-skill", "Changed elsewhere", "Newer instructions.")
+	if _, err := service.UpdateManagedSkill(ctx, domain.SkillUpdateInput{
+		SkillID: editor.Skill.ID, Description: "Overwrite", Content: "Stale editor content.", ExpectedContentHash: editor.Skill.ContentHash,
+	}); err == nil || !strings.Contains(err.Error(), "changed since") {
+		t.Fatalf("stale update error = %v", err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "SKILL.md"))
+	if !strings.Contains(string(raw), "Newer instructions.") || strings.Contains(string(raw), "Stale editor content.") {
+		t.Fatalf("stale update changed file: %q", string(raw))
+	}
+
+	outsideRoot := filepath.Join(home, "outside", "outside-skill")
+	writeSkill(t, outsideRoot, "outside-skill", "Outside", "Outside instructions.")
+	outside, err := service.ensureSkillManager().store.SaveSkill(ctx, domain.SkillEntry{
+		ID: "outside-skill", Name: "outside-skill", Description: "Outside", Scope: domain.SkillScopeGlobal,
+		Source: domain.SkillSourceAivo, RootPath: outsideRoot, SkillPath: filepath.Join(outsideRoot, "SKILL.md"), Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetManagedSkillForEdit(ctx, outside.ID); err == nil || !strings.Contains(err.Error(), "Aivo-managed") {
+		t.Fatalf("outside path error = %v", err)
+	}
+}
+
 func TestSkillScanIgnoresSameNameContentConflicts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

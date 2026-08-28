@@ -1,0 +1,37 @@
+schema: "2"
+id: "CHG-2026-063-persist-permission-mode-preference"
+title: "Persist explicit permission-mode preference"
+type: "migration"
+status: "Active"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Persist an explicit user-selected permission-mode default and initialize only future coding conversations from it."
+requirements:
+  - "REQ-TOOL-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-TOOL-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+  - "AT-UI-001"
+adrs:
+  - "ADR-0034"
+context_refs:
+  - "docs/02-scope-matrix.md#Aivo scope matrix"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/05-data-model.md#Schema versions"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes:
+  - "CHG-2026-058-remove-auto-approval"
+boundaries:
+  - "Persistence migration: app_config.default_permission_mode"
+  - "Core session initialization and permission evaluation"
+  - "Desktop permission selector and new-conversation state"
+risks:
+  - "A global preference change could silently elevate an existing conversation if it is evaluated dynamically rather than copied at session creation."
+  - "A malformed historical value could accidentally grant access unless it falls back to request approval."
+next:
+  - "Persist the explicit selector value and initialize future coding sessions from it."

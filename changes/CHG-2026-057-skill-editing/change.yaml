@@ -1,0 +1,30 @@
+schema: "2"
+id: "CHG-2026-057-skill-editing"
+title: "Edit managed Skills"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Coordinate the new Skill update RPC and managed-file write boundary across Core and desktop UI"
+requirements:
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-UI-001"
+tests:
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "AT-UI-001"
+adrs: []
+context_refs:
+  - "docs/02-scope-matrix.md#Aivo scope matrix"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001 Skills, plugins, and MCP"
+  - "docs/06-security-privacy.md#Execution safety"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes: []
+boundaries:
+  - "Adds versioned local RPC reads and writes for editable managed Skill content"
+  - "Writes remain restricted to validated SKILL.md files inside Aivo-managed Skill storage"
+risks:
+  - "A stale editor could overwrite newer on-disk Skill content without optimistic concurrency"
+  - "An insufficient path check could write outside Aivo-managed storage"
+next: []

@@ -4,13 +4,17 @@ import test from "node:test";
 import {
   filterAgentModes,
   filterTools,
+  selectVisibleSkillCandidates,
 } from "../src/features/projects/extension-settings-search.ts";
 
-test("tools tab shows only Aivo built-in tools", () => {
+test("tools tab shows only manageable Aivo tools", () => {
   const visible = filterTools(
     [
       { name: "read", source: "builtin", enabled: true },
       { name: "bash", source: "builtin", enabled: true },
+      { name: "grep", source: "builtin", enabled: true },
+      { name: "find", source: "builtin", enabled: true },
+      { name: "ls", source: "builtin", enabled: true },
       {
         name: "aivo_projects_query",
         source: "extension",
@@ -37,7 +41,13 @@ test("tools tab shows only Aivo built-in tools", () => {
 
   assert.deepEqual(
     visible.map((tool) => tool.name),
-    ["read", "bash", "aivo_projects_query", "aivo_tools_register_mcp"],
+    [
+      "grep",
+      "find",
+      "ls",
+      "aivo_projects_query",
+      "aivo_tools_register_mcp",
+    ],
   );
 });
 
@@ -70,5 +80,75 @@ test("agent mode search includes origin, prompt, model, and associations without
   assert.deepEqual(
     filterAgentModes(modes, "review").map((mode) => mode.id),
     ["code"],
+  );
+});
+
+test("skill candidates are unique by name and hidden while installed", () => {
+  const candidates = [
+    {
+      id: "claude-review",
+      name: "code-review",
+      description: "Claude candidate",
+      scope: "global",
+      source: "claude",
+      rootPath: "/skills/claude/code-review",
+      skillPath: "/skills/claude/code-review/SKILL.md",
+      contentHash: "claude-hash",
+      status: "imported",
+      lastSeenAt: "2026-08-26T10:00:00Z",
+    },
+    {
+      id: "codex-review",
+      name: "code-review",
+      description: "Codex candidate",
+      scope: "global",
+      source: "codex",
+      rootPath: "/skills/codex/code-review",
+      skillPath: "/skills/codex/code-review/SKILL.md",
+      contentHash: "codex-hash",
+      status: "pending",
+      lastSeenAt: "2026-08-26T09:00:00Z",
+    },
+    {
+      id: "pdf",
+      name: "pdf",
+      description: "PDF candidate",
+      scope: "global",
+      source: "agents",
+      rootPath: "/skills/agents/pdf",
+      skillPath: "/skills/agents/pdf/SKILL.md",
+      contentHash: "pdf-hash",
+      status: "pending",
+      lastSeenAt: "2026-08-26T08:00:00Z",
+    },
+  ];
+
+  const installed = [
+    {
+      id: "installed-review",
+      name: "Code-Review",
+      description: "Installed review skill",
+      scope: "global",
+      source: "aivo",
+      rootPath: "/skills/aivo/code-review",
+      skillPath: "/skills/aivo/code-review/SKILL.md",
+      contentHash: "installed-hash",
+      enabled: true,
+      timeCreated: "2026-08-26T10:00:00Z",
+      timeUpdated: "2026-08-26T10:00:00Z",
+    },
+  ];
+
+  assert.deepEqual(
+    selectVisibleSkillCandidates(candidates, installed).map(
+      (candidate) => candidate.id,
+    ),
+    ["pdf"],
+  );
+  assert.deepEqual(
+    selectVisibleSkillCandidates(candidates, []).map(
+      (candidate) => candidate.id,
+    ),
+    ["claude-review", "pdf"],
   );
 });

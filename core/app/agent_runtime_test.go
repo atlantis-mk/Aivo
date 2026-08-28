@@ -306,6 +306,38 @@ func TestAgentRuntimeToolsUsePreferredNamesOnly(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRegistryRegistersOnlyDefaultHostControls(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	defer service.Shutdown()
+	registry, _ := service.toolsForWorkspace(t.TempDir())
+	if registry == nil {
+		t.Fatal("workspace registry is nil")
+	}
+	for _, name := range []string{"update_plan", "ask_user"} {
+		if _, ok := registry.Get(name); !ok {
+			t.Fatalf("default Host control %q was not registered in the workspace Registry", name)
+		}
+	}
+	for _, name := range []string{
+		"agent_mode_list",
+		"agent_mode_set",
+		"agent_delegate_task",
+		"agent_run_list",
+		"agent_run_cancel",
+		"automation_create",
+		"automation_list",
+		"automation_update",
+		"automation_cancel",
+		"create_goal",
+		"get_goal",
+		"update_goal",
+	} {
+		if _, ok := registry.Get(name); ok {
+			t.Fatalf("non-default Host tool %q was directly registered in the workspace Registry", name)
+		}
+	}
+}
+
 func TestRegistrySpecsForToolsets(t *testing.T) {
 	registry := NewRegistry()
 	for _, tool := range []domain.Tool{
@@ -331,7 +363,6 @@ func TestPlannerVisibleToolSpecsExcludeMutation(t *testing.T) {
 	specs := []domain.ToolSpec{
 		{Name: "read_file", Capability: "filesystem.read"},
 		{Name: "write_file", Capability: "filesystem.write"},
-		{Name: "apply_patch", Capability: "filesystem.patch"},
 		{Name: "run_tests", Capability: "shell.test"},
 		{Name: "bash", Capability: "shell.exec"},
 		{Name: "automation_create_job", Capability: "scheduler.write", Category: "automation"},
@@ -344,7 +375,7 @@ func TestPlannerVisibleToolSpecsExcludeMutation(t *testing.T) {
 	if !names["read_file"] || len(names) != 1 {
 		t.Fatalf("plan visible tools = %#v, want only read_file", visible)
 	}
-	if names["write_file"] || names["apply_patch"] || names["run_tests"] || names["bash"] {
+	if names["write_file"] || names["run_tests"] || names["bash"] {
 		t.Fatalf("plan exposed mutation tools: %#v", visible)
 	}
 
@@ -356,7 +387,7 @@ func TestPlannerVisibleToolSpecsExcludeMutation(t *testing.T) {
 	if !names["read_file"] || !names["run_tests"] || !names["bash"] {
 		t.Fatalf("debug missing diagnostic tools: %#v", visible)
 	}
-	if names["write_file"] || names["apply_patch"] || names["automation_create_job"] {
+	if names["write_file"] || names["automation_create_job"] {
 		t.Fatalf("debug exposed mutation tools: %#v", visible)
 	}
 }

@@ -38,6 +38,7 @@ export function deleteProvider(providerId: string) {
 }
 
 export type CompleteInitializationInput = {
+  appName: string;
   initialWorkspacePath: string;
   provider?: domain.ProviderConfig;
 };

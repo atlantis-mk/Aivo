@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,8 +33,11 @@ type skillStore interface {
 }
 
 type SkillManager struct {
-	store skillStore
-	home  string
+	store               skillStore
+	home                string
+	codexSystemSyncMu   sync.Mutex
+	codexSystemSyncHome string
+	codexSystemSyncHash string
 }
 
 type parsedSkill struct {
@@ -209,6 +213,9 @@ func (m *SkillManager) Delete(ctx context.Context, skillID string) error {
 	skill, err := m.store.GetSkill(ctx, skillID)
 	if err != nil {
 		return err
+	}
+	if skill.Source == domain.SkillSourceCodexSystem {
+		return errors.New("Codex system skills are read-only and updated by the Host")
 	}
 	if err := m.store.DeleteSkill(ctx, skillID); err != nil {
 		return err

@@ -36,6 +36,9 @@ func responsesTools(specs []domain.ToolSpec) []map[string]any {
 			"description": spec.Description,
 			"parameters":  spec.InputSchema,
 		}
+		if spec.Strict != nil {
+			tool["strict"] = *spec.Strict
+		}
 		namespace := responsesToolNamespace(spec)
 		if namespace == "" {
 			tools = append(tools, tool)
@@ -79,6 +82,9 @@ func responsesHostedTool(spec *domain.HostedToolSpec) map[string]any {
 		if spec.ExternalWebAccess != nil {
 			tool["external_web_access"] = *spec.ExternalWebAccess
 		}
+		if spec.IndexedWebAccess != nil {
+			tool["indexed_web_access"] = *spec.IndexedWebAccess
+		}
 		if size := strings.TrimSpace(spec.SearchContextSize); size != "" {
 			tool["search_context_size"] = size
 		}
@@ -90,6 +96,9 @@ func responsesHostedTool(spec *domain.HostedToolSpec) map[string]any {
 			if len(location) > 0 {
 				tool["user_location"] = location
 			}
+		}
+		if len(spec.SearchContentTypes) > 0 {
+			tool["search_content_types"] = append([]string(nil), spec.SearchContentTypes...)
 		}
 		return tool
 	case "code_interpreter":
@@ -190,12 +199,14 @@ func anthropicHostedTool(spec *domain.HostedToolSpec) map[string]any {
 	if spec == nil {
 		return nil
 	}
-	if !strings.HasPrefix(spec.Type, "web_search_") && !strings.HasPrefix(spec.Type, "web_fetch_") {
+	if !strings.HasPrefix(spec.Type, "web_search_") && !strings.HasPrefix(spec.Type, "web_fetch_") && !strings.HasPrefix(spec.Type, "code_execution_") {
 		return nil
 	}
 	name := "web_search"
 	if strings.HasPrefix(spec.Type, "web_fetch_") {
 		name = "web_fetch"
+	} else if strings.HasPrefix(spec.Type, "code_execution_") {
+		name = "code_execution"
 	}
 	tool := map[string]any{
 		"type": spec.Type,
@@ -271,12 +282,16 @@ func bedrockTools(specs []domain.ToolSpec) []map[string]any {
 func responsesToolCalls(calls []domain.ChatToolCall) []map[string]any {
 	out := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"type":      "function_call",
 			"call_id":   call.ID,
 			"name":      call.Name,
 			"arguments": string(call.Arguments),
-		})
+		}
+		if namespace := strings.TrimSpace(call.Namespace); namespace != "" {
+			item["namespace"] = namespace
+		}
+		out = append(out, item)
 	}
 	return out
 }

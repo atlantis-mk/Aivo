@@ -4,7 +4,6 @@ export type PermissionActionState =
   "idle" | "approving" | "denying" | "approved" | "denied";
 
 const writePermissionToolNames = new Set([
-  "apply_patch",
   "write_file",
   "edit_file",
 ]);

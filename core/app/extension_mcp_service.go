@@ -169,7 +169,13 @@ func (s *Service) ListToolCatalog(ctx context.Context, input domain.ToolCatalogI
 }
 
 func (s *Service) globalToolCatalogRegistry(ctx context.Context) *Registry {
-	registry := NewRegistry()
+	registry, err := NewCodingToolRegistry("")
+	if err != nil {
+		registry = NewRegistry()
+	}
+	if err := registerDefaultHostControlTools(registry, s); err != nil {
+		return nil
+	}
 	if s.extensionSupervisor != nil {
 		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}
@@ -182,6 +188,9 @@ func (s *Service) globalToolCatalogRegistry(ctx context.Context) *Registry {
 func (s *Service) workspaceToolCatalogRegistry(ctx context.Context, workspaceRoot string) *Registry {
 	registry, err := NewCodingToolRegistry(strings.TrimSpace(workspaceRoot))
 	if err != nil {
+		return nil
+	}
+	if err := registerDefaultHostControlTools(registry, s); err != nil {
 		return nil
 	}
 	if s.extensionSupervisor != nil {

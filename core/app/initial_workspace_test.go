@@ -16,13 +16,15 @@ func TestCompleteInitializationCreatesAndPersistsInitialWorkspace(t *testing.T) 
 	ctx := context.Background()
 	workspace := filepath.Join(t.TempDir(), "nested", "workspace")
 
+	appName := "  小艾  "
 	cfg, err := service.CompleteInitialization(ctx, domain.CompleteInitializationInput{
+		AppName:              &appName,
 		InitialWorkspacePath: workspace,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Initialized || cfg.InitialWorkspacePath != workspace {
+	if !cfg.Initialized || cfg.AppName != "小艾" || cfg.InitialWorkspacePath != workspace {
 		t.Fatalf("config = %#v", cfg)
 	}
 	if info, err := os.Stat(workspace); err != nil || !info.IsDir() {
@@ -33,8 +35,26 @@ func TestCompleteInitializationCreatesAndPersistsInitialWorkspace(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.InitialWorkspacePath != workspace {
-		t.Fatalf("persisted workspace = %q, want %q", loaded.InitialWorkspacePath, workspace)
+	if loaded.AppName != "小艾" || loaded.InitialWorkspacePath != workspace {
+		t.Fatalf("persisted config = %#v", loaded)
+	}
+}
+
+func TestCompleteInitializationRejectsInvalidAppNameBeforeCreatingWorkspace(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	appName := "   "
+
+	_, err := service.CompleteInitialization(context.Background(), domain.CompleteInitializationInput{
+		AppName:              &appName,
+		InitialWorkspacePath: workspace,
+	})
+	if err == nil || !strings.Contains(err.Error(), "app name is required") {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Stat(workspace); !os.IsNotExist(err) {
+		t.Fatalf("workspace was created before name validation: %v", err)
 	}
 }
 
@@ -60,7 +80,7 @@ func TestCompleteInitializationUsesDefaultInitialWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !after.Initialized || after.InitialWorkspacePath != workspace {
+	if !after.Initialized || after.AppName != domain.DefaultAppName || after.InitialWorkspacePath != workspace {
 		t.Fatalf("config after initialization = %#v", after)
 	}
 	if info, err := os.Stat(workspace); err != nil || !info.IsDir() {

@@ -15,6 +15,8 @@ import {
 } from "@/features/projects/project-agent-mode-model";
 import { normalizePermissionMode } from "@/features/projects/project-model-options";
 import { cn } from "@/lib/utils";
+import { appNameFromConfig } from "@/lib/app-identity";
+import { useAppConfig } from "@/lib/app-config";
 import type {
   AgentModeDefinition,
   AgentModeId,
@@ -32,6 +34,7 @@ export function AgentModeMenu({
   modes: AgentModeDefinition[];
   onModeSelect: (mode: AgentModeId) => void;
 }) {
+  const appName = appNameFromConfig(useAppConfig((state) => state.config));
   const options = modes.length > 0 ? modes : fallbackAgentModes;
   const visibleOptions = options.filter((option) => !option.hidden);
   const selectedMode = normalizeAgentMode(mode);
@@ -51,7 +54,7 @@ export function AgentModeMenu({
         >
           <Bot />
           <span className={cn(compact && "hidden")}>
-            {agentModeShortLabel(selectedOption)}
+            {agentModeShortLabel(selectedOption, appName)}
           </span>
           <ChevronDown data-icon="inline-end" />
         </Button>
@@ -75,7 +78,7 @@ export function AgentModeMenu({
               <Bot className="text-foreground" />
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold text-foreground">
-                  {agentModeShortLabel(option)}
+                  {agentModeShortLabel(option, appName)}
                 </span>
                 <span className="block truncate text-muted-foreground">
                   {option.description}
@@ -101,14 +104,9 @@ const permissionModeOptions: Array<{
     description: "编辑外部文件和使用互联网时始终询问",
   },
   {
-    mode: "auto_approve",
-    label: "替我批准",
-    description: "仅对检测到的风险操作请求批准",
-  },
-  {
     mode: "full_access",
     label: "完全访问权限",
-    description: "可不受限制地访问互联网和您电脑上的任何文件",
+    description: "可不受限制地访问互联网和您电脑上的任何文件；新对话将沿用此选择",
   },
 ];
 
@@ -180,8 +178,6 @@ export function PermissionModeMenu({
 
 function permissionModeIcon(mode: PermissionMode, className?: string) {
   switch (normalizePermissionMode(mode)) {
-    case "auto_approve":
-      return <Bot className={className} data-icon="inline-start" />;
     case "full_access":
       return <ShieldAlert className={className} data-icon="inline-start" />;
     default:

@@ -27,11 +27,24 @@ func (s *Service) rememberRefreshedModels(ctx context.Context, provider domain.P
 		AuthMethods:    providerAuthMethods(providerID, provider.APIKeyEnv),
 	}
 	def := s.providerDefinitionForConfig(provider)
+	strategy := def.ModelFetch
+	if catalogContainsCodexDeclarations(copied) {
+		strategy = ModelFetchOpenAICodexAccount
+	}
 	_ = s.store.SaveProviderModelCache(ctx, domain.ProviderModelCache{
-		ProviderID: providerID, Models: copied, DefaultModel: defaultModel, Strategy: string(def.ModelFetch),
-		ParserType: parserTypeForModelFetch(def.ModelFetch), Endpoint: modelEndpointForDefinition(def), CacheSource: "remote",
+		ProviderID: providerID, Models: copied, DefaultModel: defaultModel, Strategy: string(strategy),
+		ParserType: parserTypeForModelFetch(strategy), Endpoint: modelEndpointForFetchStrategy(def, strategy), CacheSource: "remote",
 		Status: "ready", RefreshedAt: domain.NowString(s.now()), UpdatedAt: domain.NowString(s.now()),
 	})
+}
+
+func catalogContainsCodexDeclarations(models []domain.ModelInfo) bool {
+	for _, model := range models {
+		if containsString(model.DeclaredCapabilities, codexRuntimeCapability) || containsString(model.DeclaredCapabilities, codexShellCapability) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) applyRefreshedProviderModels(providers []domain.ProviderInfo) []domain.ProviderInfo {

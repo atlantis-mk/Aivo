@@ -108,7 +108,7 @@ func builtInProviderDefinitions() []ProviderDefinition {
 			ID: "openrouter", DisplayName: "OpenRouter", Description: "OpenAI-compatible routing provider.",
 			Transport: TransportOpenAICompatible, AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
 			DefaultBaseURL: "https://openrouter.ai/api/v1", BaseURLEnvVar: "OPENROUTER_BASE_URL", APIKeyEnvVars: []string{"OPENROUTER_API_KEY"},
-			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "openai/gpt-5-codex", BuiltIn: true,
+			ModelFetch: ModelFetchOpenRouter, DefaultModelID: "openai/gpt-5-codex", BuiltIn: true,
 			RequestProfile: domain.ProviderRequestProfile{
 				Headers: map[string]string{"HTTP-Referer": "https://aivo.local", "X-Title": "Aivo"},
 				Params:  map[string]any{"stream": true},
@@ -138,7 +138,7 @@ func builtInProviderDefinitions() []ProviderDefinition {
 			Aliases: []string{"mistral-ai", "la-plateforme"}, Transport: TransportOpenAICompatible,
 			AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
 			DefaultBaseURL: "https://api.mistral.ai/v1", BaseURLEnvVar: "MISTRAL_BASE_URL", APIKeyEnvVars: []string{"MISTRAL_API_KEY"},
-			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "mistral-medium-latest", BuiltIn: true,
+			ModelFetch: ModelFetchMistral, DefaultModelID: "mistral-medium-latest", BuiltIn: true,
 			RequestProfile: domain.ProviderRequestProfile{Params: map[string]any{"stream": true}},
 			Models: []domain.ModelInfo{
 				modelWithOutput("mistral", "mistral-medium-latest", "Mistral Medium", true, 256000, 0, []string{"tools", "vision", "streaming"}),
@@ -178,7 +178,7 @@ func builtInProviderDefinitions() []ProviderDefinition {
 			Aliases: []string{"cerebras-ai"}, Transport: TransportOpenAICompatible,
 			AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
 			DefaultBaseURL: "https://api.cerebras.ai/v1", BaseURLEnvVar: "CEREBRAS_BASE_URL", APIKeyEnvVars: []string{"CEREBRAS_API_KEY"},
-			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "zai-glm-4.7", BuiltIn: true,
+			ModelFetch: ModelFetchCerebras, DefaultModelID: "zai-glm-4.7", BuiltIn: true,
 			RequestProfile: domain.ProviderRequestProfile{Params: map[string]any{"stream": true}},
 			Models: []domain.ModelInfo{
 				modelWithOutput("cerebras", "zai-glm-4.7", "Z.ai GLM 4.7", true, 128000, 8192, []string{"tools", "reasoning", "streaming"}),

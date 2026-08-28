@@ -138,6 +138,12 @@ func parserTypeForModelFetch(strategy ModelFetchStrategy) string {
 	switch strategy {
 	case ModelFetchAnthropic:
 		return "anthropic"
+	case ModelFetchMistral:
+		return "mistral"
+	case ModelFetchOpenRouter:
+		return "openrouter"
+	case ModelFetchCerebras:
+		return "cerebras"
 	case ModelFetchGoogle:
 		return "google"
 	case ModelFetchOpenAICodexAccount:
@@ -150,8 +156,18 @@ func parserTypeForModelFetch(strategy ModelFetchStrategy) string {
 }
 
 func modelEndpointForDefinition(def ProviderDefinition) string {
-	if def.DefaultBaseURL == "" || def.ModelFetch == ModelFetchDisabled || def.ModelFetch == ModelFetchStatic {
+	return modelEndpointForFetchStrategy(def, def.ModelFetch)
+}
+
+func modelEndpointForFetchStrategy(def ProviderDefinition, strategy ModelFetchStrategy) string {
+	if strategy == ModelFetchOpenAICodexAccount && def.BuiltIn && def.ID == "openai" {
+		return chatGPTCodexModelsURL
+	}
+	if def.DefaultBaseURL == "" || strategy == ModelFetchDisabled || strategy == ModelFetchStatic {
 		return ""
+	}
+	if def.ModelFetch == ModelFetchCerebras && def.BuiltIn && def.ID == "cerebras" {
+		return cerebrasPublicModelsURL
 	}
 	return strings.TrimRight(def.DefaultBaseURL, "/") + "/models"
 }

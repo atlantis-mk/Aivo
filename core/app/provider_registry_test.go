@@ -36,6 +36,27 @@ func TestProviderDefinitionExposesProductionMetadata(t *testing.T) {
 	}
 }
 
+func TestDeclaredCapabilityProvidersUseDedicatedCatalogParsers(t *testing.T) {
+	want := map[string]ModelFetchStrategy{
+		"anthropic":  ModelFetchAnthropic,
+		"mistral":    ModelFetchMistral,
+		"openrouter": ModelFetchOpenRouter,
+		"cerebras":   ModelFetchCerebras,
+	}
+	for providerID, strategy := range want {
+		definition, ok := providerDefinition(providerID)
+		if !ok {
+			t.Fatalf("provider definition %q missing", providerID)
+		}
+		if definition.ModelFetch != strategy || !modelFetchDeclaresCapabilities(definition.ModelFetch) {
+			t.Fatalf("%s model fetch = %q, want declared-capability strategy %q", providerID, definition.ModelFetch, strategy)
+		}
+		if parserTypeForModelFetch(strategy) == "openai-compatible" {
+			t.Fatalf("%s still uses lossy generic parser", providerID)
+		}
+	}
+}
+
 func TestProviderRegistryIncludesOpenAICompatibleProviderCoverage(t *testing.T) {
 	tests := []struct {
 		id           string

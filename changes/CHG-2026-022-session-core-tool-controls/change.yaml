@@ -25,6 +25,7 @@ context_refs:
 related_changes:
   - "CHG-2026-007-minimal-agent-tool-primitives"
   - "CHG-2026-011-session-scoped-tool-activation"
+  - "CHG-2026-056-always-on-hidden-core-tools"
 affected_surfaces:
   - "Desktop tool activation dialog"
   - "session active-tool state"

@@ -1,0 +1,46 @@
+schema: "2"
+id: "CHG-2026-055-codex-declared-runtime-capabilities"
+title: "Bridge Codex-declared runtime capabilities"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Complete the authenticated Codex model-catalog bridge so current model metadata drives compatible request parameters and search without static model inference or manual tool activation"
+requirements:
+  - "REQ-PROVIDER-001"
+  - "REQ-TOOL-001"
+  - "REQ-SESSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "AT-TOOL-001"
+  - "AT-SESSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0027"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001 Provider configuration and health"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Trust boundaries"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/provider-backend.md#Core Responsibilities"
+related_changes:
+  - "CHG-2026-052-provider-declared-capabilities"
+  - "CHG-2026-053-codex-native-tool-bridge"
+boundaries:
+  - "authenticated ChatGPT Codex model metadata controls only code-owned request compatibility and allowlisted tool exposure"
+  - "Responses hosted search and Responses Lite standalone search use distinct code-owned adapters"
+  - "remote prompts, experimental tool names, Agent modes, and collaboration declarations cannot override Aivo Host policy"
+risks:
+  - "new Codex catalog fields or enum values could accidentally acquire authority"
+  - "Responses Lite models can reject ordinary Responses tool placement"
+  - "search results and citation annotations can be lost or duplicated across streaming events"
+next:
+  - "parse and persist allowlisted Codex runtime metadata with known-versus-unknown semantics"
+  - "bridge hosted and Responses Lite search from the authenticated route without user activation"
+  - "apply declared reasoning, context, modality, service-tier, verbosity, and parallel-call constraints"
+  - "preserve bounded search sources and cover malformed, disabled, stale, and route-isolation paths"

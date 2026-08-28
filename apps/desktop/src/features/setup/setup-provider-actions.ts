@@ -15,6 +15,7 @@ import {
   catalogDefaultModelForProvider,
   type AppConfigWithAuxiliary,
 } from "@/features/setup/setup-provider-models";
+import { modelSelectionAfterCatalogRefresh } from "@/features/setup/setup-model-refresh-selection";
 import {
   auxiliaryModelPreference,
   modelRefForProvider,
@@ -81,9 +82,10 @@ export function useSetupProviderActions({
           );
           setCatalog(refreshedCatalog);
           if (!isCustomProvider) {
-            input.modelId =
-              catalogDefaultModelForProvider(refreshedCatalog, input.providerId) ||
-              input.modelId;
+            input.modelId = modelSelectionAfterCatalogRefresh(
+              input.modelId,
+              catalogDefaultModelForProvider(refreshedCatalog, input.providerId) ?? "",
+            );
           }
         } catch {
           // Refresh is opportunistic; connecting with the configured/default model remains valid.

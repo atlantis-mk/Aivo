@@ -155,11 +155,6 @@ func replayToolCallArguments(call domain.ToolCall) (json.RawMessage, error) {
 	if call.Arguments == nil {
 		return json.RawMessage(`{}`), nil
 	}
-	if freeform, _ := call.Arguments["freeform"].(bool); freeform {
-		if patchText, _ := call.Arguments["patchText"].(string); patchText != "" {
-			return json.RawMessage(patchText), nil
-		}
-	}
 	raw, err := json.Marshal(call.Arguments)
 	if err != nil {
 		return nil, err

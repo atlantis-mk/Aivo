@@ -1,16 +1,19 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
-import net from 'node:net'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = process.cwd()
+const require = createRequire(import.meta.url)
+const { parseCoreReadyLine } = require('../apps/desktop/electron/core-endpoint.cjs')
 const coreExecutable = process.platform === 'win32' ? 'aivo-core.exe' : 'aivo-core'
 const corePath = path.join(rootDir, 'build', 'aivo-core', coreExecutable)
 const desktopOutputDir = path.join(rootDir, 'build', 'desktop')
 const expectInstallers = process.env.AIVO_EXPECT_INSTALLERS === '1'
 let healthUrl = ''
+let readinessError = null
 
 export function macAppCandidates(outputDirectory) {
   return ['mac', 'mac-arm64', 'mac-x64'].map((directory) =>
@@ -54,27 +57,10 @@ async function healthy(timeoutMs = 500) {
   }
 }
 
-async function freeLoopbackPort() {
-  return await new Promise((resolve, reject) => {
-    const server = net.createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      server.close((error) => {
-        if (error) {
-          reject(error)
-          return
-        }
-        resolve(port)
-      })
-    })
-  })
-}
-
 async function waitForCore(child) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (await healthy()) {
+    if (readinessError) throw readinessError
+    if (healthUrl && await healthy()) {
       return
     }
     if (child.exitCode !== null || child.signalCode !== null) {
@@ -113,18 +99,35 @@ async function main() {
     assertAnyFile([...macResourceCores, linuxResourceCore, winResourceCore], 'packaged app core binary')
   }
 
-  const port = await freeLoopbackPort()
-  const coreAddr = `127.0.0.1:${port}`
-  healthUrl = `http://${coreAddr}/health`
-
   const child = spawn(corePath, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      AIVO_CORE_ADDR: coreAddr,
+      AIVO_CORE_ADDR: '127.0.0.1:0',
+      AIVO_CORE_READY_STDOUT: '1',
     },
   })
-  child.stdout.on('data', (chunk) => process.stdout.write(chunk))
+  let stdoutBuffer = ''
+  child.stdout.on('data', (chunk) => {
+    const output = chunk.toString()
+    process.stdout.write(output)
+    stdoutBuffer += output
+    let newline = stdoutBuffer.indexOf('\n')
+    while (newline >= 0) {
+      const line = stdoutBuffer.slice(0, newline).trimEnd()
+      stdoutBuffer = stdoutBuffer.slice(newline + 1)
+      try {
+        const readyUrl = parseCoreReadyLine(line)
+        if (readyUrl) {
+          if (healthUrl) throw new Error('aivo-core emitted more than one readiness record')
+          healthUrl = `${readyUrl}/health`
+        }
+      } catch (error) {
+        readinessError = error instanceof Error ? error : new Error(String(error))
+      }
+      newline = stdoutBuffer.indexOf('\n')
+    }
+  })
   child.stderr.on('data', (chunk) => process.stderr.write(chunk))
 
   try {

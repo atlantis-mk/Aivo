@@ -46,6 +46,20 @@ func (api *API) callSkillRPC(ctx context.Context, method string, args []json.Raw
 		}
 		result, err := api.service.SetSkillEnabled(ctx, input)
 		return result, true, err
+	case "GetManagedSkillForEdit":
+		id, err := arg[string](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.GetManagedSkillForEdit(ctx, id)
+		return result, true, err
+	case "UpdateManagedSkill":
+		input, err := arg[domain.SkillUpdateInput](args, 0)
+		if err != nil {
+			return nil, true, err
+		}
+		result, err := api.service.UpdateManagedSkill(ctx, input)
+		return result, true, err
 	case "DeleteManagedSkill":
 		id, err := arg[string](args, 0)
 		if err != nil {

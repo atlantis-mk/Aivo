@@ -11,6 +11,8 @@ import { ArrowDown, File, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TodoFloatingStatus } from "@/features/projects/project-todo-floating-status";
 import { cn } from "@/lib/utils";
+import { appNameFromConfig } from "@/lib/app-identity";
+import { useAppConfig } from "@/lib/app-config";
 import { listPromptDocuments, type TodoItem } from "@/services/aivo";
 
 export function ProjectWorkspaceEmptyPrompt({
@@ -20,6 +22,7 @@ export function ProjectWorkspaceEmptyPrompt({
   onPromptChange: (prompt: string) => void;
   showConversationLayout: boolean;
 }) {
+  const appName = appNameFromConfig(useAppConfig((state) => state.config));
   const [quickPrompts, setQuickPrompts] = useState<
     Array<{ id: string; label: string; prompt: string }>
   >([]);
@@ -59,9 +62,9 @@ export function ProjectWorkspaceEmptyPrompt({
           : "translate-y-0 opacity-100",
       )}
     >
-      <h1 className="aivo-type-large-title text-foreground">我们该做什么？</h1>
+      <h1 className="aivo-type-large-title text-foreground">{appName}</h1>
       <p className="aivo-type-title-3 mt-3 text-muted-foreground">
-        描述目标，Aivo 会帮你推进
+        描述目标，{appName} 会帮你推进
       </p>
       {quickPrompts.length > 0 ? (
         <div className="mt-8 flex flex-wrap justify-center gap-3">

@@ -9,6 +9,18 @@
     "type": "builtin"
   },
   "contributes": {
+    "toolGroups": [
+      {
+        "id": "projects",
+        "name": "Aivo Projects",
+        "description": "Query registered projects, add an existing directory, and bind the current conversation to one project.",
+        "tools": [
+          "aivo_projects_query",
+          "aivo_projects_add",
+          "aivo_projects_associate"
+        ]
+      }
+    ],
     "tools": [
       {
         "name": "aivo_projects_query",

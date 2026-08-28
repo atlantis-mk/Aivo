@@ -1,0 +1,40 @@
+schema: "2"
+id: "CHG-2026-062-default-plan-question-tools"
+title: "Make plan and question tools default"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Register update_plan and ask_user as always-on Host core tools alongside the default coding primitives"
+requirements:
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0033"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-SESSION-001 Conversation and task execution"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001 Controlled local tool execution"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/07-test-release-plan.md#Test layers"
+related_changes:
+  - "CHG-2026-061-restore-dynamic-host-tools"
+boundaries:
+  - "Only update_plan and ask_user join the always-on Host core set; other Agent and automation tools remain dynamically contributed."
+  - "Both controls are invoked only through structured tool calls; prompt text and keywords never trigger Host state changes."
+  - "The two controls are reserved, non-toggleable, snapshot-bound Host identities and cannot be replaced by extensions or Providers."
+risks:
+  - "Making ask_user universally visible could stall unattended runs unless cancellation and interaction ownership remain deterministic."
+  - "Making update_plan universally visible could encourage unnecessary calls unless its description remains explicit about use thresholds."
+next:
+  - "Register update_plan and ask_user directly after the default execution primitives."
+  - "Extend reserved/core visibility, ordering, session activation, and global eligibility rules to both controls."
+  - "Update prompts, specifications, and tests for the six-tool default contract."

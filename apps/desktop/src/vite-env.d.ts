@@ -37,6 +37,7 @@ interface Window {
     >;
     openExternal(target: string): Promise<void>;
     openPath(target: string): Promise<void>;
+    openNewConversationWindow(): Promise<void>;
     focusWindow(): Promise<void>;
     toggleMaximize(): Promise<void>;
     exportDiagnostics(): Promise<string>;

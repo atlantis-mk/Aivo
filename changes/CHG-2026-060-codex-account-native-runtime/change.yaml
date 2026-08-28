@@ -1,0 +1,53 @@
+schema: "2"
+id: "CHG-2026-060-codex-account-native-runtime"
+title: "Replicate Codex account-native runtime capabilities"
+type: "feature"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Make authenticated ChatGPT Codex accounts expose the supported Codex hosted tools and bundled system skills through Aivo with account-scoped availability, usage routing, and existing Host trust boundaries"
+requirements:
+  - "REQ-PROVIDER-001"
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "REQ-EXTENSION-001"
+  - "NFR-SECURITY-001"
+  - "NFR-RELIABILITY-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "AT-EXTENSION-001"
+  - "CT-SECURITY-001"
+  - "CT-RELIABILITY-001"
+adrs:
+  - "ADR-0032"
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001"
+  - "docs/03-functional-requirements.md#NFR-RELIABILITY-001"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md"
+  - "docs/07-test-release-plan.md"
+  - "docs/provider-backend.md"
+related_changes:
+  - "CHG-2026-055-codex-declared-runtime-capabilities"
+boundaries:
+  - "Codex account-native capabilities are owned separately from model-catalog declarations and are recomputed for every selected provider route."
+  - "Only the built-in OpenAI Responses route authenticated through ChatGPT Codex OAuth may consume Codex-hosted image generation and Codex-account usage."
+  - "OpenAI API-key image generation remains a distinct provider integration and is not inferred from Codex account authentication."
+  - "Bundled system skills are versioned, read-only Host assets; their instructions never expand tool authority and tool-dependent skills are hidden outside eligible routes."
+  - "Generated image responses are bounded, decoded into local artifacts, and never logged or persisted as raw base64 provider payloads."
+risks:
+  - "ChatGPT Codex hosted image endpoints and account capability contracts can change independently of the public model catalog."
+  - "Large or malformed image payloads can exhaust memory or leak sensitive prompt and image contents if logging and retention are not bounded."
+  - "Bundled upstream skill content can drift or introduce licensing and dependency changes that require review before updating."
+  - "Provider fallback can leak account-only capabilities unless the effective tool and skill set is rebuilt for every route attempt."
+next:
+  - "Add an explicit Codex account capability manifest and route-scoped activation policy."
+  - "Implement bounded Codex image generation and edit execution with OAuth account headers."
+  - "Bundle and automatically synchronize supported Codex system skills without user import steps."
+  - "Preserve namespace identities in model tool calls and add route-isolation, payload-limit, and skill-availability tests."

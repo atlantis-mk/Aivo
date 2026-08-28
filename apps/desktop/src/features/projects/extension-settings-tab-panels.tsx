@@ -20,6 +20,7 @@ export function ExtensionSettingsTabPanels({
   activeToolSet,
   loading,
   onDeleteSkill,
+  onEditSkill,
   onIgnoreSkillCandidate,
   onImportSkillCandidate,
   onReload,
@@ -36,11 +37,12 @@ export function ExtensionSettingsTabPanels({
   activeToolSet: Set<string>;
   loading: boolean;
   onDeleteSkill: (skill: SkillEntry) => void;
+  onEditSkill: (skill: SkillEntry) => void;
   onIgnoreSkillCandidate: (candidate: SkillImportCandidate) => void;
   onImportSkillCandidate: (candidate: SkillImportCandidate) => void;
   onReload: () => Promise<void>;
   onToggleSkillEnabled: (skill: SkillEntry, enabled: boolean) => void;
-  onToggleTool: (toolName: string, enabled: boolean) => void;
+  onToggleTool: (toolNames: string[], enabled: boolean) => void;
   query: string;
   sessionId?: string;
   visibleAllTools: ToolCatalogEntry[];
@@ -94,6 +96,7 @@ export function ExtensionSettingsTabPanels({
               candidates={visibleSkillCandidates}
               loading={loading}
               onDelete={onDeleteSkill}
+              onEdit={onEditSkill}
               onIgnore={onIgnoreSkillCandidate}
               onImport={onImportSkillCandidate}
               onToggleEnabled={onToggleSkillEnabled}

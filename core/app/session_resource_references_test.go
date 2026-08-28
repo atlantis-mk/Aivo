@@ -138,7 +138,7 @@ func TestSubmitSessionMessageRejectsGloballyDisabledAndQueuedReferences(t *testi
 	defer cleanup()
 	ctx := context.Background()
 	workspace := t.TempDir()
-	if _, err := service.SetGlobalToolEnabled(ctx, domain.GlobalToolEnabledInput{Name: "bash", Enabled: false, WorkspaceRoot: workspace}); err != nil {
+	if _, err := service.SetGlobalToolEnabled(ctx, domain.GlobalToolEnabledInput{Name: "grep", Enabled: false, WorkspaceRoot: workspace}); err != nil {
 		t.Fatal(err)
 	}
 	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: workspace})
@@ -147,9 +147,9 @@ func TestSubmitSessionMessageRejectsGloballyDisabledAndQueuedReferences(t *testi
 	}
 	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{
 		SessionID: session.ID,
-		Text:      "Use bash",
+		Text:      "Use grep",
 		ResourceReferences: []domain.SessionResourceReference{{
-			Kind: domain.SessionResourceTool, ID: "bash",
+			Kind: domain.SessionResourceTool, ID: "grep",
 		}},
 	}); err == nil {
 		t.Fatal("globally disabled tool reference was accepted")

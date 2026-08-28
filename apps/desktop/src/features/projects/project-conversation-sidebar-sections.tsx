@@ -54,7 +54,7 @@ export function ConversationSidebarPrimaryNav({
             isActive={activeProjectPage === "extensions"}
             tooltip="扩展"
           >
-            <Link to="/projects/extensions">
+            <Link to="/extensions">
               <Plug />
               <span>扩展</span>
             </Link>

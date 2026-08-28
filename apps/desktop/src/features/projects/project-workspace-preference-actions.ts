@@ -20,6 +20,10 @@ import {
 } from "@/services/aivo";
 import type { domain } from "../../../bridge/go/models";
 
+type PermissionModePreferenceInput = domain.ModelPreferencesInput & {
+  defaultPermissionMode: PermissionMode;
+};
+
 export function useProjectWorkspacePreferenceActions({
   activeModelRef,
   activeRunningSubagentRun,
@@ -102,10 +106,17 @@ export function useProjectWorkspacePreferenceActions({
     permissionModeRef.current = normalized;
     setLocalPermissionMode(normalized);
     const sessionId = activeSessionIdRef.current;
-    if (!sessionId || !hasAppBridge()) return;
-    void setPermissionMode(sessionId, normalized).catch(() => {
-      toast.error("权限模式保存失败");
+    if (!hasAppBridge()) return;
+    void updateModelPreferences({
+      defaultPermissionMode: normalized,
+    } as PermissionModePreferenceInput).catch(() => {
+      toast.error("默认权限模式保存失败");
     });
+    if (sessionId) {
+      void setPermissionMode(sessionId, normalized).catch(() => {
+        toast.error("当前对话权限模式保存失败");
+      });
+    }
   }
 
   function selectAgentMode(nextMode: AgentModeId) {

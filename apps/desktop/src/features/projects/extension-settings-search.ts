@@ -7,7 +7,10 @@ import type {
   ToolCatalogEntry,
 } from "@/services/aivo";
 import type { ExtensionSettingsSection } from "@/features/projects/extension-settings-types";
-import { isStandaloneToolResource } from "./tool-injection-resource-model.ts";
+import {
+  isRequiredCoreToolName,
+  isStandaloneToolResource,
+} from "./tool-injection-resource-model.ts";
 
 export function filterExtensions(items: ExtensionInstall[], query: string) {
   const normalized = normalizeSearch(query);
@@ -93,6 +96,7 @@ export function filterTools(items: ToolCatalogEntry[], query: string) {
   return items.filter(
     (tool) =>
       isAivoBuiltinTool(tool) &&
+      !isRequiredCoreToolName(tool.name) &&
       (!normalized ||
         matchesSearch(
           [
@@ -155,6 +159,25 @@ export function filterSkillCandidates(
       normalized,
     ),
   );
+}
+
+export function selectVisibleSkillCandidates(
+  candidates: SkillImportCandidate[],
+  skills: SkillEntry[],
+) {
+  const installedNames = new Set(
+    skills.map((skill) => normalizeSearch(skill.name)).filter(Boolean),
+  );
+  const selectedNames = new Set<string>();
+
+  return candidates.filter((candidate) => {
+    const name = normalizeSearch(candidate.name);
+    if (!name || installedNames.has(name) || selectedNames.has(name)) {
+      return false;
+    }
+    selectedNames.add(name);
+    return true;
+  });
 }
 
 export function normalizeSearch(value?: string) {

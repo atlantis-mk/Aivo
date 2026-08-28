@@ -40,6 +40,7 @@ type PreviewPendingAuth = BrowserAuthSessionInfo & {
 };
 
 type PreviewAppConfig = domain.AppConfig & {
+  appName?: string;
   initialWorkspacePath?: string;
   defaultInitialWorkspacePath?: string;
   auxiliaryModel?: domain.ModelRef;
@@ -100,6 +101,7 @@ function currentTimestamp() {
 
 function normalizePreviewConfig(config?: domain.AppConfig | null): PreviewAppConfig {
   return {
+    appName: "Aivo",
     initialized: false,
     defaultInitialWorkspacePath: "~/Documents/Aivo-Workspaces",
     providers: { custom: {}, disabled: [] },
@@ -265,10 +267,11 @@ export function setPreviewInitialized(config: domain.AppConfig) {
   writePreviewState(state);
 }
 
-export function completePreviewInitialization(initialWorkspacePath: string) {
+export function completePreviewInitialization(initialWorkspacePath: string, appName: string) {
   const state = readPreviewState();
   const config = normalizePreviewConfig(state.config) as PreviewAppConfig;
   config.initialized = true;
+  config.appName = appName.trim() || "Aivo";
   config.initialWorkspacePath = initialWorkspacePath;
   state.config = config;
   writePreviewState(state);
