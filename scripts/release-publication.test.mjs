@@ -198,7 +198,7 @@ test('CT-RELEASE-002 keeps stable publication operator-managed and mechanically 
   assert.match(workflow, /Refusing to overwrite an immutable object with different content/)
   assert.match(workflow, /Refusing to replace GitHub asset with different content/)
   assert.match(workflow, /- "!v\*-\*"/)
-  assert.match(workflow, /- "!v\*\+\*"/)
+  assert.match(workflow, /- "!v\*\\\\\+\*"/)
 })
 
 test('CT-RELEASE-001 presents v0.1.0 as a user-facing bilingual release', async () => {

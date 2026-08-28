@@ -1,7 +1,7 @@
 {
   "name": "@aivo/desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AI agent desktop application with an Electron shell and local Go runtime.",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
