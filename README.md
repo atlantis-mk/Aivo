@@ -2,6 +2,12 @@
 
 本地优先的 AI Agent 桌面工作台
 
+[![Release](https://img.shields.io/github/v/release/atlantis-mk/Aivo?display_name=release&style=flat-square)](https://github.com/atlantis-mk/Aivo/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/atlantis-mk/Aivo/total?style=flat-square&label=downloads)](https://github.com/atlantis-mk/Aivo/releases)
+[![Publish tagged release](https://img.shields.io/github/actions/workflow/status/atlantis-mk/Aivo/publish-release.yml?branch=main&style=flat-square&label=Package%20and%20publish%20release)](https://github.com/atlantis-mk/Aivo/actions/workflows/publish-release.yml)
+[![License](https://img.shields.io/badge/license-PolyForm--Noncommercial--1.0.0-blue?style=flat-square)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-4c8eda?style=flat-square)](https://github.com/atlantis-mk/Aivo/releases)
+
 连接你自己的模型，打开本地项目，让 Agent 帮你理解代码、修改文件、运行工具并验证结果。
 
 _源码可用的非商业项目；当前仍在积极开发。_
@@ -11,6 +17,10 @@ _源码可用的非商业项目；当前仍在积极开发。_
 Aivo 面向 macOS、Windows 和 Linux，由 Electron 桌面端与本地 Go Core 组成。它把模型提供商、项目、对话、工具、权限、终端、Worktree、Skills、Extensions 和 MCP 放在一个桌面工作区中，同时让文件、进程、凭据和持久化等特权能力留在本机受控服务内。
 
 项目强调可见、可控的 Agent 工作流：你可以观察执行过程，在敏感操作前确认权限，随时取消长任务，并在完成后查看结果和运行证据。
+
+## 产品截图
+
+![Aivo 新对话界面](assets/readme/aivo-new-conversation.png)
 
 ## 下载与安装
 
