@@ -2,7 +2,7 @@ schema: "2"
 id: "CHG-2026-063-persist-permission-mode-preference"
 title: "Persist explicit permission-mode preference"
 type: "migration"
-status: "Active"
+status: "Done"
 spec_revision: "0.1.4-active"
 target_release: null
 goal: "Persist an explicit user-selected permission-mode default and initialize only future coding conversations from it."
