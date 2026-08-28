@@ -3,7 +3,7 @@
 ## Current baseline
 
 - Specification revision: `0.1.4-active`
-- Product version: `0.2.1`
+- Product version: `0.2.2`
 - Desktop shell: Electron + Vite/React
 - Local runtime: Go
 - Persistence schema: v1 baseline; explicit v2 transitions are required before schema changes
