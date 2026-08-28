@@ -2,7 +2,7 @@ schema: "2"
 id: "CHG-2026-064-retire-broken-v0-1-2-assets"
 title: "Retire broken v0.1.2 release assets"
 type: "governance"
-status: "Active"
+status: "Done"
 spec_revision: "0.1.4-active"
 target_release: null
 goal: "Coordinate the irreversible deletion of known-broken v0.1.2 binary assets while preserving the verified v0.2.1 release."
