@@ -1,0 +1,26 @@
+schema: "2"
+id: "CHG-2026-064-retire-broken-v0-1-2-assets"
+title: "Retire broken v0.1.2 release assets"
+type: "governance"
+status: "Active"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Coordinate the irreversible deletion of known-broken v0.1.2 binary assets while preserving the verified v0.2.1 release."
+requirements: []
+tests: []
+adrs: []
+context_refs:
+  - "docs/09-document-governance.md#Release minimum"
+  - "docs/07-test-release-plan.md#Release gates"
+  - "docs/release-quality.md#Tagged release publication"
+related_changes: []
+boundaries:
+  - "Delete only GitHub Release v0.1.2 and R2 objects below aivo/releases/v0.1.2/."
+  - "Preserve all Git tags, source commits, release records, aivo/releases/v0.2.1/, and aivo/channels/stable/latest.json."
+risks:
+  - "Deletion of release binaries is irreversible and removes historic downloads."
+  - "A malformed deletion prefix could remove the current release or stable update manifest."
+next:
+  - "Verify v0.2.1 is the stable manifest before R2 mutation."
+  - "Delete the fixed v0.1.2 R2 prefix and verify v0.2.1 remains unchanged."
+  - "Delete the v0.1.2 GitHub Release after R2 deletion succeeds."

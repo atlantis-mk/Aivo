@@ -1,0 +1,81 @@
+name: Purge broken v0.1.2 R2 release
+
+on:
+  push:
+    branches:
+      - "codex/purge-r2-v0.1.2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: purge-broken-v0-1-2-release
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    name: Delete only v0.1.2 R2 objects
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+      R2_PREFIX: ${{ vars.R2_PREFIX }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Verify the fixed deletion boundary
+        run: |
+          set -euo pipefail
+          : "${AWS_ACCESS_KEY_ID:?Missing R2_ACCESS_KEY_ID secret}"
+          : "${AWS_SECRET_ACCESS_KEY:?Missing R2_SECRET_ACCESS_KEY secret}"
+          : "${R2_ACCOUNT_ID:?Missing R2_ACCOUNT_ID variable}"
+          : "${R2_BUCKET:?Missing R2_BUCKET variable}"
+          : "${R2_PUBLIC_BASE_URL:?Missing R2_PUBLIC_BASE_URL variable}"
+          prefix="${R2_PREFIX:-aivo}"
+          [[ "$prefix" == "aivo" ]]
+          curl --fail --silent --show-error \
+            "$R2_PUBLIC_BASE_URL/$prefix/channels/stable/latest.json" \
+            --output "$RUNNER_TEMP/latest-before.json"
+          jq -e \
+            '.version == "0.2.1" and .tag == "v0.2.1" and (.releaseBaseUrl | endswith("/aivo/releases/v0.2.1"))' \
+            "$RUNNER_TEMP/latest-before.json" >/dev/null
+      - name: Install isolated R2 client
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/aivo-awscli"
+          "$RUNNER_TEMP/aivo-awscli/bin/pip" install --disable-pip-version-check --quiet awscli==1.44.87
+          echo "$RUNNER_TEMP/aivo-awscli/bin" >> "$GITHUB_PATH"
+      - name: Delete only the broken v0.1.2 prefix
+        run: |
+          set -euo pipefail
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          prefix="${R2_PREFIX:-aivo}"
+          count_objects() {
+            aws s3api list-objects-v2 --endpoint-url "$endpoint" --bucket "$R2_BUCKET" --prefix "$1" --output json | jq '(.Contents // []) | length'
+          }
+          current_prefix="$prefix/releases/v0.2.1/"
+          retired_prefix="$prefix/releases/v0.1.2/"
+          current_before="$(count_objects "$current_prefix")"
+          retired_before="$(count_objects "$retired_prefix")"
+          [[ "$current_before" -gt 0 && "$retired_before" -gt 0 ]]
+          aws s3 rm "s3://${R2_BUCKET}/${retired_prefix}" --endpoint-url "$endpoint" --recursive --only-show-errors
+          [[ "$(count_objects "$retired_prefix")" == "0" ]]
+          [[ "$(count_objects "$current_prefix")" == "$current_before" ]]
+          echo "Deleted $retired_before objects from $retired_prefix"
+      - name: Verify stable channel and current release remain unchanged
+        run: |
+          set -euo pipefail
+          prefix="${R2_PREFIX:-aivo}"
+          curl --fail --silent --show-error \
+            "$R2_PUBLIC_BASE_URL/$prefix/channels/stable/latest.json" \
+            --output "$RUNNER_TEMP/latest-after.json"
+          cmp "$RUNNER_TEMP/latest-before.json" "$RUNNER_TEMP/latest-after.json"
+          curl --fail --silent --show-error \
+            "$R2_PUBLIC_BASE_URL/$prefix/releases/v0.2.1/SHA256SUMS" \
+            --output /dev/null
