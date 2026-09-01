@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,13 +15,35 @@ import (
 	"aivo/core/domain"
 )
 
-const codexSystemSkillVersion = "codex-main-2026-08-28"
+const (
+	aivoSystemSkillVersion  = "aivo-base-2026-08-29"
+	codexSystemSkillVersion = "codex-main-2026-08-29"
+)
 
 type builtinCodexSkill struct {
 	Name        string
 	Description string
 	Content     string
 	Tool        string
+}
+
+//go:embed system_skills/codex/skill-creator/SKILL.md
+var builtinSkillCreatorMarkdown string
+
+//go:embed system_skills/codex/skill-installer/SKILL.md
+var builtinSkillInstallerMarkdown string
+
+func mustBuiltinCodexSkill(markdown string, tool string) builtinCodexSkill {
+	name, description, _, content, err := parseSkillMarkdown(markdown)
+	if err != nil {
+		panic("invalid embedded Codex system skill: " + err.Error())
+	}
+	return builtinCodexSkill{Name: name, Description: description, Content: content, Tool: tool}
+}
+
+var builtinAivoSystemSkills = []builtinCodexSkill{
+	mustBuiltinCodexSkill(builtinSkillCreatorMarkdown, ""),
+	mustBuiltinCodexSkill(builtinSkillInstallerMarkdown, ""),
 }
 
 var fallbackCodexSystemSkills = []builtinCodexSkill{
@@ -62,24 +85,10 @@ Review the requested diff or code scope without mutating it unless the user sepa
 - Avoid style-only findings unless they hide a defect.
 - State clearly when no actionable findings remain and identify residual test gaps.
 `},
-	{Name: "skill-creator", Description: "Create or update Codex Agent Skills with scoped instructions and supporting resources.", Content: `# Codex skill creator
+}
 
-Create a focused Agent Skill with a valid SKILL.md frontmatter name and a precise trigger-oriented description.
-
-- Keep the main instructions concise and move detailed reusable material into references or scripts.
-- Use lowercase kebab-case names and avoid overlapping unrelated workflows.
-- Treat skill text as instructions, never as new execution authority.
-- Validate the skill directory, referenced resources, and examples before completion.
-`},
-	{Name: "skill-installer", Description: "Discover and install Codex Agent Skills from approved curated or repository sources.", Content: `# Codex skill installer
-
-Install only the skill source explicitly selected by the user.
-
-- Inspect the source, license, target directory, and existing-name conflicts before installation.
-- Never copy credentials, repository secrets, or unrelated files.
-- Preserve supporting references and scripts needed by the skill.
-- Validate the installed SKILL.md and report where it was installed; do not silently replace a user-modified skill.
-`},
+func (s *Service) syncAivoSystemSkills(ctx context.Context) {
+	_ = s.ensureSkillManager().SyncAivoSystemSkills(ctx)
 }
 
 func (s *Service) syncCodexSystemSkillsForAccount(ctx context.Context) {
@@ -143,12 +152,9 @@ func (m *SkillManager) SyncCodexSystemSkills(ctx context.Context) error {
 		}
 		id := existing.ID
 		created := existing.TimeCreated
-		enabled := true
 		if id == "" {
 			id = uuid.NewString()
 			created = now
-		} else {
-			enabled = existing.Enabled
 		}
 		metadata := parsed.Metadata
 		if metadata == nil {
@@ -162,7 +168,7 @@ func (m *SkillManager) SyncCodexSystemSkills(ctx context.Context) error {
 		}
 		_, _ = m.store.SaveSkill(ctx, domain.SkillEntry{
 			ID: id, Name: parsed.Name, Description: parsed.Description, Scope: domain.SkillScopeGlobal, Source: domain.SkillSourceCodexSystem,
-			RootPath: parsed.RootPath, SkillPath: parsed.SkillPath, ContentHash: parsed.ContentHash, Enabled: enabled,
+			RootPath: parsed.RootPath, SkillPath: parsed.SkillPath, ContentHash: parsed.ContentHash, Enabled: true,
 			Metadata: metadata, TimeCreated: created, TimeUpdated: now,
 		})
 	}
@@ -178,22 +184,83 @@ func (m *SkillManager) SyncCodexSystemSkills(ctx context.Context) error {
 	return nil
 }
 
+func (m *SkillManager) SyncAivoSystemSkills(ctx context.Context) error {
+	if m == nil || m.store == nil {
+		return errors.New("skill store is not configured")
+	}
+	m.codexSystemSyncMu.Lock()
+	defer m.codexSystemSyncMu.Unlock()
+
+	dirs, err := m.materializeBuiltinSystemSkills("aivo", aivoSystemSkillVersion, builtinAivoSystemSkills, map[string]string{
+		"aivo.system":  "aivo",
+		"aivo.version": aivoSystemSkillVersion,
+	})
+	if err != nil {
+		return err
+	}
+	now := domain.NowString(time.Now())
+	for _, dir := range dirs {
+		parsed, err := parseSkillDirectory(dir)
+		if err != nil {
+			continue
+		}
+		existing, _ := m.store.GetSkillByName(ctx, parsed.Name, domain.SkillScopeGlobal)
+		if existing.ID != "" && existing.Source != domain.SkillSourceAivoSystem && existing.Source != domain.SkillSourceCodexSystem {
+			continue
+		}
+		if existing.ID != "" && existing.Source == domain.SkillSourceAivoSystem && existing.ContentHash == parsed.ContentHash && existing.Metadata["aivo.version"] == aivoSystemSkillVersion && existing.Enabled {
+			continue
+		}
+		id := existing.ID
+		created := existing.TimeCreated
+		if id == "" {
+			id = uuid.NewString()
+			created = now
+		}
+		metadata := parsed.Metadata
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
+		metadata["aivo.system"] = "aivo"
+		metadata["aivo.version"] = aivoSystemSkillVersion
+		if _, err := m.store.SaveSkill(ctx, domain.SkillEntry{
+			ID: id, Name: parsed.Name, Description: parsed.Description, Scope: domain.SkillScopeGlobal, Source: domain.SkillSourceAivoSystem,
+			RootPath: parsed.RootPath, SkillPath: parsed.SkillPath, ContentHash: parsed.ContentHash, Enabled: true,
+			Metadata: metadata, TimeCreated: created, TimeUpdated: now,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *SkillManager) materializeFallbackCodexSystemSkills() ([]string, error) {
-	root := filepath.Join(m.home, ".aivo", "system-skills", "codex", codexSystemSkillVersion)
+	return m.materializeBuiltinSystemSkills("codex", codexSystemSkillVersion, fallbackCodexSystemSkills, map[string]string{
+		"aivo.system":   "codex",
+		"aivo.provider": "openai-codex-oauth",
+		"aivo.version":  codexSystemSkillVersion,
+	})
+}
+
+func (m *SkillManager) materializeBuiltinSystemSkills(system string, version string, skills []builtinCodexSkill, metadata map[string]string) ([]string, error) {
+	root := filepath.Join(m.home, ".aivo", "system-skills", system, version)
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	dirs := make([]string, 0, len(fallbackCodexSystemSkills))
-	for _, skill := range fallbackCodexSystemSkills {
+	dirs := make([]string, 0, len(skills))
+	for _, skill := range skills {
 		dir := filepath.Join(root, skill.Name)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, err
 		}
-		metadata := map[string]string{"aivo.system": "codex", "aivo.provider": "openai-codex-oauth", "aivo.version": codexSystemSkillVersion}
-		if skill.Tool != "" {
-			metadata["aivo.tool"] = skill.Tool
+		entryMetadata := make(map[string]string, len(metadata)+1)
+		for key, value := range metadata {
+			entryMetadata[key] = value
 		}
-		raw := marshalSkillMarkdown(skill.Name, skill.Description, metadata, strings.TrimSpace(skill.Content)+"\n")
+		if skill.Tool != "" {
+			entryMetadata["aivo.tool"] = skill.Tool
+		}
+		raw := marshalSkillMarkdown(skill.Name, skill.Description, entryMetadata, strings.TrimSpace(skill.Content)+"\n")
 		path := filepath.Join(dir, "SKILL.md")
 		if current, err := os.ReadFile(path); err != nil || string(current) != string(raw) {
 			if err := atomicReplaceFile(path, raw, 0o600); err != nil {

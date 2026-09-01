@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func TestCommandDetectorClassifiesAndBlocksCommands(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			detection := DetectCommand(tt.command, root, root, "bash")
+			detection := DetectCommand(tt.command, root, root, ExecCommandToolName)
 			if detection.Category != tt.category || detection.RiskLevel != tt.risk {
 				t.Fatalf("detection = %#v, want category=%s risk=%s", detection, tt.category, tt.risk)
 			}
@@ -72,36 +73,87 @@ func TestCommandDetectorClassifiesAndBlocksCommands(t *testing.T) {
 
 func TestCommandPolicyStrictestDecisionAndMetacharacters(t *testing.T) {
 	root := t.TempDir()
-	detection := DetectCommand("git status --short | cat", root, root, "bash")
-	policy := EvaluateCommandPolicy(detection, "bash")
+	detection := DetectCommand("git status --short | cat", root, root, ExecCommandToolName)
+	policy := EvaluateCommandPolicy(detection, ExecCommandToolName)
 	if policy.Decision != CommandDecisionAsk || policy.RiskLevel != CommandRiskHigh {
 		t.Fatalf("policy = %#v, want ask/high because pipe raises risk", policy)
 	}
 
-	blocked := DetectCommand("sudo ls", root, root, "bash")
-	policy = EvaluateCommandPolicy(blocked, "bash")
+	blocked := DetectCommand("sudo ls", root, root, ExecCommandToolName)
+	policy = EvaluateCommandPolicy(blocked, ExecCommandToolName)
 	if policy.Decision != CommandDecisionDeny || !policy.Hardline {
 		t.Fatalf("policy = %#v, want hardline deny", policy)
 	}
 }
 
+func TestCommandPolicyAllowsGitExclusionPatterns(t *testing.T) {
+	root := t.TempDir()
+	command := "find . -maxdepth 2 -type f -not -path './.git/*'"
+	detection := DetectCommand(command, root, root, ExecCommandToolName)
+	if detection.DenyReason != "" {
+		t.Fatalf("denyReason = %q, want no hardline denial for read-only .git exclusion", detection.DenyReason)
+	}
+	policy := EvaluateCommandPolicy(detection, ExecCommandToolName)
+	if policy.Decision == CommandDecisionDeny {
+		t.Fatalf("policy = %#v, want allow or ask", policy)
+	}
+}
+
+func TestExecCommandPreservesMultilineCommandForShellExecution(t *testing.T) {
+	root := t.TempDir()
+	command := "set -e\nfor file in index.html style.css script.js; do test -s \"calculator/$file\"; done\nprintf '%s\\n' 'ok'"
+	prepared, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, ExecCommandToolName, command, "", 0, "", "pty", "", "/bin/sh", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prepared.request.Command; got != command {
+		t.Fatalf("executed command = %q, want raw multiline command %q", got, command)
+	}
+	if got := prepared.request.Argv; len(got) == 0 || got[0] != "set" {
+		t.Fatalf("policy argv = %#v, want normalized policy tokens", got)
+	}
+}
+
+func TestCommandPolicyIgnoresHeredocBodyForPathHints(t *testing.T) {
+	root := t.TempDir()
+	command := "python3 - <<'PY'\nfrom pathlib import Path\nroot = Path('calculator')\nassert (root / 'index.html').is_file()\nPY"
+	detection := DetectCommand(command, root, root, ExecCommandToolName)
+	if detection.DenyReason != "" {
+		t.Fatalf("denyReason = %q, want no outside-workspace denial from heredoc body", detection.DenyReason)
+	}
+	if !detection.HasHeredoc {
+		t.Fatalf("detection = %#v, want heredoc marker", detection)
+	}
+
+	detection = DetectCommand("cat /tmp/input <<'EOF'\nignored\nEOF", root, root, ExecCommandToolName)
+	if detection.DenyReason != "command targets a path outside the workspace" {
+		t.Fatalf("denyReason = %q, want external path before heredoc to be denied", detection.DenyReason)
+	}
+}
+
 func TestApprovalKeyChangesWithCommandCWDBackendAndNetwork(t *testing.T) {
 	root := t.TempDir()
-	a := commandApprovalKey(root, root, "pwd", []string{"pwd"}, "bash", "local", "default", "deny", CommandCategoryRead, CommandRiskLow, []string{"shell.exec.foreground"})
-	if a == commandApprovalKey(root, root, "ls", []string{"ls"}, "bash", "local", "default", "deny", CommandCategoryRead, CommandRiskLow, []string{"shell.exec.foreground"}) {
+	a := commandApprovalKey(root, root, "pwd", []string{"pwd"}, ExecCommandToolName, "local", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/zsh", false, []string{"shell.exec.foreground"})
+	if a == commandApprovalKey(root, root, "ls", []string{"ls"}, ExecCommandToolName, "local", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/zsh", false, []string{"shell.exec.foreground"}) {
 		t.Fatal("approval key did not change with command")
 	}
-	if a == commandApprovalKey(root, filepath.Join(root, "sub"), "pwd", []string{"pwd"}, "bash", "local", "default", "deny", CommandCategoryRead, CommandRiskLow, []string{"shell.exec.foreground"}) {
+	if a == commandApprovalKey(root, filepath.Join(root, "sub"), "pwd", []string{"pwd"}, ExecCommandToolName, "local", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/zsh", false, []string{"shell.exec.foreground"}) {
 		t.Fatal("approval key did not change with cwd")
 	}
-	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, "bash", "docker", "default", "deny", CommandCategoryRead, CommandRiskLow, []string{"shell.exec.foreground"}) {
+	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, ExecCommandToolName, "docker", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/zsh", false, []string{"shell.exec.foreground"}) {
 		t.Fatal("approval key did not change with backend")
 	}
-	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, "bash", "local", "default", "inherit", CommandCategoryRead, CommandRiskLow, []string{"shell.exec.foreground"}) {
+	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, ExecCommandToolName, "local", "default", "inherit", CommandCategoryRead, CommandRiskLow, "/bin/zsh", false, []string{"shell.exec.foreground"}) {
 		t.Fatal("approval key did not change with network policy")
 	}
-	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, "bash", "local", "default", "deny", CommandCategoryRead, CommandRiskLow, []string{"shell.exec.background"}) {
+	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, ExecCommandToolName, "local", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/zsh", false, []string{"shell.exec.background"}) {
 		t.Fatal("approval key did not change with capability")
+	}
+	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, ExecCommandToolName, "local", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/bash", false, []string{"shell.exec.foreground"}) {
+		t.Fatal("approval key did not change with shell")
+	}
+	if a == commandApprovalKey(root, root, "pwd", []string{"pwd"}, ExecCommandToolName, "local", "default", "deny", CommandCategoryRead, CommandRiskLow, "/bin/zsh", true, []string{"shell.exec.foreground"}) {
+		t.Fatal("approval key did not change with login shell")
 	}
 }
 
@@ -175,26 +227,26 @@ func TestLocalSandboxRunnerCapturesExitTimeoutAndRetainsOutput(t *testing.T) {
 	}
 }
 
-func TestBashToolUsesIndependentForegroundProcesses(t *testing.T) {
+func TestExecCommandUsesIndependentProcesses(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	tool := NewBashTool(root, nil)
+	tool := NewExecCommandTool(root, nil, nil)
 	sessionID := "independent-shell-session"
 
-	first := tool.Execute(context.Background(), json.RawMessage(`{"command":"export AIVO_PERSISTED_FLAG=kept; cd sub"}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: sessionID, TurnID: "t1", ToolCallID: "c1"})
+	first := tool.Execute(context.Background(), json.RawMessage(`{"cmd":"export AIVO_PERSISTED_FLAG=kept; cd sub"}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: sessionID, TurnID: "t1", ToolCallID: "c1"})
 	if !first.OK {
 		t.Fatalf("first = %#v, want successful command", first)
 	}
-	second := tool.Execute(context.Background(), json.RawMessage(`{"command":"printf '%s:%s' \"$AIVO_PERSISTED_FLAG\" \"$(basename \"$PWD\")\""}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: sessionID, TurnID: "t1", ToolCallID: "c2"})
+	second := tool.Execute(context.Background(), json.RawMessage(`{"cmd":"printf '%s:%s' \"$AIVO_PERSISTED_FLAG\" \"$(basename \"$PWD\")\""}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: sessionID, TurnID: "t1", ToolCallID: "c2"})
 	want := ":" + filepath.Base(root)
-	if !second.OK || strings.TrimSpace(second.Structured["stdout"].(string)) != want {
+	if !second.OK || strings.TrimSpace(fmt.Sprint(second.Structured["output"])) != want {
 		t.Fatalf("second = %#v, want independent env and workspace cwd %q", second, want)
 	}
 }
 
-func TestBashToolDoesNotPersistWorkspaceCWD(t *testing.T) {
+func TestExecCommandDoesNotPersistWorkspaceCWD(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -210,8 +262,8 @@ func TestBashToolDoesNotPersistWorkspaceCWD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := NewBashTool(root, nil)
-	first := tool.Execute(ctx, json.RawMessage(`{"command":"cd sub"}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "c1"})
+	tool := NewExecCommandTool(root, nil, nil)
+	first := tool.Execute(ctx, json.RawMessage(`{"cmd":"cd sub"}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "c1"})
 	if !first.OK {
 		t.Fatalf("first = %#v, want cd command to succeed", first)
 	}
@@ -223,14 +275,14 @@ func TestBashToolDoesNotPersistWorkspaceCWD(t *testing.T) {
 		t.Fatalf("coding cwd = %q, want unchanged workspace root", cc.CWD)
 	}
 
-	restoredTool := NewBashTool(root, nil)
-	second := restoredTool.Execute(ctx, json.RawMessage(`{"command":"printf '%s' \"$(basename \"$PWD\")\""}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t2", ToolCallID: "c2"})
-	if !second.OK || strings.TrimSpace(second.Structured["stdout"].(string)) != filepath.Base(root) {
+	restoredTool := NewExecCommandTool(root, nil, nil)
+	second := restoredTool.Execute(ctx, json.RawMessage(`{"cmd":"printf '%s' \"$(basename \"$PWD\")\""}`), domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t2", ToolCallID: "c2"})
+	if !second.OK || strings.TrimSpace(fmt.Sprint(second.Structured["output"])) != filepath.Base(root) {
 		t.Fatalf("second = %#v, want workspace root cwd", second)
 	}
 }
 
-func TestBashRequiresApprovalThenSavedApprovalIsExact(t *testing.T) {
+func TestExecCommandRequiresApprovalThenSavedApprovalIsExact(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -239,7 +291,7 @@ func TestBashRequiresApprovalThenSavedApprovalIsExact(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, runtime := service.toolsForWorkspace(root)
-	call := domain.ChatToolCall{ID: "call_pwd", Name: "bash", Arguments: json.RawMessage(`{"command":"pwd"}`)}
+	call := domain.ChatToolCall{ID: "call_pwd", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"pwd"}`)}
 	execCtx := domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: call.ID}
 
 	resultCh := make(chan domain.ToolResult, 1)
@@ -255,17 +307,17 @@ func TestBashRequiresApprovalThenSavedApprovalIsExact(t *testing.T) {
 	}
 	result := waitForToolResult(t, resultCh)
 	if !result.OK || !strings.Contains(result.Content, "Exit code: 0") {
-		t.Fatalf("result = %#v, want successful bash", result)
+		t.Fatalf("result = %#v, want successful exec_command", result)
 	}
 
-	second := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_pwd_2", Name: "bash", Arguments: json.RawMessage(`{"command":"pwd"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_pwd_2"})
+	second := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_pwd_2", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"pwd"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_pwd_2"})
 	if !second.OK || second.PermissionRequested {
 		t.Fatalf("second = %#v, want saved exact approval", second)
 	}
 
 	approvalCtx, cancel := context.WithTimeout(ctx, 30*time.Millisecond)
 	defer cancel()
-	third := runtime.ExecuteWithContext(approvalCtx, domain.ChatToolCall{ID: "call_pwd_3", Name: "bash", Arguments: json.RawMessage(`{"command":"printf changed"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_pwd_3"})
+	third := runtime.ExecuteWithContext(approvalCtx, domain.ChatToolCall{ID: "call_pwd_3", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"printf changed"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_pwd_3"})
 	if third.OK || third.PermissionRequested || third.ToolError == nil || third.ToolError.Code != "permission_denied" {
 		t.Fatalf("third = %#v, want cancelled approval wait to deny execution", third)
 	}
@@ -284,7 +336,7 @@ func TestHardlineCommandDeniedBeforeApproval(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	_, runtime := service.toolsForWorkspace(root)
-	result := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_rm", Name: "bash", Arguments: json.RawMessage(`{"command":"rm -rf /"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_rm"})
+	result := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_rm", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"rm -rf /"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s1", TurnID: "t1", ToolCallID: "call_rm"})
 	if result.OK || result.PermissionRequested || result.ToolError == nil || result.ToolError.Code != "permission_denied" {
 		t.Fatalf("result = %#v, want deterministic denial without approval", result)
 	}
@@ -297,7 +349,7 @@ func TestHardlineCommandDeniedBeforeApproval(t *testing.T) {
 	}
 }
 
-func TestFullAccessAllowsArbitrarySafeBash(t *testing.T) {
+func TestFullAccessAllowsArbitrarySafeExecCommand(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -310,13 +362,13 @@ func TestFullAccessAllowsArbitrarySafeBash(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, runtime := service.toolsForWorkspace(root)
-	readResult := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_pwd", Name: "bash", Arguments: json.RawMessage(`{"command":"pwd"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "call_pwd"})
+	readResult := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_pwd", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"pwd"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "call_pwd"})
 	if !readResult.OK || readResult.PermissionRequested {
 		t.Fatalf("readResult = %#v, want full-access known read command allowed", readResult)
 	}
-	unknownResult := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_echo", Name: "bash", Arguments: json.RawMessage(`{"command":"echo hi"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "call_echo"})
+	unknownResult := runtime.ExecuteWithContext(ctx, domain.ChatToolCall{ID: "call_echo", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"echo hi"}`)}, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: session.ID, TurnID: "t1", ToolCallID: "call_echo"})
 	if !unknownResult.OK || unknownResult.PermissionRequested {
-		t.Fatalf("unknownResult = %#v, want full access to allow arbitrary safe bash", unknownResult)
+		t.Fatalf("unknownResult = %#v, want full access to allow arbitrary safe exec_command", unknownResult)
 	}
 }
 
@@ -330,36 +382,25 @@ func TestRunTestsMappingRejectsUnsupportedFilterAndUsesDeclaredCommand(t *testin
 	}
 }
 
-func TestBashRejectsLegacyBackgroundMode(t *testing.T) {
+func TestBashToolIsNotRegistered(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
-	ctx := context.Background()
 	root := t.TempDir()
 	_, runtime := service.toolsForWorkspace(root)
-	registered, _, ok := runtime.Registry.GetRegistered("bash")
-	if !ok {
-		t.Fatal("bash tool was not registered")
-	}
-	if _, ok := registered.(*BashTool); !ok {
-		t.Fatalf("bash tool = %#v", registered)
-	}
-	call := domain.ChatToolCall{ID: "call_bg", Name: "bash", Arguments: json.RawMessage(`{"command":"printf ready","mode":"background"}`)}
-	execCtx := domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "s-bg", TurnID: "t1", ToolCallID: call.ID}
-	result := runtime.ExecuteWithContext(ctx, call, execCtx)
-	if result.OK || result.ToolError == nil || result.ToolError.Code != "invalid_arguments" || result.PermissionRequested {
-		t.Fatalf("result = %#v, want strict-schema rejection before approval", result)
+	if _, _, ok := runtime.Registry.GetRegistered("bash"); ok {
+		t.Fatal("bash tool should not be registered")
 	}
 }
 
-func TestBashCapabilityPoliciesForEnvExternalCWDAndSudo(t *testing.T) {
+func TestExecCommandCapabilityPoliciesForEnvExternalCWDAndSudo(t *testing.T) {
 	root := t.TempDir()
-	if _, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, "bash", "pwd", "", 1, "deny", "foreground", "", map[string]string{"OPENAI_API_KEY": "x"}); err == nil {
+	if _, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, ExecCommandToolName, "pwd", "", 1, "deny", "pty", "", "/bin/sh", false, map[string]string{"OPENAI_API_KEY": "x"}); err == nil {
 		t.Fatal("secret env override should be denied")
 	}
-	if _, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, "bash", "sudo -S ls", "", 1, "deny", "foreground", "", nil); err == nil {
+	if _, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, ExecCommandToolName, "sudo -S ls", "", 1, "deny", "pty", "", "/bin/sh", false, nil); err == nil {
 		t.Fatal("sudo password piping should be denied")
 	}
-	prepared, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, "bash", "pwd", filepath.Dir(root), 1, "deny", "foreground", "", nil)
+	prepared, err := prepareShellCommand(root, domain.ToolExecutionContext{WorkspaceRoot: root}, ExecCommandToolName, "pwd", filepath.Dir(root), 1, "deny", "pty", "", "/bin/sh", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

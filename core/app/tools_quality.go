@@ -12,7 +12,7 @@ import (
 	"aivo/core/domain"
 )
 
-const qualityNamespaceDescription = "Code quality tools. Prefer read_diagnostics for declared diagnostics and format_code for supported formatter-backed file rewrites before falling back to bash."
+const qualityNamespaceDescription = "Code quality tools. Prefer read_diagnostics for declared diagnostics and format_code for supported formatter-backed file rewrites before falling back to exec_command."
 
 type ReadDiagnosticsTool struct {
 	workspaceRoot string
@@ -34,7 +34,7 @@ func NewReadDiagnosticsTool(workspaceRoot string, runner SandboxRunner, outputSi
 func (t *ReadDiagnosticsTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "read_diagnostics",
-		Description:          "Preferred tool for declared diagnostics. Run one diagnostics command and return parsed problems plus bounded command output. Use this after edits or while debugging to collect compiler, test, lint, or build issues without inventing shell commands or falling back to bash.",
+		Description:          "Preferred tool for declared diagnostics. Run one diagnostics command and return parsed problems plus bounded command output. Use this after edits or while debugging to collect compiler, test, lint, or build issues without inventing shell commands or falling back to exec_command.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: qualityNamespaceDescription,
 		Capability:           "shell.test",
@@ -62,7 +62,12 @@ func (t *ReadDiagnosticsTool) Execute(ctx context.Context, args json.RawMessage,
 	if err != nil {
 		return toolError("read_diagnostics", err)
 	}
-	prepared, err := prepareShellCommand(toolWorkspaceRoot(t.workspaceRoot, execCtx), execCtx, "read_diagnostics", command, "", input.TimeoutSeconds, "deny", "foreground", "", nil)
+	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
+	shell, err := resolveCommandShell(workspaceRoot, "")
+	if err != nil {
+		return primitiveError("read_diagnostics", "bash_unavailable", err)
+	}
+	prepared, err := prepareShellCommand(workspaceRoot, execCtx, "read_diagnostics", command, "", input.TimeoutSeconds, "deny", "foreground", "", shell, false, nil)
 	if err != nil {
 		return commandToolError("read_diagnostics", prepared, err)
 	}
@@ -101,7 +106,7 @@ func NewFormatCodeTool(workspaceRoot string, runner SandboxRunner, outputSink ..
 func (t *FormatCodeTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "format_code",
-		Description:          "Preferred tool for formatter-backed source rewrites. Format supported source files in place using project-local or standard formatters instead of falling back to bash. Supports Go/gofmt, TypeScript/JavaScript/CSS/Markdown/JSON/YAML/HTML via Prettier, optional project-local ESLint --fix for JavaScript/TypeScript, Rust/rustfmt, Python/black, and shell/shfmt. Returns changed file metadata and diffs.",
+		Description:          "Preferred tool for formatter-backed source rewrites. Format supported source files in place using project-local or standard formatters instead of falling back to exec_command. Supports Go/gofmt, TypeScript/JavaScript/CSS/Markdown/JSON/YAML/HTML via Prettier, optional project-local ESLint --fix for JavaScript/TypeScript, Rust/rustfmt, Python/black, and shell/shfmt. Returns changed file metadata and diffs.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: qualityNamespaceDescription,
 		Capability:           "filesystem.write",
@@ -145,11 +150,15 @@ func (t *FormatCodeTool) Execute(ctx context.Context, args json.RawMessage, exec
 		targets[rel] = target
 	}
 	plans := formatCommandPlans(workspaceRoot, input.Paths, input.ESLintFix)
+	shell, err := resolveCommandShell(workspaceRoot, "")
+	if err != nil {
+		return primitiveError("format_code", "bash_unavailable", err)
+	}
 	var toolResult domain.ToolResult
 	commands := make([]map[string]any, 0, len(plans))
 	var content strings.Builder
 	for index, plan := range plans {
-		prepared, err := prepareShellCommand(workspaceRoot, execCtx, "format_code", plan.Command, "", input.TimeoutSeconds, "deny", "foreground", "", nil)
+		prepared, err := prepareShellCommand(workspaceRoot, execCtx, "format_code", plan.Command, "", input.TimeoutSeconds, "deny", "foreground", "", shell, false, nil)
 		if err != nil {
 			return commandToolError("format_code", prepared, err)
 		}

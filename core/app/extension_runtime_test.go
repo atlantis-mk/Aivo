@@ -322,7 +322,7 @@ func TestExtensionSupervisorSeparatesDiscoveryTrustActivationAndExecution(t *tes
 		t.Fatal(err)
 	}
 	assembly := AssembleToolSpecsWithActivated(registry, registry.Specs(), map[string]bool{"example_echo": true})
-	if len(assembly.Specs) != 5 || assembly.Specs[4].Name != "example_echo" {
+	if len(assembly.Specs) != 6 || assembly.Specs[5].Name != "example_echo" {
 		t.Fatalf("activated specs = %#v", assembly.Specs)
 	}
 	result := supervisor.Execute(context.Background(), status.ID, "example_echo", json.RawMessage(`{}`), domain.ToolExecutionContext{ToolSnapshot: &assembly.Snapshot})

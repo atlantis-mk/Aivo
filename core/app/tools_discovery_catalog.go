@@ -84,7 +84,7 @@ func isStandaloneToolCatalogEntry(entry domain.ToolCatalogEntry) bool {
 		(entry.Source == domain.ToolSourceExtension && strings.HasPrefix(entry.SourceID, "aivo.")))
 }
 
-func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionContext, source string, category string, riskLevel string) []domain.ToolCatalogEntry {
+func resourceResolveCandidates(registry *Registry, execCtx domain.ToolExecutionContext, source string, category string, riskLevel string) []domain.ToolCatalogEntry {
 	if registry == nil {
 		return nil
 	}
@@ -124,7 +124,30 @@ func toolResolveCandidates(registry *Registry, execCtx domain.ToolExecutionConte
 	return out
 }
 
-func validateToolResolveSelection(candidates []domain.ToolCatalogEntry, names []string) []domain.ToolCatalogEntry {
+func toolAccessCatalogEntries(registry *Registry, execCtx domain.ToolExecutionContext) []domain.ToolCatalogEntry {
+	if registry == nil {
+		return nil
+	}
+	if execCtx.ToolSnapshot == nil {
+		return registry.CatalogEntries()
+	}
+	allowed := map[string]bool{}
+	for _, item := range execCtx.ToolSnapshot.Tools {
+		name := strings.TrimSpace(item.Name)
+		if name != "" && !isBridgeToolName(name) {
+			allowed[name] = true
+		}
+	}
+	out := make([]domain.ToolCatalogEntry, 0, len(allowed))
+	for _, entry := range registry.CatalogEntries() {
+		if allowed[entry.Name] {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func validateResourceResolveToolSelection(candidates []domain.ToolCatalogEntry, names []string) []domain.ToolCatalogEntry {
 	byName := map[string]domain.ToolCatalogEntry{}
 	for _, entry := range candidates {
 		byName[entry.Name] = entry
@@ -146,22 +169,35 @@ func validateToolResolveSelection(candidates []domain.ToolCatalogEntry, names []
 	return selected
 }
 
-func localToolResolve(_ context.Context, request ToolResolveRequest) (ToolResolveDecision, error) {
-	matches := searchToolCatalog(request.Candidates, request.Intent, request.MaxTools)
+func localResourceResolve(_ context.Context, request ResourceResolveRequest) (ResourceResolveDecision, error) {
+	if request.Mode == string(hostResourceSelectionInspect) {
+		matches := request.Candidates
+		if !isToolInventoryIntent(request.Intent) {
+			matches = searchToolCatalog(request.Candidates, request.Intent, 0)
+		}
+		groups := hostToolGroupCandidates(matches)
+		_, names, _ := expandHostToolGroups(groups, nil, false)
+		return ResourceResolveDecision{
+			Names:     names,
+			Resources: hostResourceSelectionResources(groups, normalizeDeferredToolNames(names)),
+			Reason:    "matched by local catalog inspection",
+		}, nil
+	}
+	matches := searchToolCatalog(request.Candidates, request.Intent, 0)
 	names := make([]string, 0, len(matches))
 	for _, entry := range matches {
 		names = append(names, entry.Name)
 	}
-	return ToolResolveDecision{Names: names, Reason: "matched by local catalog search"}, nil
+	return ResourceResolveDecision{Names: names, Reason: "matched by local catalog search"}, nil
 }
 
-func toolResolveNoAvailable(callID string, intent string, required bool, reason string) domain.ToolResult {
-	code := "no_available_tool"
-	message := "no available tool matches requested capability: " + strings.TrimSpace(intent)
+func resourceResolveNoAvailable(callID string, intent string, required bool, reason string) domain.ToolResult {
+	code := "no_available_resource"
+	message := "no available resource matches requested capability: " + strings.TrimSpace(intent)
 	if strings.TrimSpace(reason) != "" {
 		message += " (" + strings.TrimSpace(reason) + ")"
 	}
-	result := toolFailure(callID, ToolResolveName, code, message)
+	result := toolFailure(callID, ResourceResolveName, code, message)
 	result.Structured = map[string]any{"status": code, "intent": intent, "required": required, "reason": reason}
 	return result
 }
@@ -170,8 +206,12 @@ func deferrableCatalogEntries(registry *Registry) []domain.ToolCatalogEntry {
 	if registry == nil {
 		return nil
 	}
+	return deferrableCatalogEntriesFrom(registry.CatalogEntries())
+}
+
+func deferrableCatalogEntriesFrom(entries []domain.ToolCatalogEntry) []domain.ToolCatalogEntry {
 	out := []domain.ToolCatalogEntry{}
-	for _, entry := range registry.CatalogEntries() {
+	for _, entry := range entries {
 		if entry.ActivationPolicy == providerDeclarationActivationPolicy || entry.ActivationPolicy == providerAccountActivationPolicy {
 			continue
 		}
@@ -212,7 +252,7 @@ func searchToolCatalog(entries []domain.ToolCatalogEntry, query string, limit in
 		}
 		return scoredEntries[i].score > scoredEntries[j].score
 	})
-	if limit > len(scoredEntries) {
+	if limit <= 0 || limit > len(scoredEntries) {
 		limit = len(scoredEntries)
 	}
 	out := make([]domain.ToolCatalogEntry, 0, limit)

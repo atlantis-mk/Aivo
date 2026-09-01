@@ -2,7 +2,7 @@ import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { FileLinkIcon } from "@hugeicons/core-free-icons";
+import { ChartLineData01Icon, FileLinkIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
@@ -31,6 +31,7 @@ type MarkdownStreamFactory = () => AsyncGenerator<string, void, unknown>;
 
 type MarkdownBaseProps = {
  className?: string;
+ workspaceRoot?: string;
 };
 
 type MarkdownContentProps = MarkdownBaseProps & {
@@ -65,7 +66,8 @@ echarts.use([
  CanvasRenderer,
 ]);
 
-const streamdownComponents: Components = {
+function createStreamdownComponents(workspaceRoot: string): Components {
+ return {
  a: ({ children, className, href: rawHref, node: _node, title: rawTitle, ...props }) => {
  const href = typeof rawHref === "string" ? rawHref : undefined;
  const title = typeof rawTitle === "string" ? rawTitle : undefined;
@@ -109,7 +111,7 @@ const streamdownComponents: Components = {
  inlineCode: ({ children, className, node: _node }) => {
  const text = typeof children === "string" ? children : undefined;
  const localPath = text
- ? localPathFromText(text, window.aivo?.platform)
+ ? localPathFromText(text, window.aivo?.platform, workspaceRoot)
  : undefined;
  if (!localPath) {
  return (
@@ -146,7 +148,8 @@ const streamdownComponents: Components = {
 
  return <img alt={alt} loading="lazy" src={src} title={title} />;
  },
-};
+ };
+}
 
 function LocalPathLinkContent({ children }: { children: ReactNode }) {
  return (
@@ -229,25 +232,30 @@ export function Markdown(props: MarkdownProps) {
  className={props.className}
  content={content}
  isFinished={isFinished}
+ workspaceRoot={props.workspaceRoot}
  />
  );
 }
 
-function MarkdownViewer({ content, isFinished, className }: MarkdownContentProps) {
+function MarkdownViewer({ content, isFinished, className, workspaceRoot = "" }: MarkdownContentProps) {
+ const components = useMemo(
+ () => createStreamdownComponents(workspaceRoot),
+ [workspaceRoot],
+ );
  if (!content.trim()) return null;
 
  return (
  <Streamdown
  animated={false}
  className={cn("aivo-markdown break-words text-sm/relaxed", className)}
- components={streamdownComponents}
+ components={components}
  controls={markdownControls}
  isAnimating={!isFinished}
  lineNumbers={false}
  linkSafety={{ enabled: false }}
  mode={isFinished ? "static" : "streaming"}
  plugins={isFinished ? streamdownPlugins : streamdownStreamingPlugins}
- urlTransform={safeMarkdownUrl}
+ urlTransform={(value, key) => safeMarkdownUrl(value, key, workspaceRoot)}
  >
  {content}
  </Streamdown>
@@ -289,11 +297,12 @@ function EchartsCodeBlock({ code: codeStr, isIncomplete }: EchartsCodeBlockProps
  if (!shouldShowChart) {
  return (
  <div
- className="my-3 overflow-hidden rounded-md border border-border bg-background"
+ className="aivo-markdown-block-card"
  data-assistant-hover-ignore="true"
+ data-streamdown="echarts-block"
  >
- <div className="border-b border-border px-3 py-2 text-xs  text-muted-foreground">ECHART</div>
- <div className="p-4 text-sm text-muted-foreground">解析中...</div>
+ <MarkdownBlockHeader title="ECharts" />
+ <div className="aivo-markdown-block-content p-4 text-sm text-muted-foreground">解析中...</div>
  </div>
  );
  }
@@ -301,22 +310,49 @@ function EchartsCodeBlock({ code: codeStr, isIncomplete }: EchartsCodeBlockProps
  if (!parsedOption.ok) {
  return (
  <div
- className="my-3 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5"
+ className="aivo-markdown-block-card border-destructive/30 bg-destructive/5"
  data-assistant-hover-ignore="true"
+ data-streamdown="echarts-block"
  >
- <div className="border-b border-destructive/20 px-3 py-2 text-xs  text-destructive">ECHART</div>
- <div className="p-4 text-sm text-destructive">ECharts JSON 配置解析失败：{parsedOption.message}</div>
+ <MarkdownBlockHeader destructive title="ECharts" />
+ <div className="aivo-markdown-block-content p-4 text-sm text-destructive">ECharts JSON 配置解析失败：{parsedOption.message}</div>
  </div>
  );
  }
 
  return (
  <div
- className="my-3 overflow-hidden rounded-md border border-border bg-background"
+ className="aivo-markdown-block-card"
  data-assistant-hover-ignore="true"
+ data-streamdown="echarts-block"
  >
- <div className="border-b border-border px-3 py-2 text-xs  text-muted-foreground">ECHART</div>
- <div className="h-[400px] min-w-0" ref={chartRef} />
+ <MarkdownBlockHeader title="ECharts" />
+ <div className="aivo-markdown-block-content h-[400px] min-w-0 p-3" ref={chartRef} />
+ </div>
+ );
+}
+
+function MarkdownBlockHeader({
+ destructive = false,
+ title,
+}: {
+ destructive?: boolean;
+ title: string;
+}) {
+ return (
+ <div
+ className={cn(
+ "aivo-markdown-block-header",
+ destructive && "text-destructive",
+ )}
+ >
+ <HugeiconsIcon
+ aria-hidden="true"
+ className="size-3.5 shrink-0"
+ icon={ChartLineData01Icon}
+ strokeWidth={2}
+ />
+ <span className="min-w-0 truncate">{title}</span>
  </div>
  );
 }
@@ -364,11 +400,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function safeMarkdownUrl(value: string, key: string) {
+function safeMarkdownUrl(value: string, key: string, workspaceRoot: string) {
  if (!value) return "";
 
  if (key === "href") {
- const localPathHref = markdownHrefForLocalPath(value, window.aivo?.platform);
+ const localPathHref = markdownHrefForLocalPath(
+ value,
+ window.aivo?.platform,
+ workspaceRoot,
+ );
  if (localPathHref) return localPathHref;
  }
 

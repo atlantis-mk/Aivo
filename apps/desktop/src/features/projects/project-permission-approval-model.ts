@@ -122,16 +122,11 @@ export function permissionCommand(
 ): PermissionCommandInfo | null {
   const args = permission.arguments;
   if (!args) return null;
-  const command =
-    typeof args.command === "string"
-      ? args.command
-      : typeof args.normalizedCommand === "string"
-        ? args.normalizedCommand
-        : "";
+  const command = typeof args.cmd === "string" ? args.cmd : "";
   if (!command.trim()) return null;
   return {
     command,
-    cwd: typeof args.cwd === "string" ? args.cwd : undefined,
+    cwd: typeof args.workdir === "string" ? args.workdir : undefined,
     riskLevel: typeof args.riskLevel === "string" ? args.riskLevel : undefined,
     category: typeof args.category === "string" ? args.category : undefined,
     networkHint:

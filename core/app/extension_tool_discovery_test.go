@@ -100,7 +100,7 @@ func TestDeferredToolSearchAndCallDoNotPersistDirectInjection(t *testing.T) {
 	if names["extension_echo"] {
 		t.Fatalf("assembled specs = %#v, want extension_echo deferred after search", assembly.Specs)
 	}
-	if names[ToolResolveName] || names[ToolCallName] || names[ToolSearchName] {
+	if names[ResourceResolveName] || names[ToolCallName] || names[ToolSearchName] {
 		t.Fatalf("assembled specs = %#v, want no legacy discovery bridge", assembly.Specs)
 	}
 
@@ -131,44 +131,32 @@ func TestDeferredToolSearchAndCallDoNotPersistDirectInjection(t *testing.T) {
 	}
 }
 
-func TestToolResolveActivatesDeferredToolsForNextStep(t *testing.T) {
+func TestResourceResolveActivatesDeferredToolsForNextStep(t *testing.T) {
 	registry := NewRegistry()
 	if err := registry.RegisterScoped(phase6EchoTool{spec: domain.ToolSpec{Name: "extension_echo", Description: "Echo extension text", InputSchema: map[string]any{"type": "object"}, Category: "extension", Capability: "extension.read", Toolsets: []string{"extension", "coding"}}, text: "hello"}, domain.ToolSourceExtension, "example", "v1"); err != nil {
 		t.Fatal(err)
 	}
-	activated := map[string]bool{}
-	resolver := func(_ context.Context, request ToolResolveRequest) (ToolResolveDecision, error) {
+	resolver := func(_ context.Context, request ResourceResolveRequest) (ResourceResolveDecision, error) {
 		if len(request.Candidates) != 1 || request.Candidates[0].Name != "extension_echo" {
 			t.Fatalf("candidates = %#v, want extension_echo only", request.Candidates)
 		}
-		return ToolResolveDecision{Names: []string{"extension_echo"}, Reason: "echo capability matched"}, nil
+		return ResourceResolveDecision{Names: []string{"extension_echo"}, Reason: "echo capability matched"}, nil
 	}
-	replace := func(_ context.Context, sessionID string, toolNames []string) error {
-		if sessionID != "session_1" {
-			t.Fatalf("sessionID = %q, want session_1", sessionID)
-		}
-		activated = map[string]bool{}
-		for _, toolName := range toolNames {
-			activated[toolName] = true
-		}
-		return nil
-	}
-	if err := registry.RegisterScoped(NewToolResolveTool(registry, resolver, replace), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
+	if err := registry.RegisterScoped(NewResourceResolveTool(registry, resolver), domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
 		t.Fatal(err)
 	}
 	runtime := NewToolRuntime(registry, t.TempDir())
 
-	result := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{ID: "resolve", Name: ToolResolveName, Arguments: json.RawMessage(`{"intent":"echo extension text"}`)}, domain.ToolExecutionContext{SessionID: "session_1", AllowedToolsets: []string{"safe", "coding", "extension"}})
-	if !result.OK || !activated["extension_echo"] || !strings.Contains(result.Content, "extension_echo") {
-		t.Fatalf("result = %#v activated = %#v, want extension_echo activated", result, activated)
+	result := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{ID: "resolve", Name: ResourceResolveName, Arguments: json.RawMessage(`{"mode":"use","intent":"echo extension text"}`)}, domain.ToolExecutionContext{SessionID: "session_1", AllowedToolsets: []string{"safe", "coding", "extension"}})
+	if !result.OK || !strings.Contains(result.Content, "extension_echo") {
+		t.Fatalf("result = %#v, want extension_echo selected", result)
 	}
-	assembly := AssembleToolSpecsWithActivated(registry, registry.Specs(), activated)
-	names := map[string]int{}
-	for _, spec := range assembly.Specs {
-		names[spec.Name]++
-	}
-	if names["extension_echo"] != 1 {
-		t.Fatalf("extension_echo visible count = %d; specs = %#v", names["extension_echo"], assembly.Specs)
+}
+
+func TestResourceResolveRequiresExplicitMode(t *testing.T) {
+	mode, err := normalizeResourceResolveMode("")
+	if err == nil || mode != "" || !strings.Contains(err.Error(), "mode is required") {
+		t.Fatalf("mode = %q, err = %v, want missing mode rejected", mode, err)
 	}
 }
 
@@ -233,5 +221,64 @@ func TestToolListAndDetailBridge(t *testing.T) {
 	detail := runtime.ExecuteWithContext(context.Background(), domain.ChatToolCall{ID: "detail", Name: ToolDetailName, Arguments: json.RawMessage(`{"name":"mcp_linear_list_issues"}`)}, domain.ToolExecutionContext{AllowedToolsets: []string{"safe", "coding", "mcp"}})
 	if !detail.OK || !strings.Contains(detail.Content, "properties") || !strings.Contains(detail.Content, "team") {
 		t.Fatalf("detail = %#v, want full schema", detail)
+	}
+}
+
+func TestToolDiscoveryBridgeUsesFilteredSnapshotCatalog(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.RegisterScoped(phase6EchoTool{spec: domain.ToolSpec{
+		Name: "mcp_linear_list_issues", Description: "List Linear issues", InputSchema: map[string]any{"type": "object"},
+		Namespace: "Linear", Category: "mcp", Capability: "mcp.read", Toolsets: []string{"mcp", "coding"},
+	}, text: "issues"}, domain.ToolSourceMCP, "linear-server", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterScoped(phase6EchoTool{spec: domain.ToolSpec{
+		Name: "extension_echo", Description: "Echo extension text", InputSchema: map[string]any{"type": "object"},
+		Category: "extension", Capability: "extension.read", Toolsets: []string{"extension", "coding"},
+	}, text: "echo"}, domain.ToolSourceExtension, "example", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	var runtime *ToolRuntime
+	searchTool := NewToolSearchTool(registry)
+	listTool := NewToolListTool(registry)
+	detailTool := NewToolDetailTool(registry)
+	callTool := NewToolCallTool(registry, func() *ToolRuntime { return runtime })
+	if err := registry.RegisterScoped(searchTool, domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterScoped(listTool, domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterScoped(detailTool, domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterScoped(callTool, domain.ToolSourceBridge, "tool_discovery", ""); err != nil {
+		t.Fatal(err)
+	}
+	runtime = NewToolRuntime(registry, t.TempDir())
+	snapshot := &domain.ToolSnapshot{Tools: []domain.ToolSnapshotEntry{
+		{Name: ToolSearchName},
+		{Name: ToolListName},
+		{Name: ToolDetailName},
+		{Name: ToolCallName},
+		{Name: "mcp_linear_list_issues"},
+	}}
+	execCtx := domain.ToolExecutionContext{AllowedToolsets: []string{"safe", "coding", "mcp", "extension"}, ToolSnapshot: snapshot}
+
+	search := searchTool.Execute(context.Background(), json.RawMessage(`{"query":"echo","limit":10}`), execCtx)
+	if !search.OK || strings.Contains(search.Content, "extension_echo") || search.Structured["availableDeferredCount"] != 1 {
+		t.Fatalf("search = %#v, want only snapshot-visible deferred tools", search)
+	}
+	list := listTool.Execute(context.Background(), json.RawMessage(`{"includeCore":false,"limit":10}`), execCtx)
+	if !list.OK || strings.Contains(list.Content, "extension_echo") || !strings.Contains(list.Content, "mcp_linear_list_issues") {
+		t.Fatalf("list = %#v, want only snapshot-visible MCP tool", list)
+	}
+	hiddenDetail := detailTool.Execute(context.Background(), json.RawMessage(`{"name":"extension_echo"}`), execCtx)
+	if hiddenDetail.OK || !strings.Contains(hiddenDetail.Error, "tool is not available") {
+		t.Fatalf("hidden detail = %#v, want filtered-out tool hidden", hiddenDetail)
+	}
+	hiddenCall := callTool.Execute(context.Background(), json.RawMessage(`{"name":"extension_echo","arguments":{}}`), execCtx)
+	if hiddenCall.OK || hiddenCall.ToolError == nil || hiddenCall.ToolError.Code != "tool_not_advertised" {
+		t.Fatalf("hidden call = %#v, want snapshot rejection", hiddenCall)
 	}
 }

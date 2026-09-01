@@ -6,6 +6,11 @@ import (
 	"aivo/core/domain"
 )
 
+const (
+	responsesEncryptedReasoningInclude = "reasoning.encrypted_content"
+	responsesDefaultReasoningSummary   = "auto"
+)
+
 func responsesRequestBody(model string, messages []llmChatMessage, tools []domain.ToolSpec, reasoningEffort string, serviceTier string) map[string]any {
 	input := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
@@ -53,11 +58,12 @@ func responsesRequestBody(model string, messages []llmChatMessage, tools []domai
 		body["tools"] = responsesTools(tools)
 	}
 	if effort := responsesReasoningEffort(reasoningEffort); effort != "" {
-		body["reasoning"] = map[string]string{"effort": effort}
+		body["reasoning"] = map[string]any{"effort": effort}
 	}
 	if tier := responsesServiceTier(serviceTier); tier != "" {
 		body["service_tier"] = tier
 	}
+	applyOpenAIResponsesRequestDefaults(body)
 	return body
 }
 
@@ -145,9 +151,125 @@ func responsesReasoningEffort(effort string) string {
 	case "high":
 		return "high"
 	case "ultra":
-		return "ultra"
+		return "max"
 	case "medium":
 		return "medium"
+	default:
+		return ""
+	}
+}
+
+func applyOpenAIResponsesRequestDefaults(body map[string]any) {
+	if body == nil {
+		return
+	}
+	applyOpenAIResponsesOptionAliases(body)
+	ensureResponsesEncryptedReasoningInclude(body)
+	reasoning := ensureResponsesReasoningMap(body)
+	if _, ok := reasoning["summary"]; !ok {
+		reasoning["summary"] = responsesDefaultReasoningSummary
+	}
+}
+
+func applyOpenAIResponsesOptionAliases(body map[string]any) {
+	if effort := stringParamValue(body["reasoningEffort"]); effort != "" {
+		if normalized := responsesReasoningEffort(effort); normalized != "" {
+			ensureResponsesReasoningMap(body)["effort"] = normalized
+		}
+		delete(body, "reasoningEffort")
+	}
+	if effort := stringParamValue(body["reasoning_effort"]); effort != "" {
+		if normalized := responsesReasoningEffort(effort); normalized != "" {
+			ensureResponsesReasoningMap(body)["effort"] = normalized
+		}
+		delete(body, "reasoning_effort")
+	}
+	if summary := stringParamValue(body["reasoningSummary"]); summary != "" {
+		ensureResponsesReasoningMap(body)["summary"] = summary
+		delete(body, "reasoningSummary")
+	}
+	if summary := stringParamValue(body["reasoning_summary"]); summary != "" {
+		ensureResponsesReasoningMap(body)["summary"] = summary
+		delete(body, "reasoning_summary")
+	}
+	if verbosity := stringParamValue(body["textVerbosity"]); verbosity != "" {
+		ensureResponsesTextMap(body)["verbosity"] = verbosity
+		delete(body, "textVerbosity")
+	}
+	if verbosity := stringParamValue(body["text_verbosity"]); verbosity != "" {
+		ensureResponsesTextMap(body)["verbosity"] = verbosity
+		delete(body, "text_verbosity")
+	}
+}
+
+func ensureResponsesEncryptedReasoningInclude(body map[string]any) {
+	existing := includeValues(body["include"])
+	for _, value := range existing {
+		if item, ok := value.(string); ok && item == responsesEncryptedReasoningInclude {
+			body["include"] = existing
+			return
+		}
+	}
+	body["include"] = append(existing, responsesEncryptedReasoningInclude)
+}
+
+func includeValues(value any) []any {
+	switch typed := value.(type) {
+	case []any:
+		return append([]any(nil), typed...)
+	case []string:
+		values := make([]any, 0, len(typed))
+		for _, item := range typed {
+			if strings.TrimSpace(item) != "" {
+				values = append(values, item)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
+}
+
+func ensureResponsesReasoningMap(body map[string]any) map[string]any {
+	switch typed := body["reasoning"].(type) {
+	case map[string]any:
+		return typed
+	case map[string]string:
+		reasoning := make(map[string]any, len(typed))
+		for key, value := range typed {
+			reasoning[key] = value
+		}
+		body["reasoning"] = reasoning
+		return reasoning
+	default:
+		reasoning := map[string]any{}
+		body["reasoning"] = reasoning
+		return reasoning
+	}
+}
+
+func ensureResponsesTextMap(body map[string]any) map[string]any {
+	switch typed := body["text"].(type) {
+	case map[string]any:
+		return typed
+	case map[string]string:
+		text := make(map[string]any, len(typed))
+		for key, value := range typed {
+			text[key] = value
+		}
+		body["text"] = text
+		return text
+	default:
+		text := map[string]any{}
+		body["text"] = text
+		return text
+	}
+}
+
+func stringParamValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
 	default:
 		return ""
 	}
@@ -157,11 +279,13 @@ func applyCodexRequestCapabilities(body map[string]any, model domain.ModelInfo, 
 	if body == nil {
 		return
 	}
-	effort := codexEffectiveReasoningEffort(model, reasoningEffort)
-	if effort == "" || effort == "none" {
-		delete(body, "reasoning")
+	applyOpenAIResponsesRequestDefaults(body)
+	effort := responsesReasoningEffort(codexEffectiveReasoningEffort(model, reasoningEffort))
+	reasoning := ensureResponsesReasoningMap(body)
+	if effort != "" {
+		reasoning["effort"] = effort
 	} else {
-		body["reasoning"] = map[string]any{"effort": effort}
+		delete(reasoning, "effort")
 	}
 	if tier := codexEffectiveServiceTier(model, serviceTier); tier != "" {
 		body["service_tier"] = tier
@@ -172,7 +296,10 @@ func applyCodexRequestCapabilities(body map[string]any, model domain.ModelInfo, 
 		body["parallel_tool_calls"] = false
 	}
 	if model.SupportsVerbosity != nil && *model.SupportsVerbosity && codexVerbositySupported(model.DefaultVerbosity) {
-		body["text"] = map[string]any{"verbosity": model.DefaultVerbosity}
+		text := ensureResponsesTextMap(body)
+		if !codexVerbositySupported(stringParamValue(text["verbosity"])) {
+			text["verbosity"] = model.DefaultVerbosity
+		}
 	}
 	if !codexModelUsesResponsesLite(model) {
 		return
@@ -186,12 +313,8 @@ func applyCodexRequestCapabilities(body map[string]any, model domain.ModelInfo, 
 	body["input"] = input
 	delete(body, "tools")
 	body["parallel_tool_calls"] = false
-	reasoning, _ := body["reasoning"].(map[string]any)
-	if reasoning == nil {
-		reasoning = map[string]any{}
-	}
+	reasoning = ensureResponsesReasoningMap(body)
 	reasoning["context"] = "all_turns"
-	body["reasoning"] = reasoning
 }
 
 func codexEffectiveReasoningEffort(model domain.ModelInfo, requested string) string {

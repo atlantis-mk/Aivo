@@ -102,6 +102,7 @@ export function ProjectWorkspaceChatContent({
   todoItems,
   turns,
   viewportHandlers,
+  workspaceRoot,
 }: ProjectWorkspaceMainContentProps) {
   const [selectedToolActivityId, setSelectedToolActivityId] = useState("");
   const [contextCompactionPending, setContextCompactionPending] = useState(false);
@@ -280,11 +281,15 @@ export function ProjectWorkspaceChatContent({
           handlers={viewportHandlers}
           hasTurns={hasTurns}
           onOpenToolActivity={openToolActivity}
+          reserveFloatingControls={
+            shouldShowTodoFloatingStatus || showScrollToBottomButton
+          }
           reservePermissionDock={hasPendingInteractionRequest}
           revealFromHistory={isRevealingHistoryConversation}
           rootRef={messagesScrollRootRef}
           showConversationLayout={showConversationLayout}
           turns={turns}
+          workspaceRoot={workspaceRoot}
         />
 
         {showConversationLayout && (

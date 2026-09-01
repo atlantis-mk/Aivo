@@ -8,16 +8,16 @@
 
 ## Context
 
-Request-scoped Host selection makes tool availability change without an explicit Agent decision, while warm leases accumulate recently used tools for an arbitrary number of turns. Hiding every discovery control also prevents the primary Agent from reporting a concrete capability gap and intentionally rebuilding its visible tool surface. Treating the global management switch as live revocation conflates future discovery visibility with conversation-owned activation.
+Request-scoped Host resource selection makes tool availability change without an explicit Agent decision, while warm leases accumulate recently used tools for an arbitrary number of turns. Hiding every discovery control also prevents the primary Agent from reporting a concrete capability gap and intentionally rebuilding its visible tool surface. Treating the global management switch as live revocation conflates future discovery visibility with conversation-owned activation.
 
 ## Decision
 
 - Each conversation MUST own separate bounded manual and automatic canonical tool-name sets.
 - The automatic set MUST be initialized from sanitized globally visible eligible candidates before the first primary request and MUST remain stable until successfully replaced.
-- The primary Agent MUST always receive the Host-owned `tool_resolve` control in addition to the four execution primitives. This control is not an extension executor and cannot install, trust, enable, authorize, or execute another tool.
-- Calling `tool_resolve` MUST use auxiliary selection over sanitized currently eligible candidates and MUST atomically replace the complete automatic set for the next model step. It MUST NOT union results with the prior automatic set or create a warm lease.
+- The primary Agent MUST always receive the Host-owned `resource_resolve` control in addition to the four execution primitives. This control is not an extension executor and cannot install, trust, enable, authorize, or execute another tool.
+- Calling `resource_resolve` MUST use auxiliary selection over sanitized currently eligible candidates and MUST atomically replace the complete automatic set for the next model step. It MUST NOT union results with the prior automatic set or create a warm lease.
 - Manual conversation activation MUST remain independent and MUST survive automatic replacement.
-- Provider declarations and the immutable Tool Snapshot MUST contain only the four eligible primitives, `tool_resolve`, current manual tools, current automatic tools, and separately authorized mode controls such as narrowed delegation.
+- Provider declarations and the immutable Tool Snapshot MUST contain only the four eligible primitives, `resource_resolve`, current manual tools, current automatic tools, and separately authorized mode controls such as narrowed delegation.
 - Global tool preferences MUST filter future auxiliary candidates and new manual activation. They MUST NOT revoke an already selected conversation tool. Source disablement/readiness and exact current registration remain execution prerequisites.
 - Resolver failure, cancellation, invalid selection, and required no-match MUST preserve the prior automatic set.
 

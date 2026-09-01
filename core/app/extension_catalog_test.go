@@ -11,7 +11,8 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 	registry := NewRegistry()
 	for _, tool := range []domain.Tool{
 		phase6EchoTool{spec: domain.ToolSpec{Name: "read", Description: "Read file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.read", Toolsets: []string{"safe", "coding"}}},
-		phase6EchoTool{spec: domain.ToolSpec{Name: "bash", Description: "Run Bash", InputSchema: map[string]any{"type": "object"}, Category: "process", Capability: "process.exec", Toolsets: []string{"coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: ExecCommandToolName, Description: "Run command", InputSchema: map[string]any{"type": "object"}, Category: "process", Capability: "process.exec", Toolsets: []string{"coding"}}},
+		phase6EchoTool{spec: domain.ToolSpec{Name: WriteStdinToolName, Description: "Continue command", InputSchema: map[string]any{"type": "object"}, Category: "process", Capability: "process.exec", Toolsets: []string{"coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "edit", Description: "Edit file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.write", Toolsets: []string{"coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "write", Description: "Write file", InputSchema: map[string]any{"type": "object"}, Category: "filesystem", Capability: "filesystem.write", Toolsets: []string{"coding"}}},
 		phase6EchoTool{spec: domain.ToolSpec{Name: "update_plan", Description: "Update plan", InputSchema: map[string]any{"type": "object"}, Category: "plan", Capability: "plan.write", Toolsets: []string{"safe", "personal"}}},
@@ -31,7 +32,7 @@ func TestToolAssemblyDefersLongTailTools(t *testing.T) {
 	for _, spec := range assembly.Specs {
 		names[spec.Name]++
 	}
-	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user"} {
+	for _, name := range []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user"} {
 		if names[name] != 1 {
 			t.Fatalf("visible %s count = %d; specs = %#v", name, names[name], assembly.Specs)
 		}
@@ -76,12 +77,12 @@ func TestToolAssemblyCanExplicitlyActivateMatchedTools(t *testing.T) {
 	if names["automation_list"] != 0 {
 		t.Fatalf("unmatched automation_list was directly visible: %#v", assembly.Specs)
 	}
-	if names["read"] != 1 || names[ToolResolveName] != 0 || names[ToolSearchName] != 0 || names[ToolListName] != 0 || names[ToolDetailName] != 0 || names[ToolCallName] != 0 {
+	if names["read"] != 1 || names[ResourceResolveName] != 0 || names[ToolSearchName] != 0 || names[ToolListName] != 0 || names[ToolDetailName] != 0 || names[ToolCallName] != 0 {
 		t.Fatalf("core/extension surface is not minimal after activation: %#v", assembly.Specs)
 	}
 }
 
-func TestPreCallActivationSeparatesManualAutomaticAndManualOnlyPolicies(t *testing.T) {
+func TestPreSnapshotActivationTreatsManualSelectionAsExplicitCapabilityConfiguration(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -102,15 +103,15 @@ func TestPreCallActivationSeparatesManualAutomaticAndManualOnlyPolicies(t *testi
 	if _, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{SessionID: session.ID, ToolNames: []string{"example_manual"}}); err != nil {
 		t.Fatal(err)
 	}
-	activated, candidates := service.preCallToolCandidates(ctx, session.ID, "turn-1", registry, registry.Specs())
+	activated, candidates := service.snapshotToolCandidates(ctx, session.ID, "turn-1", registry, registry.Specs())
 	if activated["example_manual"] != "manual" {
 		t.Fatalf("activated = %#v, want only the manual conversation tool", activated)
 	}
 	if activated["example_auto"] != "" || activated["example_default"] != "" {
 		t.Fatalf("activated = %#v, automatic candidates must not activate without a resolver match", activated)
 	}
-	if len(candidates) != 2 || candidates[0].Name != "example_auto" || candidates[1].Name != "example_default" {
-		t.Fatalf("candidates = %#v, want auto and legacy-default tools to require selection", candidates)
+	if len(candidates) != 0 {
+		t.Fatalf("candidates = %#v, want no automatic candidates after explicit manual configuration", candidates)
 	}
 	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activated)
 	if len(assembly.Specs) != 1 || len(assembly.Snapshot.Tools) != 1 || assembly.Specs[0].Name != "example_manual" {
@@ -137,13 +138,18 @@ func TestListToolCatalogWithoutWorkspaceContainsGloballyManageableBuiltins(t *te
 			t.Fatalf("builtin project tool %q group = %#v", name, entry.SelectionGroup)
 		}
 	}
-	if !names[toolRegistrationMCPName] {
-		t.Fatalf("global catalog missing builtin tool registration extension tool %q; entries = %#v", toolRegistrationMCPName, entries)
+	for _, name := range []string{toolRegistrationMCPName, toolRegistrationResourceName} {
+		if !names[name] {
+			t.Fatalf("global catalog missing builtin tool registration extension tool %q; entries = %#v", name, entries)
+		}
 	}
 	if registrationTool, _ := catalogEntryNamed(entries, toolRegistrationMCPName); registrationTool.SelectionGroup != nil {
 		t.Fatalf("individual builtin tool unexpectedly grouped: %#v", registrationTool)
 	}
-	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"} {
+	if registrationTool, _ := catalogEntryNamed(entries, toolRegistrationResourceName); registrationTool.SelectionGroup != nil {
+		t.Fatalf("individual builtin resource registration tool unexpectedly grouped: %#v", registrationTool)
+	}
+	for _, name := range []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"} {
 		if !names[name] {
 			t.Fatalf("global catalog missing manageable builtin tool %q; entries = %#v", name, entries)
 		}
@@ -156,18 +162,18 @@ func TestListToolCatalogWithoutWorkspaceContainsGloballyManageableBuiltins(t *te
 	if names["aivo_tools_list_mcp"] {
 		t.Fatalf("global catalog still exposes removed MCP source-list tool; entries = %#v", entries)
 	}
-	if len(names) != 13 {
-		t.Fatalf("global catalog does not contain nine core/optional builtins and builtin Host extensions; entries = %#v", entries)
+	if len(names) != 15 {
+		t.Fatalf("global catalog does not contain core/optional builtins and builtin Host extensions; entries = %#v", entries)
 	}
 }
 
 func TestToolRegistryReservesHostSelectionControlName(t *testing.T) {
 	registry := NewRegistry()
-	tool := phase6EchoTool{spec: domain.ToolSpec{Name: ToolResolveName, InputSchema: map[string]any{"type": "object"}, Toolsets: []string{"coding"}}}
+	tool := phase6EchoTool{spec: domain.ToolSpec{Name: ResourceResolveName, InputSchema: map[string]any{"type": "object"}, Toolsets: []string{"coding"}}}
 	if err := registry.RegisterScoped(tool, domain.ToolSourceExtension, "malicious", "v1"); err == nil {
-		t.Fatal("extension registered the Host-owned tool_resolve name")
+		t.Fatal("extension registered the Host-owned resource_resolve name")
 	}
-	if err := registry.RegisterScoped(NewToolResolveTool(registry, nil, nil), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
+	if err := registry.RegisterScoped(NewResourceResolveTool(registry, nil), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
 		t.Fatalf("Host control registration failed: %v", err)
 	}
 }
@@ -240,7 +246,7 @@ func TestListToolCatalogWithWorkspaceContainsCoreAndCachedEnabledExtensions(t *t
 	for _, entry := range entries {
 		names[entry.Name] = true
 	}
-	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"} {
+	for _, name := range []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"} {
 		if !names[name] {
 			t.Fatalf("missing %s; entries = %#v", name, entries)
 		}
@@ -255,13 +261,15 @@ func TestListToolCatalogWithWorkspaceContainsCoreAndCachedEnabledExtensions(t *t
 			t.Fatalf("workspace catalog missing builtin project extension tool %q; entries = %#v", name, entries)
 		}
 	}
-	if !names[toolRegistrationMCPName] {
-		t.Fatalf("workspace catalog missing builtin tool registration extension tool %q; entries = %#v", toolRegistrationMCPName, entries)
+	for _, name := range []string{toolRegistrationMCPName, toolRegistrationResourceName} {
+		if !names[name] {
+			t.Fatalf("workspace catalog missing builtin tool registration extension tool %q; entries = %#v", name, entries)
+		}
 	}
 	if names["aivo_tools_list_mcp"] {
 		t.Fatalf("workspace catalog still exposes removed MCP source-list tool; entries = %#v", entries)
 	}
-	if len(names) != 17 || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
-		t.Fatalf("workspace catalog does not contain nine core/optional builtins, builtin Host extensions, and MCP adapter contributions; entries = %#v", entries)
+	if len(names) != 19 || names["mcp_Cached_MCP_list"] || !names["mcp_cached_mcp_list"] {
+		t.Fatalf("workspace catalog does not contain core/optional builtins, builtin Host extensions, and MCP adapter contributions; entries = %#v", entries)
 	}
 }

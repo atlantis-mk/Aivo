@@ -20,22 +20,26 @@ export function ProjectConversationViewport({
   handlers,
   hasTurns,
   onOpenToolActivity,
+  reserveFloatingControls,
   reservePermissionDock,
   revealFromHistory,
   rootRef,
   showConversationLayout,
   turns,
+  workspaceRoot,
 }: {
   agentRuns: AgentRun[];
   contentRef: RefObject<HTMLDivElement | null>;
   handlers: ProjectConversationViewportHandlers;
   hasTurns: boolean;
   onOpenToolActivity?: (activity: ToolCallActivity) => void;
+  reserveFloatingControls: boolean;
   reservePermissionDock: boolean;
   revealFromHistory: boolean;
   rootRef: RefObject<HTMLDivElement | null>;
   showConversationLayout: boolean;
   turns: ConversationTurn[];
+  workspaceRoot: string;
 }) {
   if (!showConversationLayout) return null;
 
@@ -53,8 +57,10 @@ export function ProjectConversationViewport({
             onEditUserMessage={handlers.onEditUserMessage}
             onRetryTurn={handlers.onRetryTurn}
             revealFromHistory={revealFromHistory}
+            reserveFloatingControls={reserveFloatingControls}
             reservePermissionDock={reservePermissionDock}
             turns={turns}
+            workspaceRoot={workspaceRoot}
           />
         ) : null}
       </ScrollArea>

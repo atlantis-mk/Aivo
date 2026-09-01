@@ -1,9 +1,6 @@
 package app
 
-import (
-	"path/filepath"
-	"strings"
-)
+import "strings"
 
 func classifyCommand(detection *CommandDetection) {
 	if len(detection.Argv) == 0 {
@@ -127,12 +124,6 @@ func hardlineCommandDenyReason(tokens []string, command string) string {
 	}
 	if strings.HasPrefix(tokens[0], "mkfs") || tokens[0] == "diskutil" {
 		return "disk formatting commands are blocked"
-	}
-	for _, token := range tokens[1:] {
-		clean := filepath.ToSlash(filepath.Clean(token))
-		if clean == ".git" || strings.HasPrefix(clean, ".git/") || strings.Contains(clean, "/.git/") {
-			return "commands targeting .git internals are blocked"
-		}
 	}
 	return ""
 }

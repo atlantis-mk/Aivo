@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Plus, Plug, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Plug } from "lucide-react";
+import { toast } from "sonner";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Sheet,
   SheetContent,
@@ -30,6 +30,10 @@ import {
 import { cn } from "@/lib/utils";
 import { groupToolCatalogEntries } from "@/features/projects/project-tool-activation-model";
 import { SkillEditorDialog } from "@/features/projects/extension-settings-skill-editor";
+import {
+  SKILL_ACTION_EDIT,
+  skillSupportsAction,
+} from "@/features/projects/skill-action-model";
 import type { SkillEntry } from "@/services/aivo";
 
 type ExtensionSettingsDialogProps = {
@@ -121,6 +125,19 @@ export function ExtensionSettingsContent({
     active,
     workspaceRoot,
   });
+
+  useEffect(() => {
+    if (!error) return;
+    toast.error("加载失败", {
+      description: error,
+      position: "top-center",
+    });
+  }, [error]);
+
+  function editSkill(skill: SkillEntry) {
+    if (!skillSupportsAction(skill, SKILL_ACTION_EDIT)) return;
+    setEditingSkill(skill);
+  }
 
   return (
     <section className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
@@ -215,22 +232,11 @@ export function ExtensionSettingsContent({
           skillCount={skills.length}
           toolCount={groupToolCatalogEntries(visibleTools, {}).length}
         />
-
-        {error ? (
-          <div className="border-b p-4">
-            <Alert variant="destructive">
-              <TriangleAlert />
-              <AlertTitle>加载失败</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-
         <ExtensionSettingsTabPanels
           activeToolSet={activeToolSet}
           loading={loading}
           onDeleteSkill={deleteSkill}
-          onEditSkill={setEditingSkill}
+          onEditSkill={editSkill}
           onIgnoreSkillCandidate={ignoreSkillCandidate}
           onImportSkillCandidate={importSkillCandidate}
           onReload={reload}

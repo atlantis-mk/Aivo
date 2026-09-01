@@ -54,6 +54,13 @@ func TestResponsesRequestBodyUsesInputItemList(t *testing.T) {
 	if reasoning["effort"] != "high" {
 		t.Fatalf("reasoning.effort = %#v, want high", reasoning["effort"])
 	}
+	if reasoning["summary"] != "auto" {
+		t.Fatalf("reasoning.summary = %#v, want auto", reasoning["summary"])
+	}
+	includes, _ := rawPayload["include"].([]any)
+	if len(includes) != 1 || includes[0] != "reasoning.encrypted_content" {
+		t.Fatalf("include = %#v, want encrypted reasoning include", rawPayload["include"])
+	}
 	if rawPayload["service_tier"] != "priority" {
 		t.Fatalf("service_tier = %#v, want priority", rawPayload["service_tier"])
 	}
@@ -86,7 +93,7 @@ func TestApplyCodexRequestCapabilitiesUsesResponsesLiteContract(t *testing.T) {
 		t.Fatalf("Responses Lite request controls = %#v", body)
 	}
 	reasoning, _ := body["reasoning"].(map[string]any)
-	if reasoning["effort"] != "low" || reasoning["context"] != "all_turns" {
+	if reasoning["effort"] != "low" || reasoning["summary"] != "auto" || reasoning["context"] != "all_turns" {
 		t.Fatalf("reasoning = %#v", reasoning)
 	}
 	textConfig, _ := body["text"].(map[string]any)
@@ -113,11 +120,37 @@ func TestApplyCodexRequestCapabilitiesOverridesStaticProfileWithDeclarations(t *
 		ServiceTiers: []string{"flex"}, SupportsParallelToolCalls: &parallel,
 	}, nil, "max", "priority")
 	reasoning, _ := body["reasoning"].(map[string]any)
-	if reasoning["effort"] != "low" || reasoning["summary"] != nil {
+	if reasoning["effort"] != "low" || reasoning["summary"] != "auto" {
 		t.Fatalf("reasoning = %#v", reasoning)
 	}
 	if _, ok := body["service_tier"]; ok || body["parallel_tool_calls"] != false {
 		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestOpenAIResponsesDefaultsNormalizeCompatibleOptions(t *testing.T) {
+	body := responsesRequestBody("gpt-5.5", []llmChatMessage{{Role: "user", Text: "hello"}}, nil, "low", "")
+	body["reasoningEffort"] = "ultra"
+	body["reasoningSummary"] = "detailed"
+	body["textVerbosity"] = "low"
+	body["include"] = []any{"web_search_call.action.sources"}
+
+	applyOpenAIResponsesRequestDefaults(body)
+
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if reasoning["effort"] != "max" || reasoning["summary"] != "detailed" {
+		t.Fatalf("reasoning = %#v", reasoning)
+	}
+	text, _ := body["text"].(map[string]any)
+	if text["verbosity"] != "low" {
+		t.Fatalf("text = %#v", text)
+	}
+	includes, _ := body["include"].([]any)
+	if len(includes) != 2 || includes[0] != "web_search_call.action.sources" || includes[1] != "reasoning.encrypted_content" {
+		t.Fatalf("include = %#v", body["include"])
+	}
+	if _, ok := body["reasoningEffort"]; ok {
+		t.Fatalf("reasoningEffort alias was not removed: %#v", body)
 	}
 }
 
@@ -338,6 +371,32 @@ func TestChatCompletionsRequestBodyStreams(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatCompletionsDefaultsNormalizeCompatibleOptions(t *testing.T) {
+	body := chatCompletionsRequestBody("openai/gpt-5", []llmChatMessage{{Role: "user", Text: "hello"}}, nil)
+	body["reasoningEffort"] = "ultra"
+	body["reasoningSummary"] = "auto"
+	body["textVerbosity"] = "low"
+
+	applyOpenAIChatCompletionsRequestDefaults(body, "")
+
+	if body["reasoning_effort"] != "high" {
+		t.Fatalf("reasoning_effort = %#v, want high", body["reasoning_effort"])
+	}
+	streamOptions, _ := body["stream_options"].(map[string]any)
+	if streamOptions["include_usage"] != true {
+		t.Fatalf("stream_options = %#v, want include_usage true", body["stream_options"])
+	}
+	if _, ok := body["reasoningEffort"]; ok {
+		t.Fatalf("reasoningEffort alias was not removed: %#v", body)
+	}
+	if _, ok := body["reasoningSummary"]; ok {
+		t.Fatalf("reasoningSummary alias was not removed: %#v", body)
+	}
+	if _, ok := body["textVerbosity"]; ok {
+		t.Fatalf("textVerbosity alias was not removed: %#v", body)
+	}
+}
+
 func TestChatCompletionsRequestBodyRendersTextAndFileAttachments(t *testing.T) {
 	body := chatCompletionsRequestBody("openai/gpt-5", []llmChatMessage{{
 		Role: "user",
@@ -479,6 +538,14 @@ func TestAnthropicRequestBodyUsesBudgetThinkingForClaudeFourFive(t *testing.T) {
 	}
 	if body["max_tokens"] != 64000 {
 		t.Fatalf("max_tokens = %#v, want 64000", body["max_tokens"])
+	}
+}
+
+func TestAnthropicRequestBodyUsesConservativeUnknownOutputLimit(t *testing.T) {
+	body := anthropicRequestBody("claude-dynamic", []llmChatMessage{{Role: "user", Text: "hello"}}, nil, "")
+
+	if body["max_tokens"] != 4096 {
+		t.Fatalf("max_tokens = %#v, want 4096", body["max_tokens"])
 	}
 }
 

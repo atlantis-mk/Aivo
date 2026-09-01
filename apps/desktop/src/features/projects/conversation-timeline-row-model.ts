@@ -9,7 +9,6 @@ import {
   toolActionHeading,
   type ToolCallGroup,
 } from "@/features/projects/conversation-timeline-tool-model";
-import { hostToolSelectionFromSystemNote } from "@/features/projects/conversation-system-note-model";
 
 export type { ConversationTimelineRow } from "@/features/projects/conversation-timeline-row-types";
 export {
@@ -35,8 +34,6 @@ export function constructConversationTimelineRows(
       turn,
       type: "user-message",
     });
-    pushInitialToolSelectionNotes(rows, turn);
-
     const preambleParts = assistantPreambleParts(turn);
     const toolGroups = groupToolCalls(
       filterVisibleToolCalls(turn.toolCalls),
@@ -63,6 +60,7 @@ export function constructConversationTimelineRows(
 
     if (turn.responseVisible || turn.responseText.trim()) {
       rows.push({
+        isExecuting: hasVisibleToolCalls,
         key: `assistant-status:${turn.id}`,
         turn,
         type: "assistant-status",
@@ -82,6 +80,7 @@ export function constructConversationTimelineRows(
       actionHeading: hasVisibleToolCalls
         ? undefined
         : toolActionHeading(toolGroups),
+      isExecuting: hasVisibleToolCalls,
       key: `thinking:${turn.id}`,
       showSkeleton:
         !turn.activityVisible && !hasPreambleText && !hasVisibleToolCalls,
@@ -127,22 +126,7 @@ function pushAssistantPreambles(
 
 function pushSystemNotes(rows: ConversationTimelineRow[], turn: ConversationTurn) {
   for (const note of turn.systemNotes ?? []) {
-    if (!note.content.trim() || hostToolSelectionFromSystemNote(note)) continue;
-    rows.push({
-      key: `system-note:${turn.id}:${note.id}`,
-      note,
-      turnId: turn.turnId ?? turn.id,
-      type: "system-note",
-    });
-  }
-}
-
-function pushInitialToolSelectionNotes(
-  rows: ConversationTimelineRow[],
-  turn: ConversationTurn,
-) {
-  for (const note of turn.systemNotes ?? []) {
-    if (!hostToolSelectionFromSystemNote(note)) continue;
+    if (!note.content.trim()) continue;
     rows.push({
       key: `system-note:${turn.id}:${note.id}`,
       note,

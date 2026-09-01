@@ -6,7 +6,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PromptMentionIcon } from "@/features/projects/project-prompt-mention-icon";
 import { filterPromptMentionActions, filterPromptMentionItems, groupPromptMentionItems, isPromptMentionBuiltinTool, promptMentionProjectItems, type PromptMentionAction, type PromptMentionItem, type PromptMentionProject } from "@/features/projects/project-prompt-mention-model";
-import { groupToolCatalogEntries } from "@/features/projects/project-tool-activation-model";
+import {
+  groupSkillCatalogEntries,
+  groupToolCatalogEntries,
+} from "@/features/projects/project-tool-activation-model";
 import { hasAppBridge } from "@/lib/app-config";
 import { listMCPServers } from "@/services/aivo/mcp-service";
 import { listExtensionInstalls } from "@/services/aivo/extension-service";
@@ -54,8 +57,31 @@ export function PromptMentionPicker({ activeIndex, onSelect, onSelectAction, pro
         tools.filter(isPromptMentionBuiltinTool),
         {},
       );
+      const skillResources = groupSkillCatalogEntries(
+        skills.filter((skill) => skill.enabled),
+      );
       setCatalogItems([
-        ...skills.filter((skill) => skill.enabled).map((skill) => ({ detail: skill.description, id: `skill:${skill.id}`, label: skill.name, reference: { id: skill.id, kind: "skill" as const, token: skill.name }, token: skill.name, type: "技能" as const })),
+        ...skillResources.map((resource) => {
+          const resourceID = resource.grouped
+            ? `skill-group:${resource.skills[0]!.selectionGroup!.id}`
+            : resource.skills[0]!.id;
+          return {
+            detail: resource.grouped
+              ? [`${resource.skills.length} 个技能`, resource.description]
+                  .filter(Boolean)
+                  .join(" · ")
+              : resource.description,
+            id: `skill:${resourceID}`,
+            label: resource.label,
+            reference: {
+              id: resourceID,
+              kind: "skill" as const,
+              token: resource.label,
+            },
+            token: resource.label,
+            type: "技能" as const,
+          };
+        }),
         ...toolResources.map((resource) => {
           const firstTool = resource.tools[0]!;
           const resourceID = resource.grouped

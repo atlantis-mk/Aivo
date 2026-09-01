@@ -274,7 +274,8 @@ func modelsDevTransport(npm string) (TransportType, bool) {
 	case strings.Contains(npm, "openai-compatible"), strings.Contains(npm, "openai"),
 		strings.Contains(npm, "groq"), strings.Contains(npm, "mistral"), strings.Contains(npm, "xai"),
 		strings.Contains(npm, "together"), strings.Contains(npm, "perplexity"), strings.Contains(npm, "deepinfra"),
-		strings.Contains(npm, "cerebras"), strings.Contains(npm, "openrouter"), strings.Contains(npm, "gateway"):
+		strings.Contains(npm, "cerebras"), strings.Contains(npm, "openrouter"), strings.Contains(npm, "gateway"),
+		strings.Contains(npm, "baseten"), strings.Contains(npm, "deepseek"), strings.Contains(npm, "fireworks"):
 		return TransportOpenAICompatible, true
 	default:
 		return "", false

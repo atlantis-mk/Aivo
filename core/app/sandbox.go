@@ -44,6 +44,7 @@ type SandboxRequest struct {
 	NetworkPolicy    string
 	Backend          string
 	Shell            string
+	LoginShell       bool
 	OutputPolicy     domain.OutputPolicy
 	SessionID        string
 	TurnID           string
@@ -156,7 +157,8 @@ func (r *LocalSandboxRunner) Run(ctx context.Context, request SandboxRequest) (S
 		return SandboxResult{}, &SandboxError{Code: SandboxErrorPolicyDenied, Message: "command is required"}
 	}
 
-	cmd := exec.CommandContext(runCtx, shell, "-c", command)
+	argv := shellCommandArgs(shell, command, request.LoginShell)
+	cmd := exec.CommandContext(runCtx, shell, argv...)
 	cmd.Dir = cwd
 	cmd.Env = SanitizedEnvironment(workspaceRoot, request.EnvAllowlist, request.Env, request.EnvOverrides)
 	if request.Stdin != "" {
@@ -169,7 +171,10 @@ func (r *LocalSandboxRunner) Run(ctx context.Context, request SandboxRequest) (S
 		if cmd.Process == nil {
 			return os.ErrProcessDone
 		}
-		return killProcessGroup(cmd.Process)
+		if err := killProcessGroup(cmd.Process); err != nil {
+			_ = cmd.Process.Kill()
+		}
+		return nil
 	}
 	cmd.WaitDelay = 250 * time.Millisecond
 
@@ -194,7 +199,7 @@ func (r *LocalSandboxRunner) Run(ctx context.Context, request SandboxRequest) (S
 
 	result := SandboxResult{
 		Command:       command,
-		Argv:          append([]string{shell, "-c"}, command),
+		Argv:          append([]string{shell}, argv...),
 		Mode:          mode,
 		CWD:           cwd,
 		ExitCode:      0,

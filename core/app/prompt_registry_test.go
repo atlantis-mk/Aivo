@@ -47,6 +47,25 @@ func TestBuiltinPromptCatalogKeepsOnlyAssistantAndRequiredAgentWorkers(t *testin
 	}
 }
 
+func TestHostResourcePromptsPreferComprehensiveDomainSelection(t *testing.T) {
+	registry, err := NewBuiltinPromptRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups, err := registry.Render("auxiliary.host_resource_groups.system", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := builtinPromptBody("auxiliary.host_resources.system")
+	for _, prompt := range []string{groups, resources} {
+		for _, want := range []string{"Select every", "video production", "do not minimize to one entry"} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("Host resource prompt missing %q: %s", want, prompt)
+			}
+		}
+	}
+}
+
 func TestPromptRegistryRetiresManagedSubagentProtocol(t *testing.T) {
 	root := t.TempDir()
 	registry, err := NewPromptRegistry(root)

@@ -12,6 +12,12 @@ export type SkillEntry = {
   contentHash: string;
   enabled: boolean;
   metadata?: Record<string, string>;
+  actions?: string[];
+  selectionGroup?: {
+    id: string;
+    name: string;
+    description?: string;
+  };
   timeCreated: string;
   timeUpdated: string;
 };

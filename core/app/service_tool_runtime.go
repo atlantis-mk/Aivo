@@ -62,23 +62,24 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 	if workspaceRoot == "" {
 		return nil, nil
 	}
-	registry, err := NewCodingToolRegistryWithShellOutputSink(workspaceRoot, func(event ShellOutputEvent) {
+	registry, err := newCodingToolRegistry(workspaceRoot, func(event ShellOutputEvent) {
 		if s.onShellOutput != nil {
 			s.onShellOutput(event)
 		}
-	})
+	}, nil, s.ptyManager)
 	if err != nil {
 		return nil, nil
-	}
-	if bash, ok := registry.Get("bash"); ok {
-		if bashTool, ok := bash.(*BashTool); ok {
-			bashTool.SetPersistentCWDHooks(s.loadAgentShellCWD, s.saveAgentShellCWD)
-		}
 	}
 	if err := registerDefaultHostControlTools(registry, s); err != nil {
 		return nil, nil
 	}
-	if err := registry.RegisterScoped(NewToolResolveTool(registry, s.resolveSessionToolReplacement, s.replaceAutoSelectedTools), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
+	if err := registry.RegisterScoped(NewResourceResolveTool(registry, s.resolveSessionResources), domain.ToolSourceBridge, "tool_selection", "v1"); err != nil {
+		return nil, nil
+	}
+	if err := registry.Register(NewSkillsListTool(s)); err != nil {
+		return nil, nil
+	}
+	if err := registry.Register(NewSkillsReadTool(s)); err != nil {
 		return nil, nil
 	}
 	if err := registry.Register(NewCodexWebSearchTool(s)); err != nil {
@@ -97,7 +98,8 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 	runtime.ExtensionHooks = s.extensionSupervisor
 	runtime.Permissions = NewPermissionEngine(s.store)
 	runtime.Permissions.ProjectPreflight = s.prepareProjectPermission
-	runtime.Permissions.MCPRegistrationPreflight = s.prepareMCPRegistrationPermission
+	runtime.Permissions.MCPRegistrationPreflight = s.prepareToolRegistrationPermission
+	runtime.Permissions.PTYRegistry = s.ptyManager
 	runtime.Permissions.notifier = s.permissionNotifier
 	runtime.Permissions.onRequest = func(request domain.PermissionRequest) {
 		if request.SessionID != "" && request.ToolCallID != "" {

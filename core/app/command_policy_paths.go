@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -66,7 +67,7 @@ func looksLikePathToken(token string) bool {
 	return strings.Contains(token, "/") || strings.HasPrefix(token, ".")
 }
 
-func commandApprovalKey(workspaceRoot string, cwd string, command string, argv []string, toolName string, backend string, sandboxProfile string, networkPolicy string, category string, riskLevel string, capabilities []string) string {
+func commandApprovalKey(workspaceRoot string, cwd string, command string, argv []string, toolName string, backend string, sandboxProfile string, networkPolicy string, category string, riskLevel string, shell string, login bool, capabilities []string) string {
 	caps := append([]string(nil), capabilities...)
 	sort.Strings(caps)
 	parts := []string{
@@ -77,6 +78,8 @@ func commandApprovalKey(workspaceRoot string, cwd string, command string, argv [
 		"tool=" + toolName,
 		"backend=" + backend,
 		"sandbox=" + firstNonEmpty(sandboxProfile, "default"),
+		"shell=" + normalizeStoredPathForKey(shell),
+		"login=" + strconv.FormatBool(login),
 		"network=" + networkPolicy,
 		"category=" + category,
 		"risk=" + riskLevel,

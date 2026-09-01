@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -49,7 +48,7 @@ func (s *Service) runAssistantAgentLoop(
 	if s.prompts != nil {
 		promptSnapshot = s.prompts.Snapshot()
 	}
-	messages := prependAgentSystemPromptWithSnapshot(history, modeDef, promptSnapshot)
+	messages := prependAgentSystemPromptWithSnapshotAndShell(history, modeDef, promptSnapshot, shellRuntimeInstruction(strings.TrimSpace(cc.ProjectPath)))
 	var model *domain.ModelRef
 	for {
 		failedSources := s.prepareEnabledToolCatalogs(ctx)
@@ -62,7 +61,18 @@ func (s *Service) runAssistantAgentLoop(
 			specs = configureAgentDelegateToolSpecs(modeDef, specs)
 			specs = filterEligibleToolSpecs(registry, specs, failedSources)
 		}
-		resolved, err := s.resolveHostPreCallResources(ctx, input.SessionID, turn.ID, input.Text, modeDef.ID, strings.TrimSpace(cc.ProjectPath), registry, specs)
+		resolved, err := s.resolveHostResources(ctx, hostResourceResolveRequest{
+			SessionID:     input.SessionID,
+			TurnID:        turn.ID,
+			Intent:        input.Text,
+			AgentMode:     modeDef.ID,
+			WorkspaceRoot: strings.TrimSpace(cc.ProjectPath),
+			Registry:      registry,
+			Specs:         specs,
+			Required:      true,
+			SkipInstructionSelection: hasSessionResourceKind(input.ResourceReferences, domain.SessionResourceSkill) ||
+				hasSessionResourceKind(input.ResourceReferences, domain.SessionResourceExtension),
+		})
 		if err != nil {
 			return "", model, err
 		}
@@ -87,7 +97,7 @@ func (s *Service) runAssistantAgentLoop(
 			expectedRegistrations = assembly.ExpectedRegistrations
 			toolSnapshot = assembly.Snapshot
 		}
-		requestMessages := appendHostPreCallContext(messages, resolved.Context)
+		requestMessages := appendHostPreSnapshotContext(messages, resolved.Context)
 		requestStartedAt := time.Now()
 		var firstTokenAt time.Time
 		markFirstToken := func() {
@@ -184,7 +194,7 @@ func (s *Service) runAssistantAgentLoop(
 			if result.PermissionRequested {
 				return "等待你批准工具权限后，我可以继续执行这次修改。", model, nil
 			}
-			if call.Name == ToolResolveName && result.ToolError != nil && result.ToolError.Code == "no_available_tool" {
+			if call.Name == ResourceResolveName && result.ToolError != nil && result.ToolError.Code == "no_available_resource" {
 				return "", model, errors.New(result.ToolError.Message)
 			}
 			messages = appendToolResultMessages(messages, call, result)
@@ -216,69 +226,9 @@ func recentImageAttachments(messages []domain.ChatMessage, limit int) []domain.M
 	return out
 }
 
-func (s *Service) recordInitialToolSelection(ctx context.Context, sessionID, turnID string, resources []hostToolSelectionResource, lifetime string) error {
-	resources = normalizeHostToolSelectionResources(resources)
-	event, err := s.AppendEvent(ctx, domain.AppendEventRequest{
-		SessionID:  sessionID,
-		TurnID:     turnID,
-		Type:       domain.EventTypeSystemNote,
-		Role:       domain.EventRoleSystem,
-		Visibility: domain.EventVisibilityNormal,
-		Content:    initialToolSelectionContent(resources, lifetime),
-		Payload: map[string]any{
-			"kind":      "host_tool_selection",
-			"status":    "completed",
-			"resources": hostToolSelectionResourcePayload(resources),
-			"lifetime":  lifetime,
-		},
-	})
-	if err == nil {
-		s.emitCreatedSystemNote(event)
-	}
-	return err
-}
-
-func (s *Service) startInitialToolSelection(ctx context.Context, sessionID, turnID string) (domain.SessionEvent, error) {
-	event, err := s.AppendEvent(ctx, domain.AppendEventRequest{
-		SessionID:  sessionID,
-		TurnID:     turnID,
-		Type:       domain.EventTypeSystemNote,
-		Role:       domain.EventRoleSystem,
-		Visibility: domain.EventVisibilityNormal,
-		Content:    "前置工具搜索正在调用辅助模型",
-		Payload: map[string]any{
-			"kind":      "host_tool_selection",
-			"status":    "running",
-			"resources": []map[string]any{},
-		},
-	})
-	if err == nil {
-		s.emitCreatedSystemNote(event)
-	}
-	return event, err
-}
-
-func (s *Service) completeInitialToolSelection(ctx context.Context, eventID string, resources []hostToolSelectionResource, lifetime string) (domain.SessionEvent, error) {
-	resources = normalizeHostToolSelectionResources(resources)
-	return s.updateSystemNoteEvent(ctx, eventID, initialToolSelectionContent(resources, lifetime), map[string]any{
-		"kind":      "host_tool_selection",
-		"status":    "completed",
-		"resources": hostToolSelectionResourcePayload(resources),
-		"lifetime":  lifetime,
-	})
-}
-
-func (s *Service) failInitialToolSelection(ctx context.Context, eventID string) (domain.SessionEvent, error) {
-	return s.updateSystemNoteEvent(ctx, eventID, "前置工具搜索未能完成注入", map[string]any{
-		"kind":      "host_tool_selection",
-		"status":    "failed",
-		"resources": []map[string]any{},
-	})
-}
-
-func normalizeHostToolSelectionResources(resources []hostToolSelectionResource) []hostToolSelectionResource {
+func normalizeHostResourceSelectionResources(resources []hostResourceSelectionResource) []hostResourceSelectionResource {
 	seen := map[string]bool{}
-	out := make([]hostToolSelectionResource, 0, len(resources))
+	out := make([]hostResourceSelectionResource, 0, len(resources))
 	for _, resource := range resources {
 		resource.Kind = strings.TrimSpace(resource.Kind)
 		resource.ID = strings.TrimSpace(resource.ID)
@@ -287,7 +237,7 @@ func normalizeHostToolSelectionResources(resources []hostToolSelectionResource) 
 		if (resource.Kind != domain.SessionResourceExtension && resource.Kind != domain.SessionResourceMCP && resource.Kind != domain.SessionResourceTool && resource.Kind != domain.SessionResourceSkill) || resource.ID == "" || resource.ToolCount < 0 || seen[key] {
 			continue
 		}
-		if resource.Kind != domain.SessionResourceSkill && resource.ToolCount == 0 {
+		if resource.Kind == domain.SessionResourceTool && resource.ToolCount == 0 {
 			continue
 		}
 		if resource.Name == "" {
@@ -305,7 +255,7 @@ func normalizeHostToolSelectionResources(resources []hostToolSelectionResource) 
 	return out
 }
 
-func hostToolSelectionResourcePayload(resources []hostToolSelectionResource) []map[string]any {
+func hostResourceSelectionPayload(resources []hostResourceSelectionResource) []map[string]any {
 	payload := make([]map[string]any, 0, len(resources))
 	for _, resource := range resources {
 		payload = append(payload, map[string]any{
@@ -313,20 +263,6 @@ func hostToolSelectionResourcePayload(resources []hostToolSelectionResource) []m
 		})
 	}
 	return payload
-}
-
-func initialToolSelectionContent(resources []hostToolSelectionResource, lifetime string) string {
-	if len(resources) == 0 {
-		return "前置工具搜索未注入额外工具"
-	}
-	toolCount := 0
-	for _, resource := range resources {
-		toolCount += resource.ToolCount
-	}
-	if lifetime == "request" {
-		return fmt.Sprintf("前置工具搜索已为本次请求临时注入 %d 个资源（%d 个工具）", len(resources), toolCount)
-	}
-	return fmt.Sprintf("前置工具搜索已为当前对话注入 %d 个资源（%d 个工具）", len(resources), toolCount)
 }
 
 func appendToolResultMessages(messages []domain.ChatMessage, call domain.ChatToolCall, result domain.ToolResult) []domain.ChatMessage {

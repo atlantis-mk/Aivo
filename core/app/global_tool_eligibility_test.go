@@ -54,7 +54,7 @@ func TestRequiredCoreToolsRejectGlobalDisableAndIgnoreLegacyPreferences(t *testi
 	}
 	defer store.Close()
 	ctx := context.Background()
-	for _, name := range []string{"bash", "update_plan", "ask_user"} {
+	for _, name := range []string{ExecCommandToolName, WriteStdinToolName, "update_plan", "ask_user"} {
 		if err := store.SetGlobalToolEnabled(ctx, name, false); err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +62,7 @@ func TestRequiredCoreToolsRejectGlobalDisableAndIgnoreLegacyPreferences(t *testi
 	service := NewService(store)
 	workspace := t.TempDir()
 
-	for _, name := range []string{"bash", "update_plan", "ask_user"} {
+	for _, name := range []string{ExecCommandToolName, WriteStdinToolName, "update_plan", "ask_user"} {
 		assertGlobalToolVisibility(t, service, ctx, workspace, name, true)
 		if _, err := service.SetGlobalToolEnabled(ctx, domain.GlobalToolEnabledInput{Name: name, Enabled: false, WorkspaceRoot: workspace}); err == nil {
 			t.Fatalf("required core tool %s accepted global disable", name)
@@ -115,7 +115,7 @@ func TestGlobalToolVisibilityFiltersFutureCandidatesButNotCurrentSelection(t *te
 	}
 
 	registry, _ := service.toolsForWorkspace(workspace)
-	activations, candidates := service.preCallToolCandidates(ctx, "", "turn", registry, registry.Specs())
+	activations, candidates := service.snapshotToolCandidates(ctx, "", "turn", registry, registry.Specs())
 	if activations[projectQueryToolName] != "" {
 		t.Fatalf("uninitialized automatic activation = %q", activations[projectQueryToolName])
 	}
@@ -169,8 +169,8 @@ func TestGlobalToolVisibilityBlocksNewManualAndAuxiliarySelectionOnly(t *testing
 	if _, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{SessionID: session.ID, ToolNames: []string{projectAddToolName, projectQueryToolName}}); err == nil {
 		t.Fatal("new globally hidden manual selection was accepted")
 	}
-	decision, err := service.resolveSessionToolReplacement(ctx, ToolResolveRequest{
-		Intent: "query or add projects", MaxTools: 8, SessionID: session.ID, AgentMode: domain.AgentModeCode,
+	decision, err := service.resolveSessionResources(ctx, ResourceResolveRequest{
+		Intent: "query or add projects", Mode: string(hostResourceSelectionUse), SessionID: session.ID, AgentMode: domain.AgentModeCode,
 		Candidates: []domain.ToolCatalogEntry{
 			{Name: projectAddToolName, Description: "add projects"},
 			{Name: projectQueryToolName, Description: "query projects"},
@@ -250,14 +250,14 @@ func TestPiStyleOptionalFileToolsSupportGlobalManualAndAutomaticSelection(t *tes
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(active.ToolNames, []string{"find", "ls"}) || !reflect.DeepEqual(active.CoreToolNames, coreToolNames()) {
-		t.Fatalf("manual activation = %#v, want optional find/ls plus six core tools", active)
+		t.Fatalf("manual activation = %#v, want optional find/ls plus required core tools", active)
 	}
 	if _, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{SessionID: session.ID, ToolNames: append(manualNames, "grep")}); err == nil {
 		t.Fatal("globally hidden grep was accepted as a new manual activation")
 	}
 
 	registry, _ := service.toolsForWorkspace(workspace)
-	_, candidates := service.preCallToolCandidates(ctx, "", "turn", registry, registry.Specs())
+	_, candidates := service.snapshotToolCandidates(ctx, "", "turn", registry, registry.Specs())
 	candidates, err = service.filterGloballyVisibleToolCatalogEntries(ctx, candidates)
 	if err != nil {
 		t.Fatal(err)

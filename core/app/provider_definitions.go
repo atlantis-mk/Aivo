@@ -187,10 +187,41 @@ func builtInProviderDefinitions() []ProviderDefinition {
 			},
 		},
 		{
-			ID: "together", DisplayName: "Together AI", Description: "Together AI serverless OpenAI-compatible inference.",
-			Aliases: []string{"together-ai"}, Transport: TransportOpenAICompatible,
+			ID: "baseten", DisplayName: "Baseten", Description: "Baseten OpenAI-compatible inference endpoint.",
+			Transport: TransportOpenAICompatible, AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
+			DefaultBaseURL: "https://inference.baseten.co/v1", BaseURLEnvVar: "BASETEN_BASE_URL", APIKeyEnvVars: []string{"BASETEN_API_KEY"},
+			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "custom-profile", BuiltIn: true,
+			RequestProfile: domain.ProviderRequestProfile{Params: map[string]any{"stream": true}},
+			Models:         []domain.ModelInfo{model("baseten", "custom-profile", "Custom profile", true, 0, []string{"streaming"})},
+		},
+		{
+			ID: "deepseek", DisplayName: "DeepSeek", Description: "DeepSeek OpenAI-compatible chat models.",
+			Aliases: []string{"deep-seek"}, Transport: TransportOpenAICompatible,
 			AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
-			DefaultBaseURL: "https://api.together.ai/v1", BaseURLEnvVar: "TOGETHER_BASE_URL", APIKeyEnvVars: []string{"TOGETHER_API_KEY"},
+			DefaultBaseURL: "https://api.deepseek.com/v1", BaseURLEnvVar: "DEEPSEEK_BASE_URL", APIKeyEnvVars: []string{"DEEPSEEK_API_KEY"},
+			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "deepseek-chat", BuiltIn: true,
+			RequestProfile: domain.ProviderRequestProfile{Params: map[string]any{"stream": true}},
+			Models: []domain.ModelInfo{
+				model("deepseek", "deepseek-chat", "DeepSeek Chat", true, 128000, []string{"tools", "streaming"}),
+				model("deepseek", "deepseek-reasoner", "DeepSeek Reasoner", false, 128000, []string{"tools", "reasoning", "streaming"}),
+			},
+		},
+		{
+			ID: "fireworks", DisplayName: "Fireworks AI", Description: "Fireworks AI OpenAI-compatible inference endpoint.",
+			Aliases: []string{"fireworks-ai"}, Transport: TransportOpenAICompatible,
+			AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
+			DefaultBaseURL: "https://api.fireworks.ai/inference/v1", BaseURLEnvVar: "FIREWORKS_BASE_URL", APIKeyEnvVars: []string{"FIREWORKS_API_KEY"},
+			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "accounts/fireworks/models/glm-5p2", BuiltIn: true,
+			RequestProfile: domain.ProviderRequestProfile{Params: map[string]any{"stream": true}},
+			Models: []domain.ModelInfo{
+				modelWithOutput("fireworks", "accounts/fireworks/models/glm-5p2", "GLM 5.2", true, 256000, 65536, []string{"tools", "reasoning", "streaming"}),
+			},
+		},
+		{
+			ID: "together", DisplayName: "Together AI", Description: "Together AI serverless OpenAI-compatible inference.",
+			Aliases: []string{"together-ai", "togetherai"}, Transport: TransportOpenAICompatible,
+			AuthTypes: []AuthType{AuthAPIKey}, DefaultAuthType: AuthAPIKey,
+			DefaultBaseURL: "https://api.together.xyz/v1", BaseURLEnvVar: "TOGETHER_BASE_URL", APIKeyEnvVars: []string{"TOGETHER_API_KEY"},
 			ModelFetch: ModelFetchOpenAICompatible, DefaultModelID: "moonshotai/Kimi-K2.5", BuiltIn: true,
 			RequestProfile: domain.ProviderRequestProfile{Params: map[string]any{"stream": true}},
 			Models: []domain.ModelInfo{
@@ -268,24 +299,7 @@ func anthropicDefaultRequestProfile() domain.ProviderRequestProfile {
 }
 
 func googleDefaultRequestProfile() domain.ProviderRequestProfile {
-	return domain.ProviderRequestProfile{
-		ModelOverrides: map[string]domain.ProviderRequestOverride{
-			"gemini-2.5-pro":   {Params: map[string]any{"generationConfig": map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}}}},
-			"gemini-2.5-flash": {Params: map[string]any{"generationConfig": map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingBudget": 16000}}}},
-			"gemini-3-pro-preview": {Params: map[string]any{
-				"generationConfig": map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": "low"}},
-			}},
-			"gemini-3-flash-preview": {Params: map[string]any{
-				"generationConfig": map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": "minimal"}},
-			}},
-			"gemini-3.1-flash-image-preview": {Params: map[string]any{
-				"generationConfig": map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": "minimal"}},
-			}},
-			"gemini-3-pro-image-preview": {Params: map[string]any{
-				"generationConfig": map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": "high"}},
-			}},
-		},
-	}
+	return domain.ProviderRequestProfile{}
 }
 
 func githubCopilotRequestProfile() domain.ProviderRequestProfile {

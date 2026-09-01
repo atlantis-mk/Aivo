@@ -1,5 +1,5 @@
 id: "CHG-2026-037-intent-scoped-tool-injection"
-title: "Distinguish one-request tool inspection from conversation tool use"
+title: "Move resource inspection to runtime resource_resolve"
 type: "feature"
 profile: "controlled"
 spec_delta: "behavior_change"
@@ -34,16 +34,17 @@ related_changes:
   - "CHG-2026-034-source-group-tool-selection"
   - "CHG-2026-036-visible-precall-tool-selection"
 affected_surfaces:
-  - "Host pre-call auxiliary tool selection"
-  - "session automatic tool-set initialization"
+  - "Host resource_resolve auxiliary resource selection"
+  - "session automatic resource-set replacement"
   - "Provider tool declarations and Tool Snapshots"
-  - "visible pre-call selection event"
-  - "desktop pre-call selection disclosure lifetime label"
+  - "visible resource-resolution tool result"
+  - "desktop resource-resolution disclosure lifetime label"
 affected_formats:
-  - "Host auxiliary selector strict typed source-ID JSON response"
-  - "typed host_tool_selection system-note payload"
+  - "resource_resolve inspect/use mode input"
+  - "Host auxiliary selector strict typed resource-ID JSON response"
+  - "resource_resolve typed resource-summary result"
 affected_versions:
   - "0.0.0-development"
-security_impact: "The Host may expose the complete currently eligible tool catalog without a Host-owned concrete-tool count cap to one primary Provider request only after auxiliary inspection classification; auxiliary output remains limited to typed MCP/extension IDs, schemas remain snapshot-bound, and no authority, credentials, hidden tools, or later-request visibility is granted"
-migration: "none; request-scoped selections are not persisted as automatic names and the existing initialization marker records an empty durable automatic set"
+security_impact: "The primary Agent receives only the always-on resource_resolve control by default; inspect mode returns bounded non-secret summaries without activating tools, while use mode remains Host-expanded, snapshot-bound, and persistent, with no authority, credentials, hidden tools, or execution granted by selection itself"
+migration: "none; existing initialized conversations keep their current automatic set, while uninitialized conversations simply start with no automatic set until resource_resolve use succeeds"
 supersedes: []

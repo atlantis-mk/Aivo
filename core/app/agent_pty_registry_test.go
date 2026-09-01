@@ -604,15 +604,18 @@ func TestSanitizeInteractivePermissionArgumentsRemovesInput(t *testing.T) {
 	}
 }
 
-func TestCodingRegistryOmitsInteractiveTerminalTools(t *testing.T) {
+func TestCodingRegistryRegistersExecCommandTools(t *testing.T) {
 	registry, err := NewCodingToolRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{ExecCommandToolName, WriteStdinToolName} {
-		if _, ok := registry.Get(name); ok {
-			t.Fatalf("legacy interactive tool %s must not be registered", name)
+		if _, ok := registry.Get(name); !ok {
+			t.Fatalf("core command tool %s must be registered", name)
 		}
+	}
+	if _, ok := registry.Get("bash"); ok {
+		t.Fatal("bash must not be registered")
 	}
 }
 
@@ -657,7 +660,7 @@ func TestInteractiveTerminalRuntimeCancellationReturnsLiveProcessReference(t *te
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(50*time.Millisecond, cancel)
 	runtime := NewToolRuntime(&Registry{tools: map[string][]registeredTool{ExecCommandToolName: {{tool: tool}}}}, root)
-	result := runtime.executeToolAttempt(ctx, domain.ChatToolCall{ID: "call", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"command":"printf ready; sleep 30","yield_time_ms":10000}`)}, tool, ExecCommandToolName, time.Hour, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "owner"})
+	result := runtime.executeToolAttempt(ctx, domain.ChatToolCall{ID: "call", Name: ExecCommandToolName, Arguments: json.RawMessage(`{"cmd":"printf ready; sleep 30","yield_time_ms":10000}`)}, tool, ExecCommandToolName, time.Hour, domain.ToolExecutionContext{WorkspaceRoot: root, SessionID: "owner"})
 	processRef, _ := result.Structured["processRef"].(string)
 	if processRef == "" || result.Structured["processAlive"] != true {
 		t.Fatalf("result = %#v", result)

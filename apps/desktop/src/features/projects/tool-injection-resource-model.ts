@@ -5,7 +5,15 @@ export const toolInjectionResourceKinds = [
   "skill",
 ] as const;
 
-export const requiredCoreToolNames = ["read", "bash", "edit", "write"] as const;
+export const requiredCoreToolNames = [
+  "read",
+  "exec_command",
+  "write_stdin",
+  "edit",
+  "write",
+  "update_plan",
+  "ask_user",
+] as const;
 
 export function isRequiredCoreToolName(name?: string) {
   return requiredCoreToolNames.some((coreName) => coreName === name);

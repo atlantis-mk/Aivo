@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -130,6 +131,56 @@ func TestSubmitSessionMessageActivatesMentionedSkillAndRejectsStaleReference(t *
 		if event.Type == domain.EventTypeUserMessage {
 			t.Fatalf("validation failure persisted a user event: %#v", events)
 		}
+	}
+}
+
+func TestSubmitSessionMessageActivatesMentionedSkillGroup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "hyperframes"), "hyperframes", "Mandatory entry point for HyperFrames video work", "Read routing instructions first.")
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "hyperframes-animation"), "hyperframes-animation", "HyperFrames animation knowledge", "Follow animation instructions.")
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "hyperframes-audio"), "hyperframes-audio", "HyperFrames audio mixing", "Follow audio instructions.")
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil || len(scan.Candidates) != 3 {
+		t.Fatalf("scan = %#v, err = %v", scan, err)
+	}
+	for _, candidate := range scan.Candidates {
+		if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidate.ID, TargetScope: domain.SkillScopeGlobal}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{
+		SessionID: session.ID,
+		Text:      "Use the selected HyperFrames skills",
+		ResourceReferences: []domain.SessionResourceReference{{
+			Kind: domain.SessionResourceSkill, ID: "skill-group:hyperframes",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := service.GetSessionActiveSkills(ctx, session.ID)
+	if err != nil || len(active.SkillIDs) != 3 {
+		t.Fatalf("active grouped skills = %#v, err = %v", active, err)
+	}
+	names := make([]string, 0, len(active.Skills))
+	for _, skill := range active.Skills {
+		names = append(names, skill.Name)
+	}
+	sort.Strings(names)
+	if strings.Join(names, ",") != "hyperframes,hyperframes-animation,hyperframes-audio" {
+		t.Fatalf("active grouped skill names = %#v", names)
+	}
+	payload := string(mustJSONRaw(t, run.UserEvent.Payload))
+	if !strings.Contains(payload, `"id":"skill-group:hyperframes"`) || !strings.Contains(payload, `"name":"HyperFrames"`) {
+		t.Fatalf("user event did not retain canonical group summary: %s", payload)
 	}
 }
 

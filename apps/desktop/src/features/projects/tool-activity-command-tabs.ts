@@ -53,7 +53,6 @@ export function appendShellOutputToTabs(
   if (changed) return updatedTabs;
 
   const now = payload.timeCreated || new Date().toISOString();
-  const interactive = payload.processRef?.startsWith("agent-pty:") ?? false;
   const nextTab = appendCommandOutput(
     {
       id: shellTabId(payload.sessionId),
@@ -63,9 +62,9 @@ export function appendShellOutputToTabs(
           id: commandEntryId(toolCallId, 0),
           toolCallId,
           turnId: payload.turnId,
-          toolName: interactive ? "exec_command" : "bash",
+          toolName: "exec_command",
           processRef: payload.processRef,
-          command: interactive ? "Interactive command" : "Shell command",
+          command: "Shell command",
           status: "running",
           stdout: "",
           stderr: "",
@@ -75,8 +74,8 @@ export function appendShellOutputToTabs(
       ],
       toolCallId,
       turnId: payload.turnId,
-      toolName: interactive ? "exec_command" : "bash",
-      command: interactive ? "Interactive command" : "Shell command",
+      toolName: "exec_command",
+      command: "Shell command",
       status: "running",
       stdout: "",
       stderr: "",

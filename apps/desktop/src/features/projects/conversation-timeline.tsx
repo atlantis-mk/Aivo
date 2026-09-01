@@ -18,8 +18,10 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   onOpenToolActivity,
   onRetryTurn,
   revealFromHistory,
+  reserveFloatingControls,
   reservePermissionDock,
   turns,
+  workspaceRoot,
 }: {
   agentRuns?: AgentRun[];
   contentRef: RefObject<HTMLDivElement | null>;
@@ -30,8 +32,10 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   onOpenToolActivity?: (activity: ToolCallActivity) => void;
   onRetryTurn?: (turn: ConversationTurn) => void;
   revealFromHistory: boolean;
+  reserveFloatingControls: boolean;
   reservePermissionDock: boolean;
   turns: ConversationTurn[];
+  workspaceRoot: string;
 }) {
   const rows = useMemo(() => constructConversationTimelineRows(turns), [turns]);
   const actions: ConversationTimelineActions = useMemo(
@@ -55,7 +59,9 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
         "mx-auto flex w-[calc(100%-2rem)] max-w-[680px] flex-col px-0 pt-12 transition-transform ease-out sm:w-[calc(100%-48px)]",
         reservePermissionDock
           ? "pb-[19rem]"
-          : "pb-[calc(var(--conversation-bottom-height)+3rem)]",
+          : reserveFloatingControls
+            ? "pb-[calc(var(--conversation-bottom-height)+6rem)]"
+            : "pb-[calc(var(--conversation-bottom-height)+3rem)]",
         revealFromHistory
           ? "animate-in fade-in duration-200 [&_.animate-in]:animate-none"
           : "animate-in fade-in slide-in-from-bottom-3 duration-500",
@@ -70,6 +76,7 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
           onOpenSession={onOpenSession}
           onOpenToolActivity={onOpenToolActivity}
           row={row}
+          workspaceRoot={workspaceRoot}
         />
       ))}
     </div>

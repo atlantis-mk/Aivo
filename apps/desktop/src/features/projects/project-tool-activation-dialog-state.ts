@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import {
   defaultActiveBuiltinToolNames,
+  groupSkillCatalogEntries,
   groupToolCatalogEntries,
   isToolCatalogGroupActive,
   isToolCatalogGroupUsed,
@@ -12,6 +13,7 @@ import {
   toolNameListsEqual,
 } from "@/features/projects/project-tool-activation-model";
 import { scopeToolActivationSave } from "@/features/projects/project-tool-activation-scope";
+import { skillCanActivate } from "@/features/projects/skill-action-model";
 import {
   getSessionActiveSkills,
   getSessionActiveTools,
@@ -78,6 +80,10 @@ export function useToolActivationDialogState({
   const groupedTools = useMemo(
     () => groupToolCatalogEntries(toggleableTools, sourceMetadata),
     [sourceMetadata, toggleableTools],
+  );
+  const groupedSkills = useMemo(
+    () => groupSkillCatalogEntries(skills),
+    [skills],
   );
   const activeGroupCount = groupedTools.filter((group) =>
     isToolCatalogGroupActive(group, activeToolSet),
@@ -154,7 +160,7 @@ export function useToolActivationDialogState({
             activeSkills.skillIds,
           );
           setTools(catalogTools);
-          setSkills((skillList.entries ?? []).filter((skill) => skill.enabled));
+          setSkills((skillList.entries ?? []).filter(skillCanActivate));
           setSkillCandidates(skillList.candidates ?? []);
           setActiveToolNames(normalizedActiveTools);
           setSavedToolNames(normalizedActiveTools);
@@ -221,12 +227,14 @@ export function useToolActivationDialogState({
     setActiveToolNames(normalizeToolNames([...next]));
   }
 
-  function toggleSkill(id: string, enabled: boolean) {
+  function toggleSkill(ids: string[], enabled: boolean) {
     const next = new Set(activeSkillIds);
-    if (enabled) {
-      next.add(id);
-    } else {
-      next.delete(id);
+    for (const id of ids) {
+      if (enabled) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
     }
     setActiveSkillIds(normalizeToolNames([...next]));
   }
@@ -260,7 +268,7 @@ export function useToolActivationDialogState({
         includeDisabled: true,
         includeIgnored: true,
       });
-      setSkills(list.entries ?? []);
+      setSkills((list.entries ?? []).filter(skillCanActivate));
       setSkillCandidates(list.candidates ?? []);
       toast.success(`已导入技能 ${candidate.name}`);
     } catch (err) {
@@ -279,7 +287,7 @@ export function useToolActivationDialogState({
         includeDisabled: true,
         includeIgnored: true,
       });
-      setSkills(list.entries ?? []);
+      setSkills((list.entries ?? []).filter(skillCanActivate));
       setSkillCandidates(list.candidates ?? []);
       toast.success(`已忽略技能 ${candidate.name}`);
     } catch (err) {
@@ -299,7 +307,8 @@ export function useToolActivationDialogState({
     inactiveToolCount: inactiveGroupCount,
     loading,
     saving,
-    skillCount: skills.length,
+    groupedSkills,
+    skillCount: groupedSkills.length,
     skills,
     submitActiveToolNames,
     toggleableToolCount: groupedTools.length,

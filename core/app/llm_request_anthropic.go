@@ -178,7 +178,7 @@ func anthropicDefaultMaxTokens(model string) int {
 			return item.limit
 		}
 	}
-	return 128000
+	return 4096
 }
 
 func anthropicOutputEffort(effort string) string {

@@ -35,26 +35,38 @@ func (s *Service) ScanProjectSkills(ctx context.Context, input domain.SkillScanI
 }
 
 func (s *Service) ListSkills(ctx context.Context, input domain.SkillListInput) (domain.SkillListResult, error) {
+	s.syncAivoSystemSkills(ctx)
 	hasCodexAccount := s.codexOAuthConfigured(ctx)
 	if hasCodexAccount {
 		s.syncCodexSystemSkillsForAccount(ctx)
 	}
 	result, err := s.ensureSkillManager().List(ctx, input)
-	if err != nil || hasCodexAccount {
+	if err != nil {
 		return result, err
 	}
 	filtered := result.Entries[:0]
 	for _, skill := range result.Entries {
-		if skill.Source != domain.SkillSourceCodexSystem {
+		if skill.Source == domain.SkillSourceCodexSystem && !hasCodexAccount {
+			continue
+		}
+		if isSystemSkillSource(skill.Source) && !s.skillAvailableForUse(ctx, skill) {
+			continue
+		}
+		if skill.Source != domain.SkillSourceCodexSystem || hasCodexAccount {
 			filtered = append(filtered, skill)
 		}
 	}
 	result.Entries = filtered
+	result.Entries = s.decorateSkillEntries(ctx, result.Entries)
 	return result, nil
 }
 
 func (s *Service) ImportSkill(ctx context.Context, input domain.SkillImportInput) (domain.SkillEntry, error) {
-	return s.ensureSkillManager().Import(ctx, input)
+	skill, err := s.ensureSkillManager().Import(ctx, input)
+	if err != nil {
+		return domain.SkillEntry{}, err
+	}
+	return s.decorateSkillEntry(ctx, skill), nil
 }
 
 func (s *Service) IgnoreSkillCandidatesByName(ctx context.Context, input domain.SkillIgnoreCandidatesInput) ([]domain.SkillImportCandidate, error) {
@@ -62,15 +74,29 @@ func (s *Service) IgnoreSkillCandidatesByName(ctx context.Context, input domain.
 }
 
 func (s *Service) SetSkillEnabled(ctx context.Context, input domain.SkillEnabledInput) (domain.SkillEntry, error) {
-	return s.ensureSkillManager().SetEnabled(ctx, input)
+	skill, err := s.ensureSkillManager().SetEnabled(ctx, input)
+	if err != nil {
+		return domain.SkillEntry{}, err
+	}
+	return s.decorateSkillEntry(ctx, skill), nil
 }
 
 func (s *Service) GetManagedSkillForEdit(ctx context.Context, skillID string) (domain.SkillEditResult, error) {
-	return s.ensureSkillManager().GetForEdit(ctx, skillID)
+	result, err := s.ensureSkillManager().GetForEdit(ctx, skillID)
+	if err != nil {
+		return domain.SkillEditResult{}, err
+	}
+	result.Skill = s.decorateSkillEntry(ctx, result.Skill)
+	return result, nil
 }
 
 func (s *Service) UpdateManagedSkill(ctx context.Context, input domain.SkillUpdateInput) (domain.SkillEditResult, error) {
-	return s.ensureSkillManager().Update(ctx, input)
+	result, err := s.ensureSkillManager().Update(ctx, input)
+	if err != nil {
+		return domain.SkillEditResult{}, err
+	}
+	result.Skill = s.decorateSkillEntry(ctx, result.Skill)
+	return result, nil
 }
 
 func (s *Service) DeleteManagedSkill(ctx context.Context, skillID string) error {
@@ -102,6 +128,7 @@ func (s *Service) loadSkillIntoSession(ctx context.Context, input domain.LoadSki
 	if sessionID == "" {
 		return loadedSkillResult{}, errors.New("sessionId is required")
 	}
+	s.syncAivoSystemSkills(ctx)
 	manager := s.ensureSkillManager()
 	skill, err := manager.Resolve(ctx, input.SkillID, input.Name, input.Scope)
 	if err != nil {
@@ -112,6 +139,9 @@ func (s *Service) loadSkillIntoSession(ctx context.Context, input domain.LoadSki
 	}
 	if !skill.Enabled {
 		return loadedSkillResult{}, errors.New("skill is disabled")
+	}
+	if !s.skillAvailableForUse(ctx, skill) {
+		return loadedSkillResult{}, errors.New("skill is not available")
 	}
 	already, _ := s.sessionSkillLoaded(ctx, sessionID, skill)
 	if already && !input.Reload {
@@ -154,20 +184,27 @@ func (s *Service) SetSessionActiveSkills(ctx context.Context, input domain.Sessi
 	if sessionID == "" {
 		return domain.SessionActiveSkillsResult{}, errors.New("sessionId is required")
 	}
-	manager := s.ensureSkillManager()
+	workspaceRoot := s.sessionSkillWorkspaceRoot(ctx, sessionID)
 	seen := map[string]bool{}
 	ids := make([]string, 0, len(input.SkillIDs))
+	visibleSkillIDs := make([]string, 0, len(input.SkillIDs))
 	for _, id := range input.SkillIDs {
 		id = strings.TrimSpace(id)
-		if id == "" || seen[id] {
+		if id == "" {
 			continue
 		}
-		skill, err := manager.Resolve(ctx, id, "", "")
-		if err != nil || !skill.Enabled || (skill.Source == domain.SkillSourceCodexSystem && !s.codexOAuthConfigured(ctx)) {
+		skills := s.resolveAvailableSkillReference(ctx, workspaceRoot, id)
+		if len(skills) == 0 {
 			continue
 		}
-		seen[id] = true
-		ids = append(ids, id)
+		for _, skill := range skills {
+			if seen[skill.ID] {
+				continue
+			}
+			seen[skill.ID] = true
+			ids = append(ids, skill.ID)
+			visibleSkillIDs = append(visibleSkillIDs, skill.ID)
+		}
 	}
 	sort.Strings(ids)
 	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
@@ -178,6 +215,8 @@ func (s *Service) SetSessionActiveSkills(ctx context.Context, input domain.Sessi
 		state.Metadata = map[string]any{}
 	}
 	state.Metadata[sessionMetadataActiveSkills] = ids
+	state.Metadata[sessionMetadataVisibleSkills] = mergeSessionMetadataStringSet(state.Metadata[sessionMetadataVisibleSkills], visibleSkillIDs)
+	markAutoSelectedToolsInitialized(state.Metadata)
 	if _, err := s.store.UpsertSessionExecutionState(ctx, state); err != nil {
 		return domain.SessionActiveSkillsResult{}, err
 	}
@@ -185,6 +224,66 @@ func (s *Service) SetSessionActiveSkills(ctx context.Context, input domain.Sessi
 		s.onSessionUpdated(sessionID, nil)
 	}
 	return s.GetSessionActiveSkills(ctx, sessionID)
+}
+
+func (s *Service) sessionSkillWorkspaceRoot(ctx context.Context, sessionID string) string {
+	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
+		return ""
+	}
+	if session, err := s.store.GetRuntimeSession(ctx, sessionID); err == nil {
+		if root := strings.TrimSpace(session.ProjectPath); root != "" {
+			return root
+		}
+	}
+	if codingContext, err := s.store.GetCodingContext(ctx, sessionID); err == nil {
+		return strings.TrimSpace(codingContext.ProjectPath)
+	}
+	return ""
+}
+
+func (s *Service) resolveAvailableSkillReference(ctx context.Context, workspaceRoot string, id string) []domain.SkillEntry {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	if strings.HasPrefix(id, skillGroupResourceKeyPrefix) {
+		return s.availableSkillGroupMembers(ctx, workspaceRoot, strings.TrimPrefix(id, skillGroupResourceKeyPrefix))
+	}
+	manager := s.ensureSkillManager()
+	skill, err := manager.Resolve(ctx, id, "", "")
+	if err == nil && skill.Enabled && s.skillAvailableForUse(ctx, skill) {
+		return []domain.SkillEntry{s.decorateSkillEntry(ctx, skill)}
+	}
+	return s.availableSkillGroupMembers(ctx, workspaceRoot, id)
+}
+
+func (s *Service) availableSkillGroupMembers(ctx context.Context, workspaceRoot string, groupID string) []domain.SkillEntry {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return nil
+	}
+	result, err := s.ListSkills(ctx, domain.SkillListInput{WorkspaceRoot: strings.TrimSpace(workspaceRoot)})
+	if err != nil {
+		return nil
+	}
+	members := make([]domain.SkillEntry, 0)
+	for _, skill := range result.Entries {
+		if !skill.Enabled || !s.skillAvailableForUse(ctx, skill) || skill.SelectionGroup == nil || skill.SelectionGroup.ID != groupID {
+			continue
+		}
+		members = append(members, skill)
+	}
+	sort.Slice(members, func(i, j int) bool { return members[i].Name < members[j].Name })
+	return members
+}
+
+func skillGroupDisplayName(skills []domain.SkillEntry, groupID string) string {
+	for _, skill := range skills {
+		if skill.SelectionGroup != nil && skill.SelectionGroup.ID == groupID && strings.TrimSpace(skill.SelectionGroup.Name) != "" {
+			return skill.SelectionGroup.Name
+		}
+	}
+	return firstNonEmpty(groupID, "Skill group")
 }
 
 func (s *Service) sessionSkillLoaded(ctx context.Context, sessionID string, skill domain.SkillEntry) (bool, error) {
@@ -222,6 +321,8 @@ func (s *Service) rememberActiveSkill(ctx context.Context, sessionID string, ski
 		state.Metadata = map[string]any{}
 	}
 	state.Metadata[sessionMetadataActiveSkills] = ids
+	state.Metadata[sessionMetadataVisibleSkills] = mergeSessionMetadataStringSet(state.Metadata[sessionMetadataVisibleSkills], []string{skill.ID})
+	markAutoSelectedToolsInitialized(state.Metadata)
 	_, err = s.store.UpsertSessionExecutionState(ctx, state)
 	return ids, err
 }
@@ -245,15 +346,104 @@ func (s *Service) activeSkills(ctx context.Context, sessionID string) ([]string,
 			continue
 		}
 		skill, err := manager.Resolve(ctx, id, "", "")
-		if err != nil || !skill.Enabled || (skill.Source == domain.SkillSourceCodexSystem && !s.codexOAuthConfigured(ctx)) {
+		if err != nil || !s.skillAvailableForUse(ctx, skill) {
 			continue
 		}
 		seen[id] = true
 		outIDs = append(outIDs, id)
-		skills = append(skills, skill)
+		skills = append(skills, s.decorateSkillEntry(ctx, skill))
 	}
 	sort.Strings(outIDs)
 	return outIDs, skills
+}
+
+func (s *Service) rememberVisibleSkills(ctx context.Context, sessionID string, skills []domain.SkillEntry) ([]string, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, errors.New("sessionId is required")
+	}
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		if strings.TrimSpace(skill.ID) == "" || seen[skill.ID] {
+			continue
+		}
+		seen[skill.ID] = true
+		ids = append(ids, skill.ID)
+	}
+	sort.Strings(ids)
+	if state.Metadata == nil {
+		state.Metadata = map[string]any{}
+	}
+	state.Metadata[sessionMetadataVisibleSkills] = ids
+	_, err = s.store.UpsertSessionExecutionState(ctx, state)
+	return ids, err
+}
+
+func (s *Service) visibleSkills(ctx context.Context, sessionID string) ([]string, []domain.SkillEntry) {
+	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
+		return nil, nil
+	}
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil || state.Metadata == nil {
+		return nil, nil
+	}
+	manager := s.ensureSkillManager()
+	ids := stringSliceFromAny(state.Metadata[sessionMetadataVisibleSkills])
+	outIDs := make([]string, 0, len(ids))
+	skills := make([]domain.SkillEntry, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		skill, err := manager.Resolve(ctx, id, "", "")
+		if err != nil || !skill.Enabled || !s.skillAvailableForUse(ctx, skill) {
+			continue
+		}
+		seen[id] = true
+		outIDs = append(outIDs, id)
+		skills = append(skills, s.decorateSkillEntry(ctx, skill))
+	}
+	sort.Strings(outIDs)
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	return outIDs, skills
+}
+
+func (s *Service) visibleSkillsContext(ctx context.Context, sessionID string) string {
+	_, skills := s.visibleSkills(ctx, sessionID)
+	if len(skills) == 0 {
+		return ""
+	}
+	return renderAvailableSkills(skills, nil)
+}
+
+func mergeSessionMetadataStringSet(existing any, added []string) []string {
+	seen := map[string]bool{}
+	values := make([]string, 0)
+	for _, value := range stringSliceFromAny(existing) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		values = append(values, value)
+	}
+	for _, value := range added {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
 }
 
 func (s *Service) activeSkillsContext(ctx context.Context, sessionID string) string {
@@ -270,6 +460,76 @@ func (s *Service) activeSkillsContext(ctx context.Context, sessionID string) str
 		}
 		files, _ := manager.SupportingFiles(skill, skillSupportingFileLimit)
 		blocks = append(blocks, renderSkillModelOutputWithSnapshot(s.currentPromptSnapshot(), skill, content, files))
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
+func (s *Service) activeExtensionContextKeys(ctx context.Context, sessionID string) []string {
+	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil || state.Metadata == nil {
+		return nil
+	}
+	keys := normalizeHostResourceKeys(stringSliceFromAny(state.Metadata[sessionMetadataActiveExtensionContexts]))
+	return keys
+}
+
+func (s *Service) rememberActiveExtensionContexts(ctx context.Context, sessionID string, keys []string) ([]string, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, errors.New("sessionId is required")
+	}
+	state, err := s.store.GetSessionExecutionState(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	merged := make([]string, 0)
+	for _, key := range stringSliceFromAny(state.Metadata[sessionMetadataActiveExtensionContexts]) {
+		key = strings.TrimSpace(key)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		merged = append(merged, key)
+	}
+	for _, key := range normalizeHostResourceKeys(keys) {
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		merged = append(merged, key)
+	}
+	sort.Strings(merged)
+	if state.Metadata == nil {
+		state.Metadata = map[string]any{}
+	}
+	state.Metadata[sessionMetadataActiveExtensionContexts] = merged
+	_, err = s.store.UpsertSessionExecutionState(ctx, state)
+	return merged, err
+}
+
+func (s *Service) activeExtensionContextsContext(ctx context.Context, sessionID string) string {
+	keys := s.activeExtensionContextKeys(ctx, sessionID)
+	if len(keys) == 0 || s == nil || s.extensionSupervisor == nil {
+		return ""
+	}
+	allowed := map[string]bool{}
+	for _, key := range keys {
+		allowed[key] = true
+	}
+	candidates := s.extensionSupervisor.ContextCatalog()
+	blocks := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !allowed[candidate.Key] {
+			continue
+		}
+		resource, ok := s.extensionContextResource(ctx, candidate.ExtensionID, candidate.ContextID)
+		if ok {
+			blocks = append(blocks, renderExtensionContextResource(resource))
+		}
 	}
 	return strings.Join(blocks, "\n\n")
 }
@@ -305,7 +565,7 @@ func renderAvailableSkills(skills []domain.SkillEntry, candidates []domain.Skill
 	}
 	lines := []string{
 		"Skills provide specialized instructions and workflows for specific tasks.",
-		"Use the skill tool to load a skill when a task matches its description. Pending import candidates can be loaded by name; ignored candidates are not listed.",
+		"Only the Skills selected for this session are listed. Use skills_read with the package locator to read SKILL.md before following a Skill. Pending import candidates are not activatable; ignored candidates are not listed.",
 	}
 	lines = append(lines, "<available_skills>")
 	for _, skill := range skills {
@@ -313,6 +573,8 @@ func renderAvailableSkills(skills []domain.SkillEntry, candidates []domain.Skill
 			"  <skill>",
 			fmt.Sprintf("    <name>%s</name>", xmlEscape(skill.Name)),
 			fmt.Sprintf("    <description>%s</description>", xmlEscape(skill.Description)),
+			fmt.Sprintf("    <package>%s</package>", xmlEscape(skillPackageLocator(skill))),
+			fmt.Sprintf("    <main_resource>%s</main_resource>", xmlEscape(skillMainResourceLocator(skill))),
 			"    <status>imported</status>",
 			"  </skill>",
 		)

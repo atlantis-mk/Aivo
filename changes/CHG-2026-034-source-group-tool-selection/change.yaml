@@ -36,8 +36,8 @@ related_changes:
 affected_surfaces:
   - "MCP creation and settings"
   - "Manifest and Registry tool registration metadata"
-  - "Host auxiliary grouped-or-individual tool selection"
-  - "session automatic tool-set expansion"
+  - "Host auxiliary grouped-or-individual resource selection"
+  - "session automatic resource-set expansion"
   - "Provider tool declarations and Tool Snapshots"
   - "desktop four-category resource management, composer chooser, conversation activation, and visible pre-call summary"
 affected_formats:
@@ -46,7 +46,7 @@ affected_formats:
   - "Tool catalog selectionGroup projection"
   - "Host auxiliary typed resource-ID prompt and strict JSON response"
   - "Provider namespace/function tool declarations"
-  - "typed host_tool_selection resource summaries"
+  - "resource_resolve typed resource summaries"
 affected_versions:
   - "0.0.0-development"
 security_impact: "Keeps grouped and individual selection non-authoritative; Host validates declared group membership, revalidates source readiness and every concrete member before snapshot assembly, and per-tool permission checks remain unchanged"

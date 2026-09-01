@@ -38,7 +38,7 @@ func (t *reservedPrimitiveTestTool) Execute(context.Context, json.RawMessage, do
 	return domain.ToolResult{Name: t.name, OK: true}
 }
 
-func TestCodingRegistryKeepsExactlyFourDefaultPrimitivesInStableOrder(t *testing.T) {
+func TestCodingRegistryKeepsDefaultPrimitivesInStableOrder(t *testing.T) {
 	registry, err := NewCodingToolRegistry(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestCodingRegistryKeepsExactlyFourDefaultPrimitivesInStableOrder(t *testing
 	for _, spec := range specs {
 		names = append(names, spec.Name)
 	}
-	want := []string{"read", "bash", "edit", "write", "grep", "find", "ls"}
+	want := []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "grep", "find", "ls"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("tools = %v, want %v", names, want)
 	}
@@ -57,10 +57,10 @@ func TestCodingRegistryKeepsExactlyFourDefaultPrimitivesInStableOrder(t *testing
 	for _, spec := range assembly.Specs {
 		defaultNames = append(defaultNames, spec.Name)
 	}
-	if wantDefaults := []string{"read", "bash", "edit", "write"}; !reflect.DeepEqual(defaultNames, wantDefaults) {
+	if wantDefaults := []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write"}; !reflect.DeepEqual(defaultNames, wantDefaults) {
 		t.Fatalf("default tools = %v, want %v", defaultNames, wantDefaults)
 	}
-	for _, removed := range []string{"read_file", "edit_file", "write_file", "search_files", "glob", "list_files", "apply_patch", ToolResolveName} {
+	for _, removed := range []string{"read_file", "edit_file", "write_file", "search_files", "glob", "list_files", "apply_patch", ResourceResolveName} {
 		if _, ok := registry.Get(removed); ok {
 			t.Fatalf("legacy tool %s is executable", removed)
 		}
@@ -144,15 +144,16 @@ func TestAlternateEnvironmentAtomicallyOwnsAllFourPrimitivesWithoutLocalFallback
 		t.Fatal("environment switch did not create a new tool snapshot identity")
 	}
 	arguments := map[string]json.RawMessage{
-		"read":  json.RawMessage(`{"path":"remote.txt"}`),
-		"bash":  json.RawMessage(`{"command":"printf remote"}`),
-		"edit":  json.RawMessage(`{"path":"remote.txt","edits":[{"oldText":"a","newText":"b"}]}`),
-		"write": json.RawMessage(`{"path":"remote.txt","content":"remote"}`),
-		"grep":  json.RawMessage(`{"query":"remote"}`),
-		"find":  json.RawMessage(`{"pattern":"**/*.txt"}`),
-		"ls":    json.RawMessage(`{}`),
+		"read":              json.RawMessage(`{"path":"remote.txt"}`),
+		ExecCommandToolName: json.RawMessage(`{"cmd":"printf remote"}`),
+		WriteStdinToolName:  json.RawMessage(`{"process_ref":"agent-pty:test","chars":""}`),
+		"edit":              json.RawMessage(`{"path":"remote.txt","edits":[{"oldText":"a","newText":"b"}]}`),
+		"write":             json.RawMessage(`{"path":"remote.txt","content":"remote"}`),
+		"grep":              json.RawMessage(`{"query":"remote"}`),
+		"find":              json.RawMessage(`{"pattern":"**/*.txt"}`),
+		"ls":                json.RawMessage(`{}`),
 	}
-	for _, name := range []string{"read", "bash", "edit", "write", "grep", "find", "ls"} {
+	for _, name := range []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "grep", "find", "ls"} {
 		tool, ok := registry.Get(name)
 		if !ok {
 			t.Fatalf("missing %s", name)
@@ -162,7 +163,7 @@ func TestAlternateEnvironmentAtomicallyOwnsAllFourPrimitivesWithoutLocalFallback
 			t.Fatalf("%s result = %#v, want explicit environment loss", name, result)
 		}
 	}
-	if !reflect.DeepEqual(environment.calls, []string{"read", "bash", "edit", "write", "grep", "find", "ls"}) {
+	if !reflect.DeepEqual(environment.calls, []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "grep", "find", "ls"}) {
 		t.Fatalf("environment calls = %v", environment.calls)
 	}
 	if _, err := os.Stat(filepath.Join(root, "remote.txt")); !os.IsNotExist(err) {
@@ -318,7 +319,7 @@ func TestToolSnapshotFreezesRegistrationAndSchemaIdentities(t *testing.T) {
 		t.Fatal(err)
 	}
 	assembly := AssembleToolSpecs(registry, registry.Specs())
-	if len(assembly.Snapshot.Tools) != 4 || assembly.Snapshot.Revision == "" {
+	if len(assembly.Snapshot.Tools) != 5 || assembly.Snapshot.Revision == "" {
 		t.Fatalf("snapshot = %#v", assembly.Snapshot)
 	}
 	for _, entry := range assembly.Snapshot.Tools {
@@ -330,90 +331,6 @@ func TestToolSnapshotFreezesRegistrationAndSchemaIdentities(t *testing.T) {
 	if second.Snapshot.Revision != assembly.Snapshot.Revision {
 		t.Fatalf("revisions differ: %s != %s", second.Snapshot.Revision, assembly.Snapshot.Revision)
 	}
-}
-
-func TestBashPrimitiveUsesStrictSchemaAndTailPreservingArtifacts(t *testing.T) {
-	if _, err := resolveBashExecutable(t.TempDir()); err != nil {
-		t.Skip(err)
-	}
-	root := t.TempDir()
-	tool := NewBashTool(root, NewLocalSandboxRunner())
-	properties := tool.Spec().InputSchema["properties"].(map[string]any)
-	if len(properties) != 2 || properties["command"] == nil || properties["timeout"] == nil {
-		t.Fatalf("bash schema = %#v", tool.Spec().InputSchema)
-	}
-	invalid := tool.Execute(context.Background(), json.RawMessage(`{"command":"pwd","cwd":"subdir"}`), domain.ToolExecutionContext{})
-	if invalid.OK || invalid.ToolError.Code != "invalid_arguments" {
-		t.Fatalf("invalid result = %#v", invalid)
-	}
-	result := tool.Execute(context.Background(), json.RawMessage(`{"command":"for i in {1..13000}; do printf x; done; printf END"}`), domain.ToolExecutionContext{SessionID: "bash-test", ToolCallID: "call-1"})
-	if result.OK != true || !result.Truncated || !strings.HasSuffix(result.Structured["stdout"].(string), "END") || len(result.RetainedOutputRefs) == 0 {
-		t.Fatalf("result = %#v", result)
-	}
-	full, err := os.ReadFile(result.RetainedOutputRefs[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(full) != 13003 || !strings.HasSuffix(string(full), "END") {
-		t.Fatalf("retained output length = %d", len(full))
-	}
-	info, err := os.Stat(result.RetainedOutputRefs[0])
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("retained output mode = %v, err = %v", info.Mode().Perm(), err)
-	}
-	cleanupRetainedOutputSession("bash-test")
-	if _, err := os.Stat(result.RetainedOutputRefs[0]); !os.IsNotExist(err) {
-		t.Fatalf("session artifact was not removed: %v", err)
-	}
-}
-
-func TestBashPrimitiveBoundsStdoutAndStderrIndependently(t *testing.T) {
-	if _, err := resolveBashExecutable(t.TempDir()); err != nil {
-		t.Skip(err)
-	}
-	root := t.TempDir()
-	tool := NewBashTool(root, NewLocalSandboxRunner())
-	result := tool.Execute(context.Background(), json.RawMessage(`{"command":"for i in {1..13000}; do printf o; printf e >&2; done; printf OUT; printf ERR >&2"}`), domain.ToolExecutionContext{SessionID: "bash-streams", ToolCallID: "call-streams"})
-	if !result.OK || !result.Truncated || len(result.RetainedOutputRefs) != 2 {
-		t.Fatalf("result = %#v, want two retained stream artifacts", result)
-	}
-	if !strings.HasSuffix(result.Structured["stdout"].(string), "OUT") || !strings.HasSuffix(result.Structured["stderr"].(string), "ERR") {
-		t.Fatalf("bounded streams = stdout %q stderr %q", result.Structured["stdout"], result.Structured["stderr"])
-	}
-	for _, ref := range result.RetainedOutputRefs {
-		raw, err := os.ReadFile(ref)
-		if err != nil || len(raw) != 13003 {
-			t.Fatalf("retained stream %s length = %d, err = %v", ref, len(raw), err)
-		}
-	}
-	cleanupRetainedOutputSession("bash-streams")
-
-	small := tool.Execute(context.Background(), json.RawMessage(`{"command":"printf ok; printf warning >&2"}`), domain.ToolExecutionContext{SessionID: "bash-small", ToolCallID: "call-small"})
-	if !small.OK || small.Truncated || len(small.RetainedOutputRefs) != 0 {
-		t.Fatalf("small result = %#v, want no retained artifacts", small)
-	}
-}
-
-func TestBashPrimitiveCancellationTearsDownChildProcessGroup(t *testing.T) {
-	if _, err := resolveBashExecutable(t.TempDir()); err != nil {
-		t.Skip(err)
-	}
-	root := t.TempDir()
-	marker := filepath.Join(root, "child-finished")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	timer := time.AfterFunc(40*time.Millisecond, cancel)
-	defer timer.Stop()
-	command := `(sleep 0.3; printf child > child-finished) & wait`
-	result := NewBashTool(root, NewLocalSandboxRunner()).Execute(ctx, mustJSON(map[string]any{"command": command}), domain.ToolExecutionContext{SessionID: "bash-cancel", ToolCallID: "cancel-call"})
-	if result.OK || result.ToolError == nil || result.ToolError.Code != SandboxErrorCommandCancelled || result.Structured["cancelled"] != true {
-		t.Fatalf("result = %#v, want cancelled", result)
-	}
-	time.Sleep(400 * time.Millisecond)
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("cancelled Bash child survived and wrote marker: %v", err)
-	}
-	cleanupRetainedOutputSession("bash-cancel")
 }
 
 func TestToolRuntimeLogsArgumentSizeWithoutRawArguments(t *testing.T) {

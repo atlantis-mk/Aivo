@@ -203,7 +203,7 @@ func (s *Service) workspaceToolCatalogRegistry(ctx context.Context, workspaceRoo
 	runtime.ExtensionHooks = s.extensionSupervisor
 	runtime.Permissions = NewPermissionEngine(s.store)
 	runtime.Permissions.ProjectPreflight = s.prepareProjectPermission
-	runtime.Permissions.MCPRegistrationPreflight = s.prepareMCPRegistrationPermission
+	runtime.Permissions.MCPRegistrationPreflight = s.prepareToolRegistrationPermission
 	return registry
 }
 

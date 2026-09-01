@@ -40,6 +40,53 @@ test("rejects relative and foreign-platform paths", () => {
   assert.equal(localPathFromText("/src/main.ts\nnext", "linux"), undefined);
 });
 
+test("resolves relative file paths inside a project workspace", () => {
+  assert.equal(
+    localPathFromText("index.html", "darwin", "/Users/aivo/project"),
+    "/Users/aivo/project/index.html",
+  );
+  assert.equal(
+    localPathFromText("src/main.ts:42", "linux", "/workspace/project"),
+    "/workspace/project/src/main.ts",
+  );
+  assert.equal(
+    localPathFromText("src\\main.tsx", "win32", "C:\\work\\project"),
+    "C:\\work\\project\\src\\main.tsx",
+  );
+  assert.equal(
+    localPathFromText("index.html", "win32", "C:\\"),
+    "C:\\index.html",
+  );
+});
+
+test("keeps relative paths inside the selected workspace", () => {
+  assert.equal(
+    localPathFromText("../outside.html", "darwin", "/Users/aivo/project"),
+    undefined,
+  );
+  assert.equal(
+    localPathFromText("src/../../outside.ts", "linux", "/workspace/project"),
+    undefined,
+  );
+  assert.equal(
+    localPathFromText("notes", "linux", "/workspace/project"),
+    undefined,
+  );
+});
+
+test("uses the supplied default workspace for unscoped conversations", () => {
+  const href = markdownHrefForLocalPath(
+    "index.html",
+    "darwin",
+    "/Users/aivo/Aivo-Workspaces",
+  );
+
+  assert.equal(
+    localPathFromMarkdownHref(href!),
+    "/Users/aivo/Aivo-Workspaces/index.html",
+  );
+});
+
 test("round-trips absolute Markdown link targets through an inert fragment", () => {
   const href = markdownHrefForLocalPath(
     "/Users/aivo/Documents/AI%20%E6%95%99%E7%A8%8B/readme.md:12",

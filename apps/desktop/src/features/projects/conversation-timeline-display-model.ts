@@ -1,5 +1,7 @@
 import type { ConversationUserAttachment } from "@/features/projects/conversation-timeline-model";
 
+export const COLLAPSED_USER_MESSAGE_HEIGHT = 420;
+
 export function formatTimelineAttachmentMeta(
   attachment: ConversationUserAttachment,
 ) {
@@ -12,8 +14,10 @@ export function formatTimelineAttachmentMeta(
     : `${type} · ${formatTimelineBytes(attachment.size)}`;
 }
 
-export function isExpandableUserMessage(text: string) {
-  return text.length > 320 || text.split(/\r?\n/).length > 6;
+export function shouldShowUserMessageDisclosure(contentHeight: number | null) {
+  return (
+    contentHeight !== null && contentHeight > COLLAPSED_USER_MESSAGE_HEIGHT
+  );
 }
 
 export function formatCompletionTime(date: Date) {
@@ -27,6 +31,10 @@ export function formatThinkingTime(totalSeconds: number) {
   const seconds = totalSeconds % 60;
 
   return seconds === 0 ? `${minutes}m` : `${minutes}m${seconds}s`;
+}
+
+export function formatPendingAssistantStatus(isExecuting: boolean) {
+  return isExecuting ? "正在执行" : "正在思考";
 }
 
 function readableTimelineAttachmentType(mimeType: string) {

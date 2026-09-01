@@ -19,6 +19,9 @@ func copyDirectory(src string, dest string) error {
 		if err != nil {
 			return err
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return &os.PathError{Op: "copy", Path: path, Err: os.ErrInvalid}
+		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
 			return err
@@ -26,6 +29,9 @@ func copyDirectory(src string, dest string) error {
 		target := filepath.Join(dest, rel)
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
+		}
+		if d.Type() != 0 {
+			return &os.PathError{Op: "copy", Path: path, Err: os.ErrInvalid}
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err

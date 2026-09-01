@@ -3,15 +3,25 @@ import { RotateCcw, Trash2 } from "lucide-react";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Marker, MarkerContent } from "@/components/ui/marker";
-import { formatCompletionTime, formatThinkingTime } from "@/features/projects/conversation-timeline-display-model";
+import {
+  formatCompletionTime,
+  formatPendingAssistantStatus,
+  formatThinkingTime,
+} from "@/features/projects/conversation-timeline-display-model";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import { CopyTextButton } from "./conversation-timeline-copy-button";
 import type { ConversationTimelineActions } from "./conversation-timeline-types";
 
-export function AssistantPreamble({ text }: { text: string }) {
+export function AssistantPreamble({
+  text,
+  workspaceRoot,
+}: {
+  text: string;
+  workspaceRoot: string;
+}) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 text-sm duration-300">
-      <Markdown content={text} isFinished />
+      <Markdown content={text} isFinished workspaceRoot={workspaceRoot} />
     </div>
   );
 }
@@ -32,14 +42,16 @@ export function StoppedResponse({ stoppedSeconds }: { stoppedSeconds: number }) 
 
 export function ThinkingResponse({
   actionHeading,
+  isExecuting,
   showSkeleton,
 }: {
   actionHeading?: string;
+  isExecuting: boolean;
   showSkeleton: boolean;
 }) {
   return (
     <div className="animate-in flex min-w-0 max-w-full flex-col items-stretch gap-3 fade-in slide-in-from-bottom-2 duration-300">
-      <ThinkingStatus actionHeading={actionHeading} />
+      <ThinkingStatus actionHeading={actionHeading} isExecuting={isExecuting} />
       {showSkeleton ? (
         <div className="flex min-w-0 max-w-full flex-col gap-3.5">
           <div className="h-4 w-full max-w-[540px] rounded-full bg-muted" />
@@ -54,14 +66,18 @@ export function ThinkingResponse({
 export function AssistantStatus({
   actionHeading,
   completed,
+  isExecuting,
   responseSeconds,
 }: {
   actionHeading?: string;
   completed: boolean;
+  isExecuting: boolean;
   responseSeconds: number;
 }) {
   if (!completed) {
-    return <ThinkingStatus actionHeading={actionHeading} />;
+    return (
+      <ThinkingStatus actionHeading={actionHeading} isExecuting={isExecuting} />
+    );
   }
 
   return (
@@ -75,13 +91,21 @@ export function AssistantStatus({
   );
 }
 
-function ThinkingStatus({ actionHeading }: { actionHeading?: string }) {
+function ThinkingStatus({
+  actionHeading,
+  isExecuting,
+}: {
+  actionHeading?: string;
+  isExecuting: boolean;
+}) {
+  const statusText = formatPendingAssistantStatus(isExecuting);
+
   return (
     <div
       className="animate-in flex min-w-0 flex-col gap-1.5 fade-in slide-in-from-bottom-2 text-sm duration-300"
       role="status"
     >
-      <ShimmerText text="正在思考" />
+      <ShimmerText text={statusText} />
       {actionHeading ? (
         <div className="min-w-0 truncate text-muted-foreground">
           {actionHeading}
@@ -114,15 +138,21 @@ export function AssistantResponse({
   completedAt,
   responseText,
   turn,
+  workspaceRoot,
 }: {
   actions: ConversationTimelineActions;
   completedAt: Date | null;
   responseText: string;
   turn: ConversationTurn;
+  workspaceRoot: string;
 }) {
   return (
     <div className="group/assistant-response relative">
-      <Markdown content={responseText} isFinished={Boolean(completedAt)} />
+      <Markdown
+        content={responseText}
+        isFinished={Boolean(completedAt)}
+        workspaceRoot={workspaceRoot}
+      />
       <div className="relative mb-3 h-6">
         <div className="absolute left-0 top-0 z-10 flex items-center gap-2">
           <CopyTextButton ariaLabel="复制回复" text={responseText} />

@@ -24,10 +24,10 @@ func TestBuiltinProjectExtensionPreservesFourCorePrimitives(t *testing.T) {
 	for _, spec := range AssembleToolSpecs(coreRegistry, coreRegistry.Specs()).Specs {
 		coreNames[spec.Name] = true
 	}
-	if len(coreNames) != 4 {
-		t.Fatalf("core registry names = %#v, want exactly four primitives", coreNames)
+	if len(coreNames) != 5 {
+		t.Fatalf("core registry names = %#v, want exactly five primitives", coreNames)
 	}
-	for _, name := range []string{"read", "bash", "edit", "write"} {
+	for _, name := range []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write"} {
 		if !coreNames[name] {
 			t.Fatalf("core registry missing %q: %#v", name, coreNames)
 		}
@@ -409,12 +409,26 @@ func TestAgentLoopReloadsWorkspaceAfterProjectAssociation(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if len(body.Tools) == 0 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[\"aivo_projects_associate\"],\"reason\":\"the task asks to bind this session to a project\"}"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"resources\":[{\"kind\":\"tool\",\"id\":\"aivo_projects_associate\"}]}"}}]}`))
 			return
 		}
 		primaryRequests++
 		switch primaryRequests {
 		case 1:
+			hasResourceResolve := false
+			for _, tool := range body.Tools {
+				if tool.Function.Name == ResourceResolveName {
+					hasResourceResolve = true
+				}
+				if tool.Function.Name == projectAssociateToolName {
+					t.Error("associate tool was advertised before resource_resolve use")
+				}
+			}
+			if !hasResourceResolve {
+				t.Error("resource_resolve was not advertised")
+			}
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"resolve_project","type":"function","function":{"name":"resource_resolve","arguments":"{\"mode\":\"use\",\"intent\":\"associate this session with a registered project\"}"}}]}}]}`))
+		case 2:
 			canonicalName := ""
 			for _, tool := range body.Tools {
 				if tool.Function.Name == projectAssociateToolName {
@@ -427,7 +441,7 @@ func TestAgentLoopReloadsWorkspaceAfterProjectAssociation(t *testing.T) {
 			}
 			arguments := string(mustJSONRaw(t, map[string]any{"projectId": project.Project.ID, "rootPath": project.Project.RootPath}))
 			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"tool_calls": []any{map[string]any{"id": "call_associate", "type": "function", "function": map[string]any{"name": canonicalName, "arguments": arguments}}}}}}})
-		case 2:
+		case 3:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_read_marker","type":"function","function":{"name":"read","arguments":"{\"path\":\"workspace-marker.txt\"}"}}]}}]}`))
 		default:
 			joined := ""
@@ -455,7 +469,7 @@ func TestAgentLoopReloadsWorkspaceAfterProjectAssociation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AssistantEvent == nil || result.AssistantEvent.Content != "workspace reloaded" || primaryRequests != 3 {
+	if result.AssistantEvent == nil || result.AssistantEvent.Content != "workspace reloaded" || primaryRequests != 4 {
 		t.Fatalf("result = %#v, primary requests = %d", result, primaryRequests)
 	}
 	cc, err := service.GetCodingContext(ctx, session.ID)

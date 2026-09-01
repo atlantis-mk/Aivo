@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 
 	"aivo/core/domain"
 )
@@ -162,6 +163,9 @@ func discoverSkillDirectories(root string) []string {
 func parseSkillDirectory(root string) (parsedSkill, error) {
 	root = filepath.Clean(root)
 	skillPath := filepath.Join(root, "SKILL.md")
+	if err := validateSkillDirectoryFiles(root); err != nil {
+		return parsedSkill{}, err
+	}
 	data, err := os.ReadFile(skillPath)
 	if err != nil {
 		return parsedSkill{}, err
@@ -187,59 +191,108 @@ func parseSkillMarkdown(raw string) (string, string, map[string]string, string, 
 		return "", "", nil, "", errors.New("SKILL.md must start with YAML frontmatter")
 	}
 	rest := strings.TrimPrefix(raw, "---\n")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	fm, content, ok := splitSkillMarkdownFrontmatter(rest)
+	if !ok {
 		return "", "", nil, "", errors.New("SKILL.md frontmatter is not closed")
 	}
-	fm := rest[:end]
-	content := strings.TrimSpace(rest[end+len("\n---"):])
-	values := map[string]string{}
-	lines := strings.Split(fm, "\n")
-	for index := 0; index < len(lines); index++ {
-		line := lines[index]
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if value == ">" || value == ">-" || value == ">+" || value == "|" || value == "|-" || value == "|+" {
-			blockLines := []string{}
-			for index+1 < len(lines) {
-				next := lines[index+1]
-				if strings.TrimSpace(next) != "" && next == strings.TrimLeft(next, " \t") {
-					break
-				}
-				index++
-				blockLines = append(blockLines, strings.TrimSpace(next))
-			}
-			if strings.HasPrefix(value, ">") {
-				value = strings.Join(blockLines, " ")
-			} else {
-				value = strings.Join(blockLines, "\n")
-			}
-		}
-		values[key] = strings.Trim(strings.TrimSpace(value), `"'`)
+	var values map[string]any
+	if err := yaml.Unmarshal([]byte(fm), &values); err != nil {
+		return "", "", nil, "", fmt.Errorf("SKILL.md frontmatter is invalid YAML: %w", err)
 	}
-	name := normalizeSkillName(values["name"])
-	description := strings.TrimSpace(values["description"])
-	if name == "" || !skillNamePattern.MatchString(name) {
+	name := strings.TrimSpace(stringFromSkillFrontmatter(values["name"]))
+	description := strings.TrimSpace(stringFromSkillFrontmatter(values["description"]))
+	if name == "" || len(name) > 64 || !skillNamePattern.MatchString(name) {
 		return "", "", nil, "", errors.New("skill name is invalid")
 	}
 	if description == "" {
 		return "", "", nil, "", errors.New("skill description is required")
 	}
+	if len(description) > 1024 {
+		return "", "", nil, "", errors.New("skill description exceeds 1024 bytes")
+	}
 	metadata := map[string]string{}
 	for key, value := range values {
-		if key != "name" && key != "description" {
-			metadata[key] = value
+		switch key {
+		case "name", "description":
+			continue
+		case "metadata":
+			nested, ok := stringMapFromSkillFrontmatter(value)
+			if !ok {
+				return "", "", nil, "", errors.New("skill metadata must be a string map")
+			}
+			for nestedKey, nestedValue := range nested {
+				metadata["metadata."+nestedKey] = nestedValue
+			}
+		case "license", "compatibility", "allowed-tools":
+			metadata[key] = strings.TrimSpace(stringFromSkillFrontmatter(value))
+		default:
+			metadata[key] = strings.TrimSpace(stringFromSkillFrontmatter(value))
 		}
 	}
 	return name, description, metadata, content, nil
+}
+
+func splitSkillMarkdownFrontmatter(rest string) (string, string, bool) {
+	start := 0
+	for start <= len(rest) {
+		next := strings.IndexByte(rest[start:], '\n')
+		lineEnd := len(rest)
+		afterLine := len(rest)
+		if next >= 0 {
+			lineEnd = start + next
+			afterLine = lineEnd + 1
+		}
+		if rest[start:lineEnd] == "---" {
+			return rest[:start], strings.TrimSpace(rest[afterLine:]), true
+		}
+		if next < 0 {
+			break
+		}
+		start = afterLine
+	}
+	return "", "", false
+}
+
+func stringFromSkillFrontmatter(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func stringMapFromSkillFrontmatter(value any) (map[string]string, bool) {
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]string, len(raw))
+	for key, item := range raw {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, false
+		}
+		out[key] = strings.TrimSpace(stringFromSkillFrontmatter(item))
+	}
+	return out, true
+}
+
+func validateSkillDirectoryFiles(root string) error {
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s: skill directories cannot contain symlinks", path)
+		}
+		if !d.IsDir() && d.Type() != 0 {
+			return fmt.Errorf("%s: skill directories can contain only directories and regular files", path)
+		}
+		return nil
+	})
 }
 
 func hashSkillDirectory(root string) (string, error) {
@@ -248,8 +301,14 @@ func hashSkillDirectory(root string) (string, error) {
 		if err != nil {
 			return err
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s: skill directories cannot contain symlinks", path)
+		}
 		if d.IsDir() {
 			return nil
+		}
+		if d.Type() != 0 {
+			return fmt.Errorf("%s: skill directories can contain only directories and regular files", path)
 		}
 		files = append(files, path)
 		return nil

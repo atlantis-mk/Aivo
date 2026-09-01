@@ -20,7 +20,7 @@
 ## Consequences
 
 - Every primary Agent can reliably report a plan and request a user decision without capability discovery.
-- The default tool contract contains six always-on identities: `read`, `bash`, `edit`, `write`, `update_plan`, and `ask_user`, plus the separate `tool_resolve` Host selection control.
+- The default tool contract contains six always-on identities: `read`, `bash`, `edit`, `write`, `update_plan`, and `ask_user`, plus the separate `resource_resolve` Host resource-resolution control.
 - Tests and documentation must distinguish the four execution primitives from the two Host controls while applying the same reservation, visibility, and snapshot guarantees.
 
 ## Alternatives considered

@@ -87,15 +87,48 @@ func (m *SkillManager) List(ctx context.Context, input domain.SkillListInput) (d
 	if err != nil {
 		return domain.SkillListResult{}, err
 	}
-	result := domain.SkillListResult{Entries: entries}
+	result := domain.SkillListResult{Entries: filterExistingSkillEntries(entries)}
 	if input.IncludeCandidates {
 		candidates, err := m.store.ListSkillImportCandidates(ctx, input.IncludeIgnored)
 		if err != nil {
 			return domain.SkillListResult{}, err
 		}
-		result.Candidates = candidates
+		result.Candidates = filterExistingSkillImportCandidates(candidates)
 	}
 	return result, nil
+}
+
+func filterExistingSkillEntries(entries []domain.SkillEntry) []domain.SkillEntry {
+	filtered := entries[:0]
+	for _, entry := range entries {
+		if skillFileExists(entry.SkillPath, entry.RootPath) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func filterExistingSkillImportCandidates(candidates []domain.SkillImportCandidate) []domain.SkillImportCandidate {
+	filtered := candidates[:0]
+	for _, candidate := range candidates {
+		if skillFileExists(candidate.SkillPath, candidate.RootPath) {
+			filtered = append(filtered, candidate)
+		}
+	}
+	return filtered
+}
+
+func skillFileExists(skillPath string, rootPath string) bool {
+	path := strings.TrimSpace(skillPath)
+	if path == "" {
+		root := strings.TrimSpace(rootPath)
+		if root == "" {
+			return false
+		}
+		path = filepath.Join(root, "SKILL.md")
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func (m *SkillManager) Import(ctx context.Context, input domain.SkillImportInput) (domain.SkillEntry, error) {
@@ -116,6 +149,20 @@ func (m *SkillManager) Import(ctx context.Context, input domain.SkillImportInput
 		return domain.SkillEntry{}, err
 	}
 	destRoot := m.managedSkillRoot(scope, parsed.Name, candidate.RootPath)
+	existing, existingErr := m.store.GetSkillByName(ctx, parsed.Name, scope)
+	if existingErr == nil && existing.ID != "" {
+		if existing.ContentHash != parsed.ContentHash {
+			_, _ = m.store.MarkSkillImportCandidateStatus(ctx, candidate.ID, domain.SkillCandidateStatusIgnored, existing.ID, "skill name already exists with different content")
+			return domain.SkillEntry{}, errors.New("skill name already exists with different content")
+		}
+		now := domain.NowString(time.Now())
+		_, _ = m.store.SaveSkillSource(ctx, domain.SkillSource{
+			ID: sourceIDForPath(existing.ID, candidate.SkillPath), SkillID: existing.ID, Source: candidate.Source, Scope: candidate.Scope,
+			RootPath: candidate.RootPath, SkillPath: candidate.SkillPath, ContentHash: candidate.ContentHash, LastSeenAt: now,
+		})
+		_, _ = m.store.MarkSkillImportCandidateStatus(ctx, candidate.ID, domain.SkillCandidateStatusImported, "", "")
+		return existing, nil
+	}
 	if samePath(parsed.RootPath, destRoot) {
 		destRoot = parsed.RootPath
 	} else if err := copyDirectory(parsed.RootPath, destRoot); err != nil {
@@ -125,18 +172,15 @@ func (m *SkillManager) Import(ctx context.Context, input domain.SkillImportInput
 	if err != nil {
 		return domain.SkillEntry{}, err
 	}
-	existing, existingErr := m.store.GetSkillByName(ctx, managed.Name, scope)
-	if existingErr == nil && existing.ID != "" && existing.ContentHash != managed.ContentHash {
-		_, _ = m.store.MarkSkillImportCandidateStatus(ctx, candidate.ID, domain.SkillCandidateStatusIgnored, existing.ID, "skill name already exists with different content")
-		return domain.SkillEntry{}, errors.New("skill name already exists with different content")
+	if managed.ContentHash != parsed.ContentHash {
+		if !samePath(parsed.RootPath, destRoot) {
+			_ = os.RemoveAll(destRoot)
+		}
+		return domain.SkillEntry{}, errors.New("managed skill copy failed integrity check")
 	}
 	now := domain.NowString(time.Now())
-	id := existing.ID
-	created := existing.TimeCreated
-	if id == "" {
-		id = uuid.NewString()
-		created = now
-	}
+	id := uuid.NewString()
+	created := now
 	entry, err := m.store.SaveSkill(ctx, domain.SkillEntry{
 		ID: id, Name: managed.Name, Description: managed.Description, Scope: scope, Source: domain.SkillSourceAivo,
 		RootPath: managed.RootPath, SkillPath: managed.SkillPath, ContentHash: managed.ContentHash, Enabled: true,
@@ -203,6 +247,13 @@ func (m *SkillManager) SetEnabled(ctx context.Context, input domain.SkillEnabled
 	if m == nil || m.store == nil {
 		return domain.SkillEntry{}, errors.New("skill store is not configured")
 	}
+	skill, err := m.store.GetSkill(ctx, input.SkillID)
+	if err != nil {
+		return domain.SkillEntry{}, err
+	}
+	if isSystemSkillSource(skill.Source) {
+		return domain.SkillEntry{}, errors.New("system skills are read-only and updated by the Host")
+	}
 	return m.store.SetSkillEnabled(ctx, input.SkillID, input.Enabled)
 }
 
@@ -214,8 +265,8 @@ func (m *SkillManager) Delete(ctx context.Context, skillID string) error {
 	if err != nil {
 		return err
 	}
-	if skill.Source == domain.SkillSourceCodexSystem {
-		return errors.New("Codex system skills are read-only and updated by the Host")
+	if isSystemSkillSource(skill.Source) {
+		return errors.New("system skills are read-only and updated by the Host")
 	}
 	if err := m.store.DeleteSkill(ctx, skillID); err != nil {
 		return err

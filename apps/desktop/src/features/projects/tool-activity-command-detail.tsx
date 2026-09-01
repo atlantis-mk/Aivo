@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, CommandLineIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,11 @@ import {
   commandEntries,
   shellPrompt,
   terminalOutputSegment,
+  tabTitle,
 } from "@/features/projects/tool-activity-sidebar-model";
 import { commandSessionId } from "@/features/projects/tool-activity-command-entry-model";
 import { AgentTerminalView } from "@/features/projects/agent-terminal-view";
+import { ToolActivityStatusIcon } from "@/features/projects/tool-activity-status-icon";
 import {
   listSessionTerminals,
   removeSessionTerminal,
@@ -50,36 +52,55 @@ export function CommandActivityDetail({
     );
   }
   return (
-    <ScrollArea
-      className="min-h-0 flex-1 bg-background [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:!w-full"
-      ref={scrollAreaRef}
-    >
-      <div className="flex min-h-full w-full max-w-full flex-col p-3">
-        {entries.map((entry) => (
-          <div className="min-w-0" key={entry.id}>
-            <pre className="m-0 w-full max-w-full whitespace-pre-wrap break-all font-mono text-[12px] leading-[1.45] text-foreground [overflow-wrap:anywhere]">
-              <span>{shellPrompt(entry.cwd)}</span>
-              <span>{entry.command}</span>
-              {"\n"}
-              {entry.stdout ? (
-                <span>{terminalOutputSegment(entry.stdout)}</span>
-              ) : null}
-              {entry.stderr ? (
-                <span className="text-destructive">
-                  {terminalOutputSegment(entry.stderr)}
-                </span>
-              ) : null}
-              {entry.error && !entry.stderr ? (
-                <span className="text-destructive">
-                  {terminalOutputSegment(entry.error)}
-                </span>
-              ) : null}
-            </pre>
+    <div className="flex h-full min-h-0 flex-col bg-background p-2">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-foreground/[0.03]">
+        <div className="flex min-h-11 shrink-0 items-center gap-2 px-4 pt-3 pb-2">
+          <HugeiconsIcon
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-muted-foreground"
+            icon={CommandLineIcon}
+            strokeWidth={2}
+          />
+          <div className="min-w-0 flex-1 truncate text-sm font-semibold">
+            {tabTitle(tab)}
           </div>
-        ))}
-        <span ref={endRef} />
-      </div>
-    </ScrollArea>
+          <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{entries.length} 条记录</span>
+            <ToolActivityStatusIcon className="size-3.5" status={tab.status} />
+          </div>
+        </div>
+        <ScrollArea
+          className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0 [&_[data-slot=scroll-area-viewport]>div]:!w-full"
+          ref={scrollAreaRef}
+        >
+          <div className="flex min-h-full w-full max-w-full flex-col gap-4 px-4 pb-4 pt-1">
+            {entries.map((entry) => (
+              <div className="min-w-0" key={entry.id}>
+                <pre className="m-0 w-full max-w-full whitespace-pre-wrap break-all font-mono text-[12px] leading-[1.55] text-foreground [overflow-wrap:anywhere]">
+                  <span>{shellPrompt(entry.cwd)}</span>
+                  <span>{entry.command}</span>
+                  {"\n"}
+                  {entry.stdout ? (
+                    <span>{terminalOutputSegment(entry.stdout)}</span>
+                  ) : null}
+                  {entry.stderr ? (
+                    <span className="text-destructive">
+                      {terminalOutputSegment(entry.stderr)}
+                    </span>
+                  ) : null}
+                  {entry.error && !entry.stderr ? (
+                    <span className="text-destructive">
+                      {terminalOutputSegment(entry.error)}
+                    </span>
+                  ) : null}
+                </pre>
+              </div>
+            ))}
+            <span ref={endRef} />
+          </div>
+        </ScrollArea>
+      </section>
+    </div>
   );
 }
 

@@ -19,7 +19,7 @@ Source- and namespace-derived grouping makes every tool from an MCP or extension
 - Management, composer, and conversation activation surfaces MUST render one item per declared group or individual tool. A group item MUST disclose its concrete members but MUST expose only one group switch or selection action. Group activation changes the complete current eligible member set; individual activation changes only that tool.
 - The auxiliary selector MUST receive exactly one sanitized candidate line containing the group display name for each group and one line for each individual tool. It MUST return only unique exact typed resource identities. It MUST NOT return or alter concrete membership for a group.
 - The Host MUST expand a selected group to every currently eligible globally visible member and expand an individual candidate to exactly itself. Persisted conversation automatic state and immutable Tool Snapshots MUST continue to contain concrete canonical tool identities.
-- Inspection MAY expose the complete eligible concrete catalog for one request as defined by `ADR-0020`; use and `tool_resolve` MUST preserve grouped-or-individual selection granularity before Host expansion.
+- Inspection MAY expose the complete eligible concrete catalog for one request as defined by `ADR-0020`; use and `resource_resolve` MUST preserve grouped-or-individual selection granularity before Host expansion.
 
 ## Rationale
 

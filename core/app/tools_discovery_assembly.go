@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ToolResolveName                     = "tool_resolve"
+	ResourceResolveName                 = "resource_resolve"
 	ToolSearchName                      = "tool_search"
 	ToolListName                        = "tool_list"
 	ToolDetailName                      = "tool_detail"
@@ -53,7 +53,7 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 	visible := make([]domain.ToolSpec, 0, len(specs))
 	deferredCount := 0
 	for _, spec := range specs {
-		if spec.Name == ToolResolveName {
+		if spec.Name == ResourceResolveName {
 			visible = append(visible, spec)
 			continue
 		}
@@ -78,6 +78,12 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 			}
 			continue
 		}
+		if isSkillCatalogToolSpec(spec) {
+			if activationSources[spec.Name] == "skillCatalog" {
+				visible = append(visible, spec)
+			}
+			continue
+		}
 		if !isDeferrableToolSpec(spec, allIdentities[spec.Name]) {
 			continue
 		}
@@ -86,6 +92,7 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 			visible = append(visible, spec)
 		}
 	}
+	visible = orderResourceResolveAfterCoreControls(visible)
 	identities := map[string]domain.ToolRegistrationIdentity{}
 	entries := make([]domain.ToolSnapshotEntry, 0, len(visible))
 	for _, spec := range visible {
@@ -97,7 +104,7 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 		activationSource := firstNonEmpty(activationSources[spec.Name], "currentTurn")
 		if isCoreVisibleToolSpec(spec) {
 			activationSource = "core"
-		} else if spec.Name == ToolResolveName {
+		} else if spec.Name == ResourceResolveName {
 			activationSource = "control"
 		}
 		entries = append(entries, domain.ToolSnapshotEntry{Name: spec.Name, RegistrationID: identity.RegistrationID, SchemaHash: toolSchemaHash(spec), SourceID: identity.SourceID, SourceVersion: identity.Version, ActivationSource: activationSource})
@@ -107,7 +114,7 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 	snapshot := domain.ToolSnapshot{Revision: hex.EncodeToString(sum[:]), Tools: entries}
 	activated := false
 	for _, spec := range visible {
-		if !isCoreVisibleToolSpec(spec) && spec.Name != ToolResolveName {
+		if !isCoreVisibleToolSpec(spec) && spec.Name != ResourceResolveName {
 			activated = true
 			break
 		}
@@ -115,20 +122,52 @@ func AssembleToolSpecsWithSources(registry *Registry, specs []domain.ToolSpec, a
 	return ToolAssemblyResult{Specs: visible, Activated: activated, DeferredCount: deferredCount, ExpectedRegistrations: identities, Snapshot: snapshot}
 }
 
+func orderResourceResolveAfterCoreControls(specs []domain.ToolSpec) []domain.ToolSpec {
+	resourceIndex := -1
+	lastCoreIndex := -1
+	for index, spec := range specs {
+		if spec.Name == ResourceResolveName {
+			resourceIndex = index
+			continue
+		}
+		if isCoreVisibleToolSpec(spec) {
+			lastCoreIndex = index
+		}
+	}
+	if resourceIndex < 0 || lastCoreIndex < 0 || resourceIndex == lastCoreIndex+1 {
+		return specs
+	}
+	resourceSpec := specs[resourceIndex]
+	out := make([]domain.ToolSpec, 0, len(specs))
+	for index, spec := range specs {
+		if index == resourceIndex {
+			continue
+		}
+		out = append(out, spec)
+		if index == lastCoreIndex {
+			out = append(out, resourceSpec)
+		}
+	}
+	if resourceIndex > lastCoreIndex {
+		return out
+	}
+	return out
+}
+
 func appendBridgeSpecsIfMissing(specs []domain.ToolSpec, deferredCount int) []domain.ToolSpec {
 	seen := map[string]bool{}
 	for _, spec := range specs {
 		seen[spec.Name] = true
 	}
-	if !seen[ToolResolveName] {
-		specs = append(specs, toolResolveSpec(deferredCount))
+	if !seen[ResourceResolveName] {
+		specs = append(specs, resourceResolveSpec(deferredCount))
 	}
 	return specs
 }
 
 func isBridgeToolName(name string) bool {
 	switch name {
-	case ToolResolveName, ToolSearchName, ToolListName, ToolDetailName, ToolCallName:
+	case ResourceResolveName, ToolSearchName, ToolListName, ToolDetailName, ToolCallName:
 		return true
 	default:
 		return false
@@ -139,7 +178,7 @@ func isDeferrableToolSpec(spec domain.ToolSpec, identity domain.ToolRegistration
 	if isCoreVisibleToolSpec(spec) {
 		return false
 	}
-	if isBridgeToolName(spec.Name) || spec.Name == SkillToolName {
+	if isBridgeToolName(spec.Name) || spec.Name == SkillsReadToolName || spec.Name == SkillsListToolName {
 		return false
 	}
 	_ = identity
@@ -148,7 +187,16 @@ func isDeferrableToolSpec(spec domain.ToolSpec, identity domain.ToolRegistration
 
 func isCoreVisibleToolSpec(spec domain.ToolSpec) bool {
 	switch spec.Name {
-	case "read", "bash", "edit", "write", "update_plan", "ask_user":
+	case "read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSkillCatalogToolSpec(spec domain.ToolSpec) bool {
+	switch spec.Name {
+	case SkillsReadToolName, SkillsListToolName:
 		return true
 	default:
 		return false

@@ -58,11 +58,11 @@ func TestHostToolGroupsExcludeGloballyHiddenMembersBeforeExpansion(t *testing.T)
 		t.Fatal(err)
 	}
 	groups := hostToolGroupCandidates(visible)
-	decision, err := parseAndExpandHostToolGroupSelection(`{"intent":"use","resources":[{"kind":"mcp","id":"mcp_group_linear"}]}`, groups, 8, true)
+	decision, err := parseAndExpandHostToolGroupSelection(`{"resources":[{"kind":"mcp","id":"mcp_group_linear"}]}`, groups)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision.Intent != hostToolSelectionUse || !reflect.DeepEqual(decision.ToolNames, []string{"mcp_linear_get_issue"}) {
+	if decision.Intent != hostResourceSelectionUse || !reflect.DeepEqual(decision.ToolNames, []string{"mcp_linear_get_issue"}) {
 		t.Fatalf("expanded visible members = %#v", decision)
 	}
 }
@@ -102,40 +102,31 @@ func TestHostToolGroupPromptIsMinimalAndDescriptionsAreSingleLine(t *testing.T) 
 	}
 }
 
-func TestParseHostToolGroupSelectionAcceptsOnlyStrictClassifiedDecision(t *testing.T) {
+func TestParseHostToolGroupSelectionAcceptsOnlyStrictUseDecision(t *testing.T) {
 	candidates := []hostToolGroupCandidate{
 		{Kind: "mcp", ID: "linear", Name: "mcp_linear", ToolNames: []string{"mcp_linear_get_issue", "mcp_linear_update_issue"}},
 		{Kind: "extension", ID: "github", Name: "extension_github", ToolNames: []string{"github_list_prs"}},
 	}
 
-	decision, err := parseAndExpandHostToolGroupSelection(`{"intent":"use","resources":[{"kind":"mcp","id":"linear"}]}`, candidates, 8, true)
-	if err != nil || decision.Intent != hostToolSelectionUse || !reflect.DeepEqual(decision.ToolNames, []string{"mcp_linear_get_issue", "mcp_linear_update_issue"}) {
+	decision, err := parseAndExpandHostToolGroupSelection(`{"resources":[{"kind":"mcp","id":"linear"}]}`, candidates)
+	if err != nil || decision.Intent != hostResourceSelectionUse || !reflect.DeepEqual(decision.ToolNames, []string{"mcp_linear_get_issue", "mcp_linear_update_issue"}) {
 		t.Fatalf("decision = %#v, err = %v", decision, err)
-	}
-	inspection, err := parseAndExpandHostToolGroupSelection(`{"intent":"inspect","resources":[]}`, candidates, 8, true)
-	if err != nil || inspection.Intent != hostToolSelectionInspect || !reflect.DeepEqual(inspection.ToolNames, []string{"mcp_linear_get_issue", "mcp_linear_update_issue", "github_list_prs"}) {
-		t.Fatalf("inspection = %#v, err = %v", inspection, err)
 	}
 
 	for _, raw := range []string{
 		`["linear"]`,
 		`{"tools":["linear"]}`,
-		`{"intent":"use"}`,
-		`{"intent":"unknown","resources":[]}`,
-		`{"intent":"inspect","resources":[{"kind":"mcp","id":"linear"}]}`,
-		`{"intent":"use","resources":[{"kind":"mcp","id":"linear"},{"kind":"mcp","id":"linear"}]}`,
-		`{"intent":"use","resources":[{"kind":"tool","id":"unknown"}]}`,
-		`{"intent":"use","resources":[{"kind":"mcp","id":"unknown"}]}`,
-		`{"intent":"use","resources":[],"reason":"extra"}`,
-		`{"intent":"use","resources":[]} trailing`,
-		"```json\n{\"intent\":\"use\",\"resources\":[{\"kind\":\"mcp\",\"id\":\"linear\"}]}\n```",
+		`{"resources":[],"unexpected":[]}`,
+		`{"resources":[{"kind":"mcp","id":"linear"},{"kind":"mcp","id":"linear"}]}`,
+		`{"resources":[{"kind":"tool","id":"unknown"}]}`,
+		`{"resources":[{"kind":"mcp","id":"unknown"}]}`,
+		`{"resources":[],"reason":"extra"}`,
+		`{"resources":[]} trailing`,
+		"```json\n{\"resources\":[{\"kind\":\"mcp\",\"id\":\"linear\"}]}\n```",
 	} {
-		if selected, err := parseAndExpandHostToolGroupSelection(raw, candidates, 8, true); err == nil {
+		if selected, err := parseAndExpandHostToolGroupSelection(raw, candidates); err == nil {
 			t.Fatalf("raw %q selected %#v without error", raw, selected)
 		}
-	}
-	if decision, err := parseAndExpandHostToolGroupSelection(`{"intent":"inspect","resources":[]}`, candidates, 8, false); err == nil {
-		t.Fatalf("persistent replacement accepted inspection: %#v", decision)
 	}
 }
 
@@ -149,29 +140,48 @@ func TestSelectedToolGroupKeepsEveryEligibleMemberBeyondLegacyToolLimit(t *testi
 		})
 	}
 	groups := hostToolGroupCandidates(entries)
-	decision, err := parseAndExpandHostToolGroupSelection(`{"intent":"use","resources":[{"kind":"mcp","id":"mcp_group_linear"}]}`, groups, hostToolSelectionLimit, true)
+	decision, err := parseAndExpandHostToolGroupSelection(`{"resources":[{"kind":"mcp","id":"mcp_group_linear"}]}`, groups)
 	if err != nil {
 		t.Fatal(err)
 	}
-	selected := validateToolResolveSelection(entries, decision.ToolNames)
+	selected := validateResourceResolveToolSelection(entries, decision.ToolNames)
 	if len(selected) != len(entries) {
 		t.Fatalf("selected members = %d, want complete group of %d", len(selected), len(entries))
 	}
 }
 
-func TestInspectionKeepsACompleteCatalogBeyondLegacyHostToolLimit(t *testing.T) {
+func TestHostToolGroupSelectionAcceptsMoreThanLegacyResourceLimit(t *testing.T) {
+	const resourceCount = 12
+	candidates := make([]hostToolGroupCandidate, 0, resourceCount)
+	resourceJSON := make([]string, 0, resourceCount)
+	for index := 0; index < resourceCount; index++ {
+		id := fmt.Sprintf("mcp_group_%02d", index)
+		candidates = append(candidates, hostToolGroupCandidate{Kind: "mcp", ID: id, Name: id, ToolNames: []string{"tool_" + id}})
+		resourceJSON = append(resourceJSON, fmt.Sprintf(`{"kind":"mcp","id":"%s"}`, id))
+	}
+	raw := `{"resources":[` + strings.Join(resourceJSON, ",") + `]}`
+	decision, err := parseAndExpandHostToolGroupSelection(raw, candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decision.Groups) != resourceCount || len(decision.ToolNames) != resourceCount {
+		t.Fatalf("decision = %#v, want every selected resource", decision)
+	}
+}
+
+func TestExpandHostToolGroupsKeepsACompleteCatalogBeyondLegacyHostToolLimit(t *testing.T) {
 	const toolCount = 80
 	candidates := make([]hostToolGroupCandidate, 0, toolCount)
 	for index := 0; index < toolCount; index++ {
 		name := fmt.Sprintf("group_%02d", index)
 		candidates = append(candidates, hostToolGroupCandidate{Kind: "mcp", ID: name, Name: name, ToolNames: []string{"tool_" + name}})
 	}
-	decision, err := parseAndExpandHostToolGroupSelection(`{"intent":"inspect","resources":[]}`, candidates, hostToolSelectionLimit, true)
+	_, toolNames, err := expandHostToolGroups(candidates, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(decision.ToolNames) != toolCount {
-		t.Fatalf("inspection members = %d, want complete catalog of %d", len(decision.ToolNames), toolCount)
+	if len(toolNames) != toolCount {
+		t.Fatalf("expanded members = %d, want complete catalog of %d", len(toolNames), toolCount)
 	}
 }
 

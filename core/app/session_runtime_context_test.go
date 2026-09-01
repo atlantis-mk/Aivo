@@ -509,7 +509,7 @@ func TestSubmitSessionMessageSendsTextAttachmentToProvider(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		for _, message := range body.Messages {
 			content, _ := message.Content.(string)
-			if message.Role == domain.EventRoleSystem && contains(content, "Host tool-group selector") {
+			if message.Role == domain.EventRoleSystem && contains(content, "Host resource-group selector") {
 				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"resources\":[]}"}}]}`))
 				return
 			}
@@ -566,13 +566,13 @@ func TestAgentPromptBuilderSeparatesDefaultAndGlobalInjections(t *testing.T) {
 	if !contains(prompt, `<default name="agent_mode">`) || !contains(prompt, "Default mode behavior.") {
 		t.Fatalf("prompt missing default mode injection: %q", prompt)
 	}
-	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "stable automatic tool set") || !contains(prompt, "every eligible request-only tool") {
+	if !contains(prompt, `<global name="tool_protocol">`) || !contains(prompt, "stable filtered automatic tool set") || !contains(prompt, `mode "use"`) {
 		t.Fatalf("prompt missing global tool protocol injection: %q", prompt)
 	}
-	if !contains(prompt, "request-only tool") || !contains(prompt, "not persisted") {
+	if !contains(prompt, `mode "inspect"`) || !contains(prompt, "bounded summaries and does not activate tools") {
 		t.Fatalf("agent prompt is missing temporary inspection lifetime guidance: %q", prompt)
 	}
-	if contains(prompt, "call the skill tool") || !contains(prompt, "call tool_resolve") {
+	if contains(prompt, "call the skill tool") || !contains(prompt, "call resource_resolve") {
 		t.Fatalf("agent prompt is missing the replaceable selection control: %q", prompt)
 	}
 	if contains(prompt, "<aivo_context>") || contains(prompt, "You are Aivo") {

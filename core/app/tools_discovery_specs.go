@@ -2,19 +2,19 @@ package app
 
 import "aivo/core/domain"
 
-func toolResolveSpec(deferredCount int) domain.ToolSpec {
+func resourceResolveSpec(deferredCount int) domain.ToolSpec {
 	_ = deferredCount
 	return domain.ToolSpec{
-		Name: ToolResolveName, Description: "Replace this conversation's automatic tool set for one concise, specific missing capability. Use only when the currently visible tools cannot perform the required action. Manual tools are unchanged; selected tools become visible on the next model step. This does not call tools or bypass permissions.",
-		Capability: "tool.resolve", Category: "tool_discovery", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp", "extension"},
+		Name: ResourceResolveName, Description: "Inspect or activate optional resources for this conversation. Use mode inspect when the user asks what tools, Skills, or capabilities are available; it returns bounded summaries and does not activate tools. Use mode use when the currently visible tools, filtered Skill catalog, or active instruction resources cannot perform the required action; selected MCP, extension, and optional tool resources replace the automatic tool set and become ordinary Provider tool schemas in the next Tool Snapshot, selected Skills replace the filtered Skill catalog, and selected extension context is added to the session. Manual tools are unchanged. This does not call tools or bypass permissions.",
+		Capability: "resource.resolve", Category: "resource_resolution", RiskLevel: "low", Toolsets: []string{"safe", "coding", "mcp", "extension"},
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
-			"intent":    map[string]any{"type": "string", "description": "Concise, specific missing capability. Describe the required action, not a guessed tool name, plan, or broad topic."},
+			"intent":    map[string]any{"type": "string", "description": "Concise inventory request or missing capability. Describe the required action or requested resource inventory, not a guessed tool name or plan."},
+			"mode":      map[string]any{"type": "string", "enum": []string{"inspect", "use"}, "description": "Required. inspect returns non-persistent resource summaries; use activates matching resources for subsequent model steps."},
 			"required":  map[string]any{"type": "boolean", "description": "Whether the task cannot proceed without a matching tool. Defaults to true."},
-			"maxTools":  map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum number of tools in the replacement automatic set. Defaults to 8."},
 			"source":    map[string]any{"type": "string", "description": "Optional source filter, such as mcp, extension, builtin, or bridge."},
 			"category":  map[string]any{"type": "string", "description": "Optional category filter, such as mcp, extension, automation, or filesystem."},
 			"riskLevel": map[string]any{"type": "string", "description": "Optional risk filter, such as low, medium, or high."},
-		}, "required": []string{"intent"}, "additionalProperties": false},
+		}, "required": []string{"intent", "mode"}, "additionalProperties": false},
 	}
 }
 
@@ -68,9 +68,9 @@ func toolCallSpec() domain.ToolSpec {
 	}
 }
 
-func (t *ToolResolveTool) Spec() domain.ToolSpec { return toolResolveSpec(0) }
-func (t *ToolSearchTool) Spec() domain.ToolSpec  { return toolSearchSpec(0) }
-func (t *ToolListTool) Spec() domain.ToolSpec    { return toolListSpec() }
+func (t *ResourceResolveTool) Spec() domain.ToolSpec { return resourceResolveSpec(0) }
+func (t *ToolSearchTool) Spec() domain.ToolSpec      { return toolSearchSpec(0) }
+func (t *ToolListTool) Spec() domain.ToolSpec        { return toolListSpec() }
 func (t *ToolDetailTool) Spec() domain.ToolSpec {
 	return toolDetailSpec(firstNonEmpty(t.name, ToolDetailName))
 }

@@ -57,7 +57,7 @@ function shellPreviewEntryFromStructured(
   const args = toolCall.arguments ?? {};
   return {
     command: stringValue(structured.command) || shellCommandFromToolArgs(toolCall),
-    cwd: stringValue(structured.cwd) || stringArg(args, "cwd"),
+    cwd: stringValue(structured.cwd) || stringArg(args, "workdir"),
     error: toolCall.error || stringValue(toolCall.result?.error),
     exitCode: optionalNumberValue(structured.exitCode),
     id: `${toolCall.id}:${index}`,
@@ -74,7 +74,7 @@ function shellPreviewEntryFromResultText(
   const parsed = parseCommandResultText(resultText);
   return {
     command: parsed.command || shellCommandFromToolArgs(toolCall),
-    cwd: parsed.cwd || stringArg(toolCall.arguments ?? {}, "cwd"),
+    cwd: parsed.cwd || stringArg(toolCall.arguments ?? {}, "workdir"),
     error: toolCall.error || parsed.error || stringValue(toolCall.result?.error),
     exitCode: parsed.exitCode,
     id: `${toolCall.id}:0`,
@@ -86,8 +86,8 @@ function shellPreviewEntryFromResultText(
 
 function shellCommandFromToolArgs(toolCall: domain.ToolCall) {
   const args = toolCall.arguments ?? {};
-  if (toolCall.name === "bash") {
-    return stringArg(args, "command") || "bash";
+  if (toolCall.name === "exec_command") {
+    return stringArg(args, "cmd") || "exec_command";
   }
   if (toolCall.name === "run_tests") {
     return [stringArg(args, "target") || "all", stringArg(args, "kind") || "auto"]

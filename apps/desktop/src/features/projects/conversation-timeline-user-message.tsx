@@ -15,15 +15,14 @@ import {
   type ConversationUserAttachment,
 } from "@/features/projects/conversation-timeline-model";
 import {
+  COLLAPSED_USER_MESSAGE_HEIGHT,
   formatCompletionTime,
   formatTimelineAttachmentMeta,
-  isExpandableUserMessage,
+  shouldShowUserMessageDisclosure,
 } from "@/features/projects/conversation-timeline-display-model";
 import { CopyTextButton } from "./conversation-timeline-copy-button";
 import { TimelineRowFrame } from "./conversation-timeline-frame";
 import type { ConversationTimelineActions } from "./conversation-timeline-types";
-
-const COLLAPSED_USER_MESSAGE_HEIGHT = 420;
 
 export const UserMessageRow = memo(function UserMessageRow({
   actions,
@@ -37,7 +36,9 @@ export const UserMessageRow = memo(function UserMessageRow({
     number | null
   >(null);
   const userMessageContentRef = useRef<HTMLDivElement>(null);
-  const userMessageExpandable = isExpandableUserMessage(turn.prompt);
+  const userMessageExpandable = shouldShowUserMessageDisclosure(
+    userMessageContentHeight,
+  );
   const userMessageAnimatedHeight =
     userMessageContentHeight === null
       ? undefined
@@ -46,8 +47,6 @@ export const UserMessageRow = memo(function UserMessageRow({
         : Math.min(userMessageContentHeight, COLLAPSED_USER_MESSAGE_HEIGHT);
 
   useLayoutEffect(() => {
-    if (!userMessageExpandable) return;
-
     const contentElement = userMessageContentRef.current;
     if (!contentElement) return;
 
@@ -58,6 +57,7 @@ export const UserMessageRow = memo(function UserMessageRow({
       );
     };
 
+    updateContentHeight();
     const frame = requestAnimationFrame(updateContentHeight);
     const observer = new ResizeObserver(updateContentHeight);
     observer.observe(contentElement);
@@ -66,7 +66,7 @@ export const UserMessageRow = memo(function UserMessageRow({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [turn.prompt, userMessageExpandable]);
+  }, [turn.prompt]);
 
   return (
     <TimelineRowFrame role="user" turnId={turn.id}>
@@ -86,7 +86,6 @@ export const UserMessageRow = memo(function UserMessageRow({
               "whitespace-pre-wrap break-words text-left",
               userMessageExpandable &&
                 "overflow-hidden transition-[height] duration-300 ease-out",
-              !userMessageExpandable && "line-clamp-3",
             )}
             style={
               userMessageExpandable && userMessageAnimatedHeight !== undefined
@@ -94,11 +93,7 @@ export const UserMessageRow = memo(function UserMessageRow({
                 : undefined
             }
           >
-            {userMessageExpandable ? (
-              <div ref={userMessageContentRef}>{turn.prompt}</div>
-            ) : (
-              turn.prompt
-            )}
+            <div ref={userMessageContentRef}>{turn.prompt}</div>
           </div>
           {userMessageExpandable ? (
             <Button

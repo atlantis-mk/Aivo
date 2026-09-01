@@ -91,7 +91,14 @@ type DefaultTerminalService struct {
 }
 
 func NewTerminalService() *DefaultTerminalService {
-	return &DefaultTerminalService{registry: defaultAgentPTYRegistry}
+	return NewTerminalServiceWithRegistry(NewAgentPTYRegistry())
+}
+
+func NewTerminalServiceWithRegistry(registry *AgentPTYRegistry) *DefaultTerminalService {
+	if registry == nil {
+		registry = NewAgentPTYRegistry()
+	}
+	return &DefaultTerminalService{registry: registry}
 }
 
 func (s *DefaultTerminalService) SetEventHook(hook func(string, TerminalInfo)) {

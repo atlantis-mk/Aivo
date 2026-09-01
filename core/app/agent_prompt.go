@@ -65,7 +65,18 @@ func buildAgentSystemPrompt(modeDef domain.AgentModeDefinition) string {
 }
 
 func buildAgentSystemPromptWithSnapshot(modeDef domain.AgentModeDefinition, snapshot PromptSnapshot) string {
+	return buildAgentSystemPromptWithSnapshotAndShell(modeDef, snapshot, "")
+}
+
+func buildAgentSystemPromptWithSnapshotAndShell(modeDef domain.AgentModeDefinition, snapshot PromptSnapshot, shellInstruction string) string {
 	injections := agentPromptInjectionsWithSnapshot(modeDef, snapshot)
+	if text := strings.TrimSpace(shellInstruction); text != "" {
+		injections = append(injections, promptInjection{
+			Scope: promptInjectionScopeGlobal,
+			Name:  "shell_runtime",
+			Text:  text,
+		})
+	}
 	parts := make([]string, 0, len(injections))
 	for _, injection := range injections {
 		text := strings.TrimSpace(injection.Text)
@@ -102,7 +113,11 @@ func prependAgentSystemPrompt(messages []domain.ChatMessage, modeDef domain.Agen
 }
 
 func prependAgentSystemPromptWithSnapshot(messages []domain.ChatMessage, modeDef domain.AgentModeDefinition, snapshot PromptSnapshot) []domain.ChatMessage {
-	prompt := strings.TrimSpace(buildAgentSystemPromptWithSnapshot(modeDef, snapshot))
+	return prependAgentSystemPromptWithSnapshotAndShell(messages, modeDef, snapshot, "")
+}
+
+func prependAgentSystemPromptWithSnapshotAndShell(messages []domain.ChatMessage, modeDef domain.AgentModeDefinition, snapshot PromptSnapshot, shellInstruction string) []domain.ChatMessage {
+	prompt := strings.TrimSpace(buildAgentSystemPromptWithSnapshotAndShell(modeDef, snapshot, shellInstruction))
 	if prompt == "" {
 		return append([]domain.ChatMessage(nil), messages...)
 	}

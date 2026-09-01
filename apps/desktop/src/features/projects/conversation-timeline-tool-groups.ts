@@ -123,8 +123,8 @@ export function toolCallKind(toolCall: domain.ToolCall) {
     case "ls":
     case "list_files":
       return "list";
-    case "tool_resolve":
-      return "tool-resolve";
+    case "resource_resolve":
+      return "resource-resolve";
     case "tool_search":
       return "tool-search";
     case "tool_list":
@@ -141,7 +141,8 @@ export function toolCallKind(toolCall: domain.ToolCall) {
     case "git_status":
     case "git_diff":
       return "git";
-    case "bash":
+    case "exec_command":
+    case "write_stdin":
     case "run_tests":
       return "shell";
     case "agent_delegate_task":
@@ -172,8 +173,8 @@ function toolGroupTitle(kind: string, calls: domain.ToolCall[]) {
       return `已探索 ${count} 次搜索`;
     case "list":
       return `已探索 ${count} 次列出`;
-    case "tool-resolve":
-      return `已解析 ${count} 次工具`;
+    case "resource-resolve":
+      return `已解析 ${count} 次资源`;
     case "tool-search":
       return `已搜索 ${count} 次工具`;
     case "tool-list":

@@ -31,7 +31,8 @@ export function ToolFileChangeLines({
               aria-expanded={canExpand ? expanded : undefined}
               className={cn(
                 "flex min-w-0 items-baseline gap-1.5 text-left",
-                canExpand && "cursor-pointer rounded-sm hover:bg-muted/50",
+                canExpand &&
+                  "cursor-pointer rounded-md px-1 py-0.5 -mx-1 hover:bg-muted/50",
               )}
               disabled={!canExpand}
               onClick={() =>
@@ -83,8 +84,8 @@ export function ToolFileChangeLines({
 function ToolDiffPreview({ text }: { text?: string }) {
   if (!text?.trim()) return null;
   return (
-    <div className="ml-2 max-h-80 overflow-hidden rounded-md border border-border/70 bg-muted/35">
-      <ScrollArea className="max-h-80 [&_[data-radix-scroll-area-viewport]]:p-2 [&_[data-slot=scroll-area-viewport]]:max-h-80">
+    <div className="max-h-80 overflow-hidden border-t border-border/60 pt-2">
+      <ScrollArea className="max-h-80 [&_[data-radix-scroll-area-viewport]]:pr-2 [&_[data-slot=scroll-area-viewport]]:max-h-80">
         <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
           {text.split("\n").map((line, index) => (
             <span

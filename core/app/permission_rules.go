@@ -80,7 +80,7 @@ func permissionExemptTool(spec domain.ToolSpec) bool {
 }
 
 func permissionActionForSpec(spec domain.ToolSpec) string {
-	if spec.Name == SkillToolName || spec.Category == "skill" || spec.Capability == "skill.load" {
+	if spec.Name == SkillsReadToolName || spec.Name == SkillsListToolName || spec.Category == "skill" || strings.HasPrefix(spec.Capability, "skill.") {
 		return permissionActionSkill
 	}
 	if spec.Capability == "shell.exec" {
@@ -171,34 +171,32 @@ func isMCPTool(spec domain.ToolSpec) bool {
 	return false
 }
 
-func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.ToolExecutionContext) ([]string, map[string]any, error) {
+func (e *PermissionEngine) permissionPathsForTool(name string, args json.RawMessage, execCtx domain.ToolExecutionContext) ([]string, map[string]any, error) {
 	switch name {
-	case "bash":
-		input, err := parsePrimitiveBashArgs(args)
-		if err != nil {
-			return nil, nil, err
-		}
-		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, "bash", input.Command, input.CWD, input.TimeoutSeconds, input.Network, input.Mode, input.Stdin, input.Env)
-		if err != nil {
-			return prepared.detect.Paths, prepared.metadata, err
-		}
-		if strings.TrimSpace(input.Justification) != "" {
-			prepared.metadata["justification"] = input.Justification
-		}
-		return prepared.detect.Paths, prepared.metadata, nil
 	case ExecCommandToolName:
 		input, err := parseExecCommandArgs(args)
 		if err != nil {
 			return nil, nil, err
 		}
-		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, ExecCommandToolName, input.Command, input.CWD, 0, input.Network, "pty", "", input.Env)
+		shell, err := resolveCommandShell(execCtx.WorkspaceRoot, input.Shell)
+		if err != nil {
+			return nil, nil, err
+		}
+		login := resolveLoginShell(input.Login, shell)
+		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, ExecCommandToolName, input.Cmd, input.Workdir, 0, "", "pty", "", shell, login, nil)
 		if err != nil {
 			return prepared.detect.Paths, prepared.metadata, err
 		}
 		prepared.metadata["interactive"] = true
 		prepared.metadata["yieldTimeMs"] = input.YieldTimeMS
+		if input.SandboxPermissions != "" {
+			prepared.metadata["sandboxPermissions"] = input.SandboxPermissions
+		}
 		if input.Justification != "" {
 			prepared.metadata["justification"] = input.Justification
+		}
+		if len(input.PrefixRule) > 0 {
+			prepared.metadata["prefixRule"] = input.PrefixRule
 		}
 		return prepared.detect.Paths, prepared.metadata, nil
 	case WriteStdinToolName:
@@ -206,7 +204,7 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := defaultAgentPTYRegistry.ValidateOwner(execCtx.WorkspaceRoot, execCtx.SessionID, input.ProcessRef); err != nil {
+		if err := e.permissionPTYRegistry().ValidateOwner(execCtx.WorkspaceRoot, execCtx.SessionID, input.ProcessRef); err != nil {
 			return nil, nil, err
 		}
 		capabilities := []string{"shell.interactive.observe"}
@@ -226,7 +224,7 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 			category = CommandCategoryDangerous
 			riskLevel = CommandRiskHigh
 		}
-		approvalKey := commandApprovalKey(execCtx.WorkspaceRoot, execCtx.WorkspaceRoot, input.ProcessRef, []string{input.ProcessRef}, WriteStdinToolName, "local", "pty", "deny", category, riskLevel, capabilities)
+		approvalKey := commandApprovalKey(execCtx.WorkspaceRoot, execCtx.WorkspaceRoot, input.ProcessRef, []string{input.ProcessRef}, WriteStdinToolName, "local", "pty", "deny", category, riskLevel, "", false, capabilities)
 		return nil, map[string]any{
 			"approvalKey": approvalKey, "processRef": input.ProcessRef, "interactive": true,
 			"stdinPresent": hasInput, "terminate": input.Terminate,
@@ -246,7 +244,11 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 		if len(commands) != 1 {
 			return nil, nil, errors.New("run_tests currently supports one declared command per invocation")
 		}
-		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, "run_tests", commands[0], "", input.TimeoutSeconds, "deny", "foreground", "", nil)
+		shell, err := resolveCommandShell(execCtx.WorkspaceRoot, "")
+		if err != nil {
+			return nil, nil, err
+		}
+		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, "run_tests", commands[0], "", input.TimeoutSeconds, "deny", "foreground", "", shell, false, nil)
 		if err != nil {
 			return prepared.detect.Paths, prepared.metadata, err
 		}
@@ -260,7 +262,11 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 		if err != nil {
 			return nil, nil, err
 		}
-		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, "read_diagnostics", command, "", input.TimeoutSeconds, "deny", "foreground", "", nil)
+		shell, err := resolveCommandShell(execCtx.WorkspaceRoot, "")
+		if err != nil {
+			return nil, nil, err
+		}
+		prepared, err := prepareShellCommand(execCtx.WorkspaceRoot, execCtx, "read_diagnostics", command, "", input.TimeoutSeconds, "deny", "foreground", "", shell, false, nil)
 		if err != nil {
 			return prepared.detect.Paths, prepared.metadata, err
 		}
@@ -416,6 +422,13 @@ func permissionPathsForTool(name string, args json.RawMessage, execCtx domain.To
 		}
 		return []string{filepath.ToSlash(filepath.Clean(input.Path))}, nil, nil
 	}
+}
+
+func (e *PermissionEngine) permissionPTYRegistry() *AgentPTYRegistry {
+	if e != nil && e.PTYRegistry != nil {
+		return e.PTYRegistry
+	}
+	return defaultAgentPTYRegistry
 }
 
 func deniedPathReason(paths []string) string {

@@ -10,6 +10,31 @@ import (
 	"aivo/core/domain"
 )
 
+type SkillResolveCandidate struct {
+	Name           string
+	Description    string
+	Scope          string
+	Source         string
+	Status         string
+	SelectionGroup *domain.ToolSelectionGroup
+}
+
+type SkillResolveRequest struct {
+	Intent     string
+	MaxSkills  int
+	SessionID  string
+	TurnID     string
+	AgentMode  string
+	Candidates []SkillResolveCandidate
+}
+
+type SkillResolveDecision struct {
+	Names  []string
+	Reason string
+}
+
+type SkillResolveFunc func(context.Context, SkillResolveRequest) (SkillResolveDecision, error)
+
 func (s *Service) skillResolveCandidates(ctx context.Context) ([]SkillResolveCandidate, error) {
 	result, err := s.ListSkills(ctx, domain.SkillListInput{})
 	if err != nil {
@@ -17,10 +42,10 @@ func (s *Service) skillResolveCandidates(ctx context.Context) ([]SkillResolveCan
 	}
 	byName := map[string]SkillResolveCandidate{}
 	for _, skill := range result.Entries {
-		if !skill.Enabled || strings.TrimSpace(skill.Description) == "" {
+		if !isModelResolvableSkillEntry(skill) {
 			continue
 		}
-		byName[skill.Name] = SkillResolveCandidate{Name: skill.Name, Description: skill.Description, Scope: skill.Scope, Source: skill.Source, Status: "imported"}
+		byName[skill.Name] = SkillResolveCandidate{Name: skill.Name, Description: skill.Description, Scope: skill.Scope, Source: skill.Source, Status: "imported", SelectionGroup: skill.SelectionGroup}
 	}
 	out := make([]SkillResolveCandidate, 0, len(byName))
 	for _, candidate := range byName {
@@ -28,6 +53,13 @@ func (s *Service) skillResolveCandidates(ctx context.Context) ([]SkillResolveCan
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+func isModelResolvableSkillEntry(skill domain.SkillEntry) bool {
+	if !skill.Enabled || strings.TrimSpace(skill.Description) == "" {
+		return false
+	}
+	return true
 }
 
 func validateSkillResolveSelection(candidates []SkillResolveCandidate, names []string, limit int) []string {
@@ -41,9 +73,22 @@ func validateSkillResolveSelection(candidates []SkillResolveCandidate, names []s
 		if allowed[name] && !seen[name] {
 			seen[name] = true
 			out = append(out, name)
-			if len(out) >= limit {
+			if limit > 0 && len(out) >= limit {
 				break
 			}
+		}
+	}
+	return out
+}
+
+func normalizeSkillNames(names []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = normalizeSkillName(name)
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
 		}
 	}
 	return out
@@ -78,13 +123,10 @@ func localSkillResolve(_ context.Context, request SkillResolveRequest) (SkillRes
 		return matches[i].score > matches[j].score
 	})
 	max := request.MaxSkills
-	if max <= 0 {
-		max = 3
-	}
 	names := []string{}
 	for _, match := range matches {
 		names = append(names, match.name)
-		if len(names) >= max {
+		if max > 0 && len(names) >= max {
 			break
 		}
 	}

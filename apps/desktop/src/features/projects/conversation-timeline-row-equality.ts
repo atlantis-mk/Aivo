@@ -48,6 +48,10 @@ export function sameTimelineRow(
       );
     }
     case "assistant-status":
+      return (
+        previous.turn === (next as typeof previous).turn &&
+        previous.isExecuting === (next as typeof previous).isExecuting
+      );
     case "assistant-response":
       return previous.turn === (next as typeof previous).turn;
     case "system-note":
@@ -59,6 +63,7 @@ export function sameTimelineRow(
       return (
         previous.turnId === (next as typeof previous).turnId &&
         previous.actionHeading === (next as typeof previous).actionHeading &&
+        previous.isExecuting === (next as typeof previous).isExecuting &&
         previous.showSkeleton === (next as typeof previous).showSkeleton
       );
     case "stopped":

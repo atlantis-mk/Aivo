@@ -9,32 +9,33 @@ import (
 	"aivo/core/domain"
 )
 
-type ToolResolveRequest struct {
-	Intent     string
-	Required   bool
-	MaxTools   int
-	Source     string
-	Category   string
-	RiskLevel  string
-	SessionID  string
-	TurnID     string
-	AgentMode  string
-	Candidates []domain.ToolCatalogEntry
+type ResourceResolveRequest struct {
+	Intent        string
+	Mode          string
+	Required      bool
+	Source        string
+	Category      string
+	RiskLevel     string
+	SessionID     string
+	TurnID        string
+	AgentMode     string
+	WorkspaceRoot string
+	Candidates    []domain.ToolCatalogEntry
 }
 
-type ToolResolveDecision struct {
-	Names  []string
-	Reason string
+type ResourceResolveDecision struct {
+	Names           []string
+	ResourceKeys    []string
+	ResourceContext string
+	Resources       []hostResourceSelectionResource
+	Reason          string
 }
 
-type ToolResolveFunc func(context.Context, ToolResolveRequest) (ToolResolveDecision, error)
+type ResourceResolveFunc func(context.Context, ResourceResolveRequest) (ResourceResolveDecision, error)
 
-type ToolReplaceFunc func(context.Context, string, []string) error
-
-type ToolResolveTool struct {
+type ResourceResolveTool struct {
 	registry *Registry
-	resolve  ToolResolveFunc
-	replace  ToolReplaceFunc
+	resolve  ResourceResolveFunc
 }
 type ToolSearchTool struct{ registry *Registry }
 type ToolListTool struct{ registry *Registry }
@@ -47,8 +48,8 @@ type ToolCallTool struct {
 	runtime  func() *ToolRuntime
 }
 
-func NewToolResolveTool(registry *Registry, resolve ToolResolveFunc, replace ToolReplaceFunc) *ToolResolveTool {
-	return &ToolResolveTool{registry: registry, resolve: resolve, replace: replace}
+func NewResourceResolveTool(registry *Registry, resolve ResourceResolveFunc) *ResourceResolveTool {
+	return &ResourceResolveTool{registry: registry, resolve: resolve}
 }
 func NewToolSearchTool(registry *Registry) *ToolSearchTool {
 	return &ToolSearchTool{registry: registry}
@@ -63,57 +64,89 @@ func NewToolCallTool(registry *Registry, runtime func() *ToolRuntime) *ToolCallT
 	return &ToolCallTool{registry: registry, runtime: runtime}
 }
 
-func (t *ToolResolveTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+func normalizeResourceResolveMode(mode string) (string, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		return "", errors.New(`mode is required and must be "inspect" or "use"`)
+	}
+	if mode != string(hostResourceSelectionUse) && mode != string(hostResourceSelectionInspect) {
+		return "", errors.New(`mode must be "inspect" or "use"`)
+	}
+	return mode, nil
+}
+
+func (t *ResourceResolveTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	var input struct {
 		Intent    string `json:"intent"`
+		Mode      string `json:"mode"`
 		Required  *bool  `json:"required"`
-		MaxTools  int    `json:"maxTools"`
 		Source    string `json:"source"`
 		Category  string `json:"category"`
 		RiskLevel string `json:"riskLevel"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
-		return toolError(ToolResolveName, errors.New("invalid tool_resolve arguments"))
+		return toolError(ResourceResolveName, errors.New("invalid resource_resolve arguments"))
 	}
 	input.Intent = strings.TrimSpace(input.Intent)
 	if input.Intent == "" {
-		return toolError(ToolResolveName, errors.New("intent is required"))
+		return toolError(ResourceResolveName, errors.New("intent is required"))
+	}
+	mode, err := normalizeResourceResolveMode(input.Mode)
+	if err != nil {
+		return toolError(ResourceResolveName, err)
 	}
 	required := true
 	if input.Required != nil {
 		required = *input.Required
 	}
-	if input.MaxTools <= 0 {
-		input.MaxTools = 8
-	}
-	if input.MaxTools > 20 {
-		input.MaxTools = 20
-	}
-	candidates := toolResolveCandidates(t.registry, execCtx, input.Source, input.Category, input.RiskLevel)
-	if len(candidates) == 0 {
-		if !required {
-			return t.replaceWithNoAutomaticTools(ctx, execCtx, "no allowed deferred tools match the requested filters")
-		}
-		return toolResolveNoAvailable(execCtx.ToolCallID, input.Intent, required, "no allowed deferred tools match the requested filters")
-	}
+	candidates := resourceResolveCandidates(t.registry, execCtx, input.Source, input.Category, input.RiskLevel)
 	resolver := t.resolve
 	if resolver == nil {
-		resolver = localToolResolve
+		resolver = localResourceResolve
 	}
-	decision, err := resolver(ctx, ToolResolveRequest{
-		Intent: input.Intent, Required: required, MaxTools: input.MaxTools, Source: input.Source, Category: input.Category,
-		RiskLevel: input.RiskLevel, SessionID: execCtx.SessionID, TurnID: execCtx.TurnID, AgentMode: execCtx.AgentMode,
+	decision, err := resolver(ctx, ResourceResolveRequest{
+		Intent: input.Intent, Mode: mode, Required: required, Source: input.Source, Category: input.Category,
+		RiskLevel: input.RiskLevel, SessionID: execCtx.SessionID, TurnID: execCtx.TurnID, AgentMode: execCtx.AgentMode, WorkspaceRoot: execCtx.WorkspaceRoot,
 		Candidates: candidates,
 	})
 	if err != nil {
-		return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_resolve_failed", err.Error())
+		return toolFailure(execCtx.ToolCallID, ResourceResolveName, "resource_resolve_failed", err.Error())
 	}
-	selected := validateToolResolveSelection(candidates, decision.Names)
-	if len(selected) == 0 {
-		if !required {
-			return t.replaceWithNoAutomaticTools(ctx, execCtx, decision.Reason)
+	if mode == string(hostResourceSelectionInspect) {
+		resourceItems := hostResourceSelectionPayload(decision.Resources)
+		if len(resourceItems) == 0 {
+			if !required {
+				structured := map[string]any{"status": "inspected", "resources": []map[string]any{}, "resourceCount": 0, "reason": strings.TrimSpace(decision.Reason), "lifetime": "inspect", "appliesNextStep": false}
+				raw, _ := json.MarshalIndent(structured, "", "  ")
+				return domain.ToolResult{Name: ResourceResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
+			}
+			return resourceResolveNoAvailable(execCtx.ToolCallID, input.Intent, required, firstNonEmpty(decision.Reason, "no candidate resource satisfied the requested capability"))
 		}
-		return toolResolveNoAvailable(execCtx.ToolCallID, input.Intent, required, firstNonEmpty(decision.Reason, "no candidate tool satisfied the requested capability"))
+		structured := map[string]any{
+			"status":          "inspected",
+			"resources":       resourceItems,
+			"resourceCount":   len(resourceItems),
+			"reason":          strings.TrimSpace(decision.Reason),
+			"lifetime":        "inspect",
+			"appliesNextStep": false,
+		}
+		raw, _ := json.MarshalIndent(structured, "", "  ")
+		return domain.ToolResult{Name: ResourceResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
+	}
+	selected := validateResourceResolveToolSelection(candidates, decision.Names)
+	resourceContext := ""
+	resourceSummaries := []hostResourceSelectionResource{}
+	if strings.TrimSpace(decision.ResourceContext) != "" {
+		resourceContext = decision.ResourceContext
+		resourceSummaries = decision.Resources
+	}
+	if len(selected) == 0 && strings.TrimSpace(resourceContext) == "" {
+		if !required {
+			structured := map[string]any{"status": "replaced", "tools": []map[string]any{}, "count": 0, "reason": strings.TrimSpace(decision.Reason), "appliesNextStep": true}
+			raw, _ := json.MarshalIndent(structured, "", "  ")
+			return domain.ToolResult{Name: ResourceResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
+		}
+		return resourceResolveNoAvailable(execCtx.ToolCallID, input.Intent, required, firstNonEmpty(decision.Reason, "no candidate resource satisfied the requested capability"))
 	}
 	items := make([]map[string]any, 0, len(selected))
 	names := make([]string, 0, len(selected))
@@ -121,34 +154,29 @@ func (t *ToolResolveTool) Execute(ctx context.Context, args json.RawMessage, exe
 		names = append(names, entry.Name)
 		items = append(items, toolCatalogListItem(entry))
 	}
-	if t.replace != nil {
-		if err := t.replace(ctx, execCtx.SessionID, names); err != nil {
-			return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_activation_failed", err.Error())
-		}
+	resourceItems := hostResourceSelectionPayload(resourceSummaries)
+	status := "replaced"
+	if len(selected) == 0 {
+		status = "applied"
 	}
 	structured := map[string]any{
-		"status":          "replaced",
+		"status":          status,
 		"tools":           items,
 		"count":           len(items),
+		"resources":       resourceItems,
+		"resourceCount":   len(resourceItems),
 		"reason":          strings.TrimSpace(decision.Reason),
 		"appliesNextStep": true,
 	}
 	raw, _ := json.MarshalIndent(structured, "", "  ")
-	return domain.ToolResult{Name: ToolResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
-}
-
-func (t *ToolResolveTool) replaceWithNoAutomaticTools(ctx context.Context, execCtx domain.ToolExecutionContext, reason string) domain.ToolResult {
-	if t.replace != nil {
-		if err := t.replace(ctx, execCtx.SessionID, nil); err != nil {
-			return toolFailure(execCtx.ToolCallID, ToolResolveName, "tool_activation_failed", err.Error())
-		}
+	modelContent := string(raw)
+	if strings.TrimSpace(resourceContext) != "" {
+		modelContent = strings.TrimSpace(modelContent + "\n\n<resolved_session_resources>\n" + resourceContext + "\n</resolved_session_resources>")
 	}
-	structured := map[string]any{"status": "replaced", "tools": []map[string]any{}, "count": 0, "reason": strings.TrimSpace(reason), "appliesNextStep": true}
-	raw, _ := json.MarshalIndent(structured, "", "  ")
-	return domain.ToolResult{Name: ToolResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), Structured: structured}
+	return domain.ToolResult{Name: ResourceResolveName, CallID: execCtx.ToolCallID, OK: true, Content: string(raw), ModelContent: modelContent, Structured: structured}
 }
 
-func (t *ToolSearchTool) Execute(_ context.Context, args json.RawMessage, _ domain.ToolExecutionContext) domain.ToolResult {
+func (t *ToolSearchTool) Execute(_ context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	var input struct {
 		Query string `json:"query"`
 		Limit int    `json:"limit"`
@@ -163,7 +191,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, args json.RawMessage, _ doma
 	if input.Limit <= 0 || input.Limit > 20 {
 		input.Limit = 5
 	}
-	entries := deferrableCatalogEntries(t.registry)
+	entries := deferrableCatalogEntriesFrom(toolAccessCatalogEntries(t.registry, execCtx))
 	matches := searchToolCatalog(entries, input.Query, input.Limit)
 	sourceCounts := countDeferredCatalogSources(entries)
 	items := make([]map[string]any, 0, len(matches))
@@ -175,7 +203,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, args json.RawMessage, _ doma
 	return domain.ToolResult{Name: ToolSearchName, OK: true, Content: string(raw), Structured: structured}
 }
 
-func (t *ToolListTool) Execute(_ context.Context, args json.RawMessage, _ domain.ToolExecutionContext) domain.ToolResult {
+func (t *ToolListTool) Execute(_ context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	if t.registry == nil {
 		return toolFailure("", ToolListName, "registry_unavailable", "tool registry is unavailable")
 	}
@@ -213,7 +241,7 @@ func (t *ToolListTool) Execute(_ context.Context, args json.RawMessage, _ domain
 	source := strings.ToLower(strings.TrimSpace(input.Source))
 	category := strings.ToLower(strings.TrimSpace(input.Category))
 	query := strings.ToLower(strings.TrimSpace(input.Query))
-	entries := t.registry.CatalogEntries()
+	entries := toolAccessCatalogEntries(t.registry, execCtx)
 	filtered := make([]domain.ToolCatalogEntry, 0, len(entries))
 	sourceCounts := map[string]int{}
 	for _, entry := range entries {
@@ -264,7 +292,7 @@ func (t *ToolListTool) Execute(_ context.Context, args json.RawMessage, _ domain
 	return domain.ToolResult{Name: ToolListName, OK: true, Content: string(raw), Structured: structured}
 }
 
-func (t *ToolDetailTool) Execute(_ context.Context, args json.RawMessage, _ domain.ToolExecutionContext) domain.ToolResult {
+func (t *ToolDetailTool) Execute(_ context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	toolName := firstNonEmpty(t.name, ToolDetailName)
 	if t.registry == nil {
 		return toolFailure("", toolName, "registry_unavailable", "tool registry is unavailable")
@@ -276,7 +304,7 @@ func (t *ToolDetailTool) Execute(_ context.Context, args json.RawMessage, _ doma
 		return toolError(toolName, errors.New("invalid "+toolName+" arguments"))
 	}
 	name := strings.TrimSpace(input.Name)
-	for _, entry := range t.registry.CatalogEntries() {
+	for _, entry := range toolAccessCatalogEntries(t.registry, execCtx) {
 		if entry.Name == name {
 			raw, _ := json.MarshalIndent(entry, "", "  ")
 			return domain.ToolResult{Name: toolName, OK: true, Content: string(raw), Structured: map[string]any{"tool": entry}}

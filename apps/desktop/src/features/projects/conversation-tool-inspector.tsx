@@ -404,12 +404,12 @@ function DetailCard({
   title: string;
 }) {
   return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <section className="overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-foreground/[0.03]">
+      <div className="flex min-h-11 flex-col justify-center gap-0.5 px-4 pt-3 pb-2">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+      <div className="px-4 pb-4 pt-1">
         <ScrollArea className="h-48 pr-3">
           <pre
             className={cn(
@@ -420,8 +420,8 @@ function DetailCard({
             {content}
           </pre>
         </ScrollArea>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 

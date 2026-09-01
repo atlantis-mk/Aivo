@@ -16,7 +16,7 @@ import (
 	"aivo/core/infra/persistence"
 )
 
-func TestConversationalMCPRegistrationRequiresExactApprovalEvenInFullAccess(t *testing.T) {
+func TestConversationalMCPRegistrationFullAccessBypassesApproval(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -46,28 +46,28 @@ func TestConversationalMCPRegistrationRequiresExactApprovalEvenInFullAccess(t *t
 	evaluation := engine.Evaluate(ctx, tool, mustJSON(input), domain.ToolExecutionContext{
 		WorkspaceRoot: root, SessionID: session.ID, TurnID: turn.ID, ToolCallID: "register-approval", AgentMode: domain.AgentModeAssistant,
 	})
-	if evaluation.Decision != domain.PermissionDecisionAsk || evaluation.RequestID == "" {
-		t.Fatalf("evaluation = %#v, want exact approval request despite full-access mode", evaluation)
+	if evaluation.Decision != domain.PermissionDecisionAllow || evaluation.RequestID != "" {
+		t.Fatalf("evaluation = %#v, want full-access registration without approval request", evaluation)
+	}
+	requests, err := service.ListPermissionRequests(ctx, session.ID, domain.PermissionRequestStatusPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 0 {
+		t.Fatalf("pending permission requests = %#v, want none in full-access mode", requests)
+	}
+	result := tool.Execute(ctx, mustJSON(input), domain.ToolExecutionContext{
+		WorkspaceRoot: root, SessionID: session.ID, TurnID: turn.ID, ToolCallID: "register-approval", AgentMode: domain.AgentModeAssistant,
+	})
+	if !result.OK || result.ToolError != nil {
+		t.Fatalf("tool result = %#v, want registered MCP source", result)
 	}
 	items, err := service.ListMCPServers(ctx, domain.MCPServerListInput{IncludeDisabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("unapproved proposal mutated MCP persistence: %#v", items)
-	}
-	request, err := service.store.GetPermissionRequest(ctx, evaluation.RequestID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if request.Arguments["registrationTarget"] == "" || request.Arguments["registrationProposalId"] == "" || request.Remember {
-		t.Fatalf("permission request = %#v, want exact non-rememberable registration metadata", request)
-	}
-	if _, err := service.DenyPermissionRequest(ctx, domain.DenyPermissionRequestInput{RequestID: request.ID, Remember: true, Reason: "no"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.commitMCPRegistrationProposal(ctx, input, domain.ToolExecutionContext{SessionID: session.ID, TurnID: turn.ID, ToolCallID: "register-approval"}); mcpRegistrationErrorCode(err) != "proposal_expired" {
-		t.Fatalf("commit after denial err = %v, want discarded proposal", err)
+	if len(items) != 1 || items[0].Server.ID != input.ID || !items[0].Server.Enabled {
+		t.Fatalf("registered MCP items = %#v, want enabled %s", items, input.ID)
 	}
 }
 
@@ -85,6 +85,238 @@ func TestConversationalMCPRegistrationIntentFindsHostOwnedToolLocally(t *testing
 		}
 	}
 	t.Fatalf("local registration intent did not select %s: %#v", toolRegistrationMCPName, matches)
+}
+
+func TestConversationalResourceRegistrationFullAccessBypassesApprovalAndInstallsCompleteSkillSnapshot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	root := t.TempDir()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "Register Skill", ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := service.StartTurn(ctx, domain.StartTurnRequest{SessionID: session.ID, AgentMode: domain.AgentModeAssistant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetPermissionMode(ctx, domain.PermissionModeInput{SessionID: session.ID, Mode: domain.PermissionModeFullAccess}); err != nil {
+		t.Fatal(err)
+	}
+	registry, _ := service.toolsForWorkspace(root)
+	tool, ok := registry.Get(toolRegistrationResourceName)
+	if !ok {
+		t.Fatal("builtin conversational resource registration tool is missing")
+	}
+	input := completeSkillResourceInput()
+	engine := NewPermissionEngine(service.store)
+	engine.MCPRegistrationPreflight = service.prepareToolRegistrationPermission
+	execCtx := domain.ToolExecutionContext{
+		WorkspaceRoot: root, SessionID: session.ID, TurnID: turn.ID, ToolCallID: "skill-register", AgentMode: domain.AgentModeAssistant,
+	}
+	evaluation := engine.Evaluate(ctx, tool, mustJSON(input), execCtx)
+	if evaluation.Decision != domain.PermissionDecisionAllow || evaluation.RequestID != "" {
+		t.Fatalf("evaluation = %#v, want full-access resource registration without approval request", evaluation)
+	}
+	requests, err := service.ListPermissionRequests(ctx, session.ID, domain.PermissionRequestStatusPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 0 {
+		t.Fatalf("pending permission requests = %#v, want none in full-access mode", requests)
+	}
+	result := tool.Execute(ctx, mustJSON(input), execCtx)
+	if !result.OK || result.ToolError != nil {
+		t.Fatalf("tool result = %#v, want installed Skill", result)
+	}
+	installedRoot := filepath.Join(home, ".aivo", "skills", "complete-skill")
+	for _, rel := range []string{"SKILL.md", "references/guide.md", "scripts/check.sh", "assets/template.txt", "notes/extra.md"} {
+		if _, err := os.Stat(filepath.Join(installedRoot, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("installed Skill missing %s: %v", rel, err)
+		}
+	}
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, found := skillEntryByName(list.Entries, "complete-skill")
+	if !found || !entry.Enabled || entry.RootPath != installedRoot {
+		t.Fatalf("installed Skill entry = %#v found=%v; entries=%#v", entry, found, list.Entries)
+	}
+	if _, err := service.commitResourceRegistrationProposal(ctx, input, execCtx); resourceRegistrationErrorCode(err) != "proposal_expired" {
+		t.Fatalf("replayed commit err = %v, want single-use proposal refusal", err)
+	}
+}
+
+func TestConversationalResourceRegistrationDenialDiscardsProposal(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	input := completeSkillResourceInput()
+	execCtx := domain.ToolExecutionContext{SessionID: "session", TurnID: "turn", ToolCallID: "resource-denial"}
+	if _, _, _, err := service.prepareToolRegistrationPermission(ctx, toolRegistrationResourceName, mustJSON(input), execCtx); err != nil {
+		t.Fatal(err)
+	}
+	requests, err := service.ListPermissionRequests(ctx, "session", domain.PermissionRequestStatusPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 0 {
+		t.Fatalf("prepare preflight should not create permission requests directly: %#v", requests)
+	}
+	// Create the native request through the permission engine so denial exercises
+	// the same proposal cleanup path used by runtime tool execution.
+	engine := NewPermissionEngine(service.store)
+	engine.MCPRegistrationPreflight = service.prepareToolRegistrationPermission
+	registry, _ := service.toolsForWorkspace(t.TempDir())
+	tool, ok := registry.Get(toolRegistrationResourceName)
+	if !ok {
+		t.Fatal("builtin conversational resource registration tool is missing")
+	}
+	evaluation := engine.Evaluate(ctx, tool, mustJSON(input), execCtx)
+	if evaluation.Decision != domain.PermissionDecisionAsk {
+		t.Fatalf("evaluation = %#v, want approval request", evaluation)
+	}
+	request, err := service.store.GetPermissionRequest(ctx, evaluation.RequestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.DenyPermissionRequest(ctx, domain.DenyPermissionRequestInput{RequestID: request.ID, Remember: true, Reason: "no"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.commitResourceRegistrationProposal(ctx, input, execCtx); resourceRegistrationErrorCode(err) != "proposal_expired" {
+		t.Fatalf("commit after denial err = %v, want discarded proposal", err)
+	}
+}
+
+func TestConversationalResourceRegistrationIntentFindsHostOwnedToolLocally(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	defer service.Shutdown()
+	entries, err := service.ListToolCatalog(context.Background(), domain.ToolCatalogInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := searchToolCatalog(entries, "安装 skills.sh 技能资源到 Aivo", 6)
+	for _, match := range matches {
+		if match.Name == toolRegistrationResourceName {
+			return
+		}
+	}
+	t.Fatalf("local resource registration intent did not select %s: %#v", toolRegistrationResourceName, matches)
+}
+
+func TestConversationalResourceRegistrationNormalizesSkillsSHAndGitHubLocators(t *testing.T) {
+	fromSkillsSH, err := normalizeResourceRegistrationInput(domain.ResourceRegistrationProposalInput{
+		Kind: domain.SessionResourceSkill,
+		URL:  "https://skills.sh/mattpocock/skills/setup-matt-pocock-skills",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromSkillsSH.ID != "mattpocock/skills/setup-matt-pocock-skills" || fromSkillsSH.Source != "mattpocock/skills" || fromSkillsSH.Skill != "setup-matt-pocock-skills" {
+		t.Fatalf("skills.sh locator = %#v", fromSkillsSH)
+	}
+	fromGitHub, err := normalizeResourceRegistrationInput(domain.ResourceRegistrationProposalInput{
+		Kind:  domain.SessionResourceSkill,
+		URL:   "https://github.com/mattpocock/skills",
+		Skill: "setup-matt-pocock-skills",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromGitHub.ID != "mattpocock/skills/setup-matt-pocock-skills" || fromGitHub.Source != "mattpocock/skills" || fromGitHub.Skill != "setup-matt-pocock-skills" {
+		t.Fatalf("GitHub locator = %#v", fromGitHub)
+	}
+	if _, err := normalizeResourceRegistrationInput(domain.ResourceRegistrationProposalInput{
+		Kind: domain.SessionResourceSkill,
+		URL:  "https://github.com/mattpocock/skills",
+	}, true); resourceRegistrationErrorCode(err) != "ambiguous_resource_locator" {
+		t.Fatalf("ambiguous GitHub locator err = %v code = %q", err, resourceRegistrationErrorCode(err))
+	}
+}
+
+func TestConversationalResourceRegistrationUsesSkillsCLIWithoutSkillsSHToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VERCEL_OIDC_TOKEN", "")
+	bin := t.TempDir()
+	fakeNpx := filepath.Join(bin, "npx")
+	script := `#!/bin/sh
+set -eu
+case "$*" in
+  *"skills@latest add https://github.com/mattpocock/skills -g --copy -y --skill setup-matt-pocock-skills --agent codex --full-depth"*) ;;
+  *) echo "unexpected args: $*" >&2; exit 64 ;;
+esac
+root="$HOME/.agents/skills/setup-matt-pocock-skills"
+mkdir -p "$root/references" "$root/scripts" "$root/assets" "$root/agents"
+cat > "$root/SKILL.md" <<'EOF'
+---
+name: setup-matt-pocock-skills
+description: Setup Matt Pocock skills.
+---
+
+Use the complete tree.
+EOF
+printf 'reference\n' > "$root/references/setup.md"
+printf '#!/bin/sh\nexit 0\n' > "$root/scripts/install.sh"
+printf 'template\n' > "$root/assets/template.txt"
+printf 'instructions\n' > "$root/agents/openai.yaml"
+`
+	if err := os.WriteFile(fakeNpx, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	root := t.TempDir()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "Register GitHub Skill", ProjectPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := service.StartTurn(ctx, domain.StartTurnRequest{SessionID: session.ID, AgentMode: domain.AgentModeAssistant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, _ := service.toolsForWorkspace(root)
+	tool, ok := registry.Get(toolRegistrationResourceName)
+	if !ok {
+		t.Fatal("builtin conversational resource registration tool is missing")
+	}
+	input := domain.ResourceRegistrationProposalInput{
+		Kind:         domain.SessionResourceSkill,
+		URL:          "https://github.com/mattpocock/skills",
+		Skill:        "setup-matt-pocock-skills",
+		ExpectedHash: strings.Repeat("0", 64),
+	}
+	execCtx := domain.ToolExecutionContext{
+		WorkspaceRoot: root, SessionID: session.ID, TurnID: turn.ID, ToolCallID: "github-skill-register", AgentMode: domain.AgentModeAssistant,
+	}
+	engine := NewPermissionEngine(service.store)
+	engine.MCPRegistrationPreflight = service.prepareToolRegistrationPermission
+	evaluation := engine.Evaluate(ctx, tool, mustJSON(input), execCtx)
+	if evaluation.Decision != domain.PermissionDecisionAsk {
+		t.Fatalf("evaluation = %#v, want approval request", evaluation)
+	}
+	if _, err := service.ApprovePermissionRequest(ctx, domain.ApprovePermissionRequestInput{RequestID: evaluation.RequestID}); err != nil {
+		t.Fatal(err)
+	}
+	result := tool.Execute(ctx, mustJSON(input), execCtx)
+	if !result.OK || result.ToolError != nil {
+		t.Fatalf("tool result = %#v, want installed Skill through skills CLI", result)
+	}
+	installedRoot := filepath.Join(home, ".aivo", "skills", "setup-matt-pocock-skills")
+	for _, rel := range []string{"SKILL.md", "references/setup.md", "scripts/install.sh", "assets/template.txt", "agents/openai.yaml"} {
+		if _, err := os.Stat(filepath.Join(installedRoot, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("installed CLI Skill missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "setup-matt-pocock-skills")); !os.IsNotExist(err) {
+		t.Fatalf("CLI staging Skill should be moved out of ~/.agents/skills, stat err = %v", err)
+	}
 }
 
 func TestMCPAutomaticSelectionDoesNotDependOnAgentSourceListTool(t *testing.T) {
@@ -112,7 +344,7 @@ func TestMCPAutomaticSelectionDoesNotDependOnAgentSourceListTool(t *testing.T) {
 	if _, exists := registry.Get("aivo_tools_list_mcp"); exists {
 		t.Fatal("removed Agent-visible MCP source-list tool is still registered")
 	}
-	activations, candidates := service.preCallToolCandidates(ctx, session.ID, "turn", registry, registry.Specs())
+	activations, candidates := service.snapshotToolCandidates(ctx, session.ID, "turn", registry, registry.Specs())
 	const selectedName = "mcp_selection_mcp_lookup"
 	found := false
 	for _, candidate := range candidates {
@@ -127,7 +359,7 @@ func TestMCPAutomaticSelectionDoesNotDependOnAgentSourceListTool(t *testing.T) {
 	activations[selectedName] = "automatic"
 	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activations)
 	names := toolSpecNames(assembly.Specs)
-	if !containsToolNames(names, selectedName, ToolResolveName) || containsToolNames(names, "aivo_tools_list_mcp") {
+	if !containsToolNames(names, selectedName, ResourceResolveName) || containsToolNames(names, "aivo_tools_list_mcp") {
 		t.Fatalf("selected Provider tools = %v, want exact MCP tool without source-list executor", names)
 	}
 	for _, name := range names {
@@ -370,4 +602,31 @@ func registrationContainsString(values []string, expected string) bool {
 func filepathForMissingMCPExecutable(t *testing.T) string {
 	t.Helper()
 	return t.TempDir() + string(os.PathSeparator) + "missing-mcp-executable"
+}
+
+func completeSkillResourceInput() domain.ResourceRegistrationProposalInput {
+	return domain.ResourceRegistrationProposalInput{
+		Kind: domain.SessionResourceSkill,
+		ID:   "github/mattpocock/complete-skill",
+		Files: []domain.ResourceRegistrationFile{
+			{Path: "SKILL.md", Contents: "---\nname: complete-skill\ndescription: Install the complete file tree.\n---\n\nUse every supporting file."},
+			{Path: "references/guide.md", Contents: "# Guide\n\nRead this before acting."},
+			{Path: "scripts/check.sh", Contents: "#!/bin/sh\nexit 0\n"},
+			{Path: "assets/template.txt", Contents: "template"},
+			{Path: "notes/extra.md", Contents: "extra"},
+		},
+	}
+}
+
+func permissionArgumentInt(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	default:
+		return 0, false
+	}
 }

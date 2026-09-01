@@ -48,9 +48,9 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
           ...visibleToolArgs(args, ["query"]),
         ]),
       };
-    case "tool_resolve":
+    case "resource_resolve":
       return {
-        label: "解析工具",
+        label: "解析资源",
         detail: joinCommandParts([
           stringArg(args, "intent"),
           scalarArg(args, "maxTools") ? `maxTools=${scalarArg(args, "maxTools")}` : "",
@@ -147,22 +147,21 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
           ...visibleToolArgs(args, ["path"]),
         ]),
       };
-    case "bash":
+    case "exec_command":
       return {
-        label: "Bash",
+        label: "Exec command",
         detail: joinCommandParts([
-          stringArg(args, "command") || stringArg(args, "normalizedCommand"),
-          stringArg(args, "cwd") ? `cwd=${stringArg(args, "cwd")}` : "",
+          stringArg(args, "cmd"),
+          stringArg(args, "workdir") ? `workdir=${stringArg(args, "workdir")}` : "",
         ]),
       };
     case "run_tests":
       return {
         label: "Run tests",
         detail: joinCommandParts([
-          stringArg(args, "command") ||
-            [stringArg(args, "target"), stringArg(args, "kind")]
-              .filter(Boolean)
-              .join(":"),
+          [stringArg(args, "target"), stringArg(args, "kind")]
+            .filter(Boolean)
+            .join(":"),
         ]),
       };
     default:
@@ -174,7 +173,11 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
 }
 
 export function isCommandToolCall(toolCall: domain.ToolCall) {
-  return toolCall.name === "bash" || toolCall.name === "run_tests";
+  return (
+    toolCall.name === "exec_command" ||
+    toolCall.name === "write_stdin" ||
+    toolCall.name === "run_tests"
+  );
 }
 
 export function getToolResultText(toolCall: domain.ToolCall) {

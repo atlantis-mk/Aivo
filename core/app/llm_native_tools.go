@@ -27,7 +27,7 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 		}
 		if isChatGPTCodexRoute(route) {
 			switch spec.Name {
-			case "bash":
+			case ExecCommandToolName:
 				if !modelKnown || !declaredModelCapabilitySupported(model, codexShellCapability) {
 					continue
 				}

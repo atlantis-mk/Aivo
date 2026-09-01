@@ -22,7 +22,7 @@ export function commandTabFromEntries(
     entries,
     toolCallId: latest?.toolCallId ?? "",
     turnId: latest?.turnId,
-    toolName: latest?.toolName ?? "bash",
+    toolName: latest?.toolName ?? "exec_command",
     processRef: latest?.processRef,
     inputMode: latest?.inputMode,
     inputRequest: latest?.inputRequest,

@@ -35,6 +35,7 @@ export type ConversationTimelineRow =
     }
   | {
       type: "assistant-status";
+      isExecuting: boolean;
       key: string;
       turn: ConversationTurn;
     }
@@ -52,6 +53,7 @@ export type ConversationTimelineRow =
   | {
       type: "thinking";
       actionHeading?: string;
+      isExecuting: boolean;
       key: string;
       showSkeleton: boolean;
       turnId: string;

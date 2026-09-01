@@ -10,7 +10,6 @@ export function toolActivityTabsFromToolCall(
     case "write_file":
     case "edit_file":
       return writeFileTabs(toolCall);
-    case "bash":
     case "exec_command":
     case "write_stdin":
     case "run_tests":

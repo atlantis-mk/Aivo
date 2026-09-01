@@ -115,12 +115,21 @@ func (s *Service) prepareSessionResourceReferences(
 				Name: prepared.project.project.Name,
 			})
 		case domain.SessionResourceSkill:
-			skill, resolveErr := s.ensureSkillManager().Resolve(ctx, reference.ID, "", "")
-			if resolveErr != nil || !skill.Enabled {
+			skills := s.resolveAvailableSkillReference(ctx, workspaceRoot, reference.ID)
+			if len(skills) == 0 {
 				return preparedSessionResourceReferences{}, fmt.Errorf("skill reference %q is unavailable", reference.ID)
 			}
-			skillIDs[skill.ID] = true
-			canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: skill.ID, Name: skill.Name})
+			for _, skill := range skills {
+				skillIDs[skill.ID] = true
+			}
+			id := skills[0].ID
+			name := skills[0].Name
+			if strings.HasPrefix(reference.ID, skillGroupResourceKeyPrefix) || len(skills) > 1 {
+				groupID := strings.TrimPrefix(reference.ID, skillGroupResourceKeyPrefix)
+				id = skillGroupResourceKeyPrefix + groupID
+				name = skillGroupDisplayName(skills, groupID)
+			}
+			canonical = append(canonical, domain.SessionResourceReference{Kind: reference.Kind, ID: id, Name: name})
 		case domain.SessionResourceTool:
 			entry, ok := toolEntries[reference.ID]
 			if ok && isStandaloneToolCatalogEntry(entry) {
@@ -303,7 +312,7 @@ func sessionResourceSelectionGroupToolNames(entries map[string]domain.ToolCatalo
 	names := make([]string, 0)
 	groupName := ""
 	for _, entry := range entries {
-		if entry.SelectionGroup == nil || entry.SelectionGroup.ID != groupID || hostToolSelectionResourceKind(entry) != kind {
+		if entry.SelectionGroup == nil || entry.SelectionGroup.ID != groupID || hostResourceSelectionToolKind(entry) != kind {
 			continue
 		}
 		names = append(names, entry.Name)

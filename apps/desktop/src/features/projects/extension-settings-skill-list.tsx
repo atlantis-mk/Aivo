@@ -18,6 +18,12 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/features/projects/extension-settings-empty-state";
+import {
+  SKILL_ACTION_DELETE,
+  SKILL_ACTION_EDIT,
+  SKILL_ACTION_SET_ENABLED,
+  skillSupportsAction,
+} from "@/features/projects/skill-action-model";
 import type { SkillEntry, SkillImportCandidate } from "@/services/aivo";
 
 function SkillCardTitle({
@@ -78,57 +84,75 @@ export function SkillManagementGroup({
             <Badge variant="outline">{skills.length}</Badge>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {skills.map((skill) => (
-              <Card
-                className="transition-colors hover:bg-muted/50 hover:ring-foreground/20"
-                key={skill.id}
-              >
-                <CardHeader className="grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] gap-x-3 gap-y-2">
-                  <SkillCardTitle
-                    badge={skill.scope === "project" ? "项目" : "全局"}
-                    icon={BookOpen01Icon}
-                    name={skill.name}
-                  />
-                  <CardAction className="row-span-1 flex items-center self-center gap-1">
-                    <Switch
-                      aria-label={`${skill.enabled ? "停用" : "启用"} ${skill.name}`}
-                      checked={skill.enabled}
-                      disabled={loading}
-                      onCheckedChange={(checked) =>
-                        onToggleEnabled(skill, checked)
-                      }
-                      size="sm"
+            {skills.map((skill) => {
+              const canToggle = skillSupportsAction(
+                skill,
+                SKILL_ACTION_SET_ENABLED,
+              );
+              const canEdit = skillSupportsAction(skill, SKILL_ACTION_EDIT);
+              const canDelete = skillSupportsAction(skill, SKILL_ACTION_DELETE);
+              const hasActions = canToggle || canEdit || canDelete;
+
+              return (
+                <Card
+                  className="transition-colors hover:bg-muted/50 hover:ring-foreground/20"
+                  key={skill.id}
+                >
+                  <CardHeader className="grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] gap-x-3 gap-y-2">
+                    <SkillCardTitle
+                      badge={skill.scope === "project" ? "项目" : "全局"}
+                      icon={BookOpen01Icon}
+                      name={skill.name}
                     />
-                    <Button
-                      aria-label={`编辑 ${skill.name}`}
-                      disabled={loading}
-                      onClick={() => onEdit(skill)}
-                      size="icon-sm"
-                      type="button"
-                      variant="ghost"
+                    {hasActions ? (
+                      <CardAction className="row-span-1 flex items-center self-center gap-1">
+                        {canToggle ? (
+                          <Switch
+                            aria-label={`${skill.enabled ? "停用" : "启用"} ${skill.name}`}
+                            checked={skill.enabled}
+                            disabled={loading}
+                            onCheckedChange={(checked) =>
+                              onToggleEnabled(skill, checked)
+                            }
+                            size="sm"
+                          />
+                        ) : null}
+                        {canEdit ? (
+                          <Button
+                            aria-label={`编辑 ${skill.name}`}
+                            disabled={loading}
+                            onClick={() => onEdit(skill)}
+                            size="icon-sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Pencil />
+                          </Button>
+                        ) : null}
+                        {canDelete ? (
+                          <Button
+                            aria-label={`删除 ${skill.name}`}
+                            disabled={loading}
+                            onClick={() => onDelete(skill)}
+                            size="icon-sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                          </Button>
+                        ) : null}
+                      </CardAction>
+                    ) : null}
+                    <CardDescription
+                      className="col-span-2 line-clamp-2 min-h-10 text-sm"
+                      title={skill.description || skill.rootPath}
                     >
-                      <Pencil />
-                    </Button>
-                    <Button
-                      aria-label={`删除 ${skill.name}`}
-                      disabled={loading}
-                      onClick={() => onDelete(skill)}
-                      size="icon-sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-                    </Button>
-                  </CardAction>
-                  <CardDescription
-                    className="col-span-2 line-clamp-2 min-h-10 text-sm"
-                    title={skill.description || skill.rootPath}
-                  >
-                    {skill.description || skill.rootPath}
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ))}
+                      {skill.description || skill.rootPath}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              );
+            })}
           </div>
         </section>
       ) : null}

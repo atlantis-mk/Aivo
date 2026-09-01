@@ -24,6 +24,7 @@ const (
 )
 
 type CommandDetection struct {
+	RawCommand        string
 	NormalizedCommand string
 	Category          string
 	RiskLevel         string
@@ -35,6 +36,7 @@ type CommandDetection struct {
 	ApprovalKey       string
 	Argv              []string
 	HasMetacharacters bool
+	HasHeredoc        bool
 	Reason            string
 }
 
@@ -59,8 +61,10 @@ type CommandPolicyEvaluation struct {
 }
 
 func DetectCommand(rawCommand string, cwd string, workspaceRoot string, toolName string) CommandDetection {
+	command := strings.TrimSpace(rawCommand)
 	normalized := normalizeCommandText(rawCommand)
 	detection := CommandDetection{
+		RawCommand:        command,
 		NormalizedCommand: normalized,
 		Category:          CommandCategoryUnknown,
 		RiskLevel:         CommandRiskHigh,
@@ -81,6 +85,10 @@ func DetectCommand(rawCommand string, cwd string, workspaceRoot string, toolName
 	}
 	detection.Argv = tokens
 	detection.HasMetacharacters = commandHasMetacharacters(normalized)
+	if heredocIndex := shellHeredocTokenIndex(tokens); heredocIndex >= 0 {
+		detection.HasHeredoc = true
+		detection.Capabilities = appendUniqueStrings(detection.Capabilities, "shell.heredoc")
+	}
 	if isSudoCommand(tokens) {
 		detection.Capabilities = appendUniqueStrings(detection.Capabilities, "shell.sudo")
 		detection.Category = CommandCategoryDangerous
@@ -94,7 +102,11 @@ func DetectCommand(rawCommand string, cwd string, workspaceRoot string, toolName
 		detection.Reason = deny
 	}
 
-	paths, external := commandPathHints(tokens, cwd, workspaceRoot)
+	pathTokens := tokens
+	if heredocIndex := shellHeredocTokenIndex(tokens); heredocIndex >= 0 {
+		pathTokens = tokens[:heredocIndex]
+	}
+	paths, external := commandPathHints(pathTokens, cwd, workspaceRoot)
 	detection.Paths = paths
 	detection.ExternalPaths = external
 	if len(external) > 0 && detection.DenyReason == "" {
@@ -109,7 +121,7 @@ func DetectCommand(rawCommand string, cwd string, workspaceRoot string, toolName
 	if detection.Category == CommandCategoryNetwork {
 		detection.Capabilities = appendUniqueStrings(detection.Capabilities, "shell.network")
 	}
-	detection.ApprovalKey = commandApprovalKey(workspaceRoot, cwd, normalized, tokens, toolName, "local", "default", detection.NetworkHint, detection.Category, detection.RiskLevel, detection.Capabilities)
+	detection.ApprovalKey = commandApprovalKey(workspaceRoot, cwd, command, tokens, toolName, "local", "default", detection.NetworkHint, detection.Category, detection.RiskLevel, "", false, detection.Capabilities)
 	return detection
 }
 
@@ -146,12 +158,12 @@ func EvaluateCommandPolicy(detection CommandDetection, toolName string) CommandP
 		evaluation.Decision = CommandDecisionDeny
 		evaluation.Justification = "run_tests only supports declared test, lint, and build commands"
 	}
-	if toolName == "bash" && detection.HasMetacharacters && evaluation.Decision == CommandDecisionAllow {
+	if toolName == ExecCommandToolName && detection.HasMetacharacters && evaluation.Decision == CommandDecisionAllow {
 		evaluation.Decision = CommandDecisionAsk
 		evaluation.RiskLevel = maxRisk(evaluation.RiskLevel, CommandRiskHigh)
 		evaluation.Justification = "shell metacharacters require explicit approval"
 	}
-	if detection.Category == CommandCategoryNetwork && evaluation.NetworkPolicy == "deny" && toolName == "bash" {
+	if detection.Category == CommandCategoryNetwork && evaluation.NetworkPolicy == "deny" && toolName == ExecCommandToolName {
 		evaluation.Decision = CommandDecisionAsk
 		evaluation.Justification = firstNonEmpty(evaluation.Justification, "network-capable command requires approval")
 	}

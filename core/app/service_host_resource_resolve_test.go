@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +14,7 @@ import (
 	"aivo/core/domain"
 )
 
-func TestFirstPrimaryRequestReceivesHostResolvedSkillInventoryAndDefaultTools(t *testing.T) {
+func TestFirstPrimaryRequestDoesNotPreSnapshotFilterSkillInventory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -75,32 +74,254 @@ func TestFirstPrimaryRequestReceivesHostResolvedSkillInventoryAndDefaultTools(t 
 	for _, message := range capturedMessages {
 		joined += "\n" + message.Content
 	}
-	if !strings.Contains(joined, "<host_preactivated_resources>") || !strings.Contains(joined, "<name>ui-components</name>") {
-		t.Fatalf("primary request did not receive Host-resolved Skill inventory: %s", joined)
+	if strings.Contains(joined, "<host_selected_resources>") || strings.Contains(joined, "<available_skills>") || strings.Contains(joined, "<name>ui-components</name>") {
+		t.Fatalf("primary request pre-injected Host-filtered Skill catalog: %s", joined)
 	}
-	if strings.Contains(joined, "call the skill tool") || !strings.Contains(joined, "call tool_resolve") {
-		t.Fatalf("primary request missing the replaceable tool-selection protocol: %s", joined)
+	if strings.Contains(joined, "Use the full UI workflow.") || strings.Contains(joined, `skill_content name="ui-components"`) {
+		t.Fatalf("primary request preloaded full Skill content: %s", joined)
 	}
-	wantCoreTools := []string{"read", "bash", "edit", "write", "update_plan", "ask_user", ToolResolveName}
-	if len(capturedTools) != len(wantCoreTools) {
-		t.Fatalf("provider tools = %#v, want six core tools plus the Host selection control", capturedTools)
+	if !strings.Contains(joined, "call resource_resolve with mode \"inspect\"") {
+		t.Fatalf("primary request missing the replaceable resource-resolution protocol: %s", joined)
 	}
-	for index, want := range wantCoreTools {
+	wantTools := []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", ResourceResolveName}
+	if len(capturedTools) != len(wantTools) {
+		t.Fatalf("provider tools = %#v, want core tools plus Host resource control only", capturedTools)
+	}
+	for index, want := range wantTools {
 		if capturedTools[index].Function.Name != want {
 			t.Fatalf("provider tool[%d] = %q, want %q", index, capturedTools[index].Function.Name, want)
 		}
 	}
 	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
-	if !initialized || len(automatic) != 0 {
-		t.Fatalf("automatic selection = %#v initialized=%t, want initialized empty inventory-task set", automatic, initialized)
+	if initialized || len(automatic) != 0 {
+		t.Fatalf("automatic tool selection = %#v initialized=%t, want uninitialized empty set", automatic, initialized)
 	}
 	activeIDs, _ := service.activeSkills(ctx, session.ID)
 	if len(activeIDs) != 0 {
-		t.Fatalf("automatic inventory persisted Skill activation: %v", activeIDs)
+		t.Fatalf("automatic inventory must not persist Skill activation: %v", activeIDs)
+	}
+	visibleIDs, visibleSkills := service.visibleSkills(ctx, session.ID)
+	if len(visibleIDs) != 0 || len(visibleSkills) != 0 {
+		t.Fatalf("visible Skill catalog = ids:%#v skills:%#v, want no automatic resource selection", visibleIDs, visibleSkills)
 	}
 }
 
-func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandidates(t *testing.T) {
+func TestResourceResolveAppliesSkillAndExtensionContextAsSessionResources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "ui-review"), "ui-review", "Review UI accessibility", "Check focus order and accessible names.")
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil || len(scan.Candidates) != 1 {
+		t.Fatalf("scan = %#v, err = %v", scan, err)
+	}
+	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: scan.Candidates[0].ID, TargetScope: domain.SkillScopeGlobal}); err != nil {
+		t.Fatal(err)
+	}
+
+	extensionRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(extensionRoot, "context.md"), "Use the extension UI review checklist.", 0o600)
+	writeTestExtensionManifest(t, extensionRoot, map[string]any{
+		"schemaVersion": 2, "id": "com.example.ui", "name": "UI Inspector", "description": "Inspect UI accessibility", "version": "1", "apiVersion": "2",
+		"runtime":     map[string]any{"type": "static"},
+		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "ui-checklist", "kind": "instructions", "path": "context.md"}}},
+	})
+	status, err := service.extensionSupervisor.Discover(extensionRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.extensionSupervisor.Enable(ctx, status.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "UI review", ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, _ := service.toolsForWorkspace(session.ProjectPath)
+	rawTool, ok := registry.Get(ResourceResolveName)
+	if !ok {
+		t.Fatal("resource_resolve was not registered")
+	}
+	result := rawTool.Execute(ctx, json.RawMessage(`{"mode":"use","intent":"Review UI accessibility with UI checklist"}`), domain.ToolExecutionContext{
+		SessionID: session.ID, WorkspaceRoot: session.ProjectPath, AgentMode: domain.AgentModeAssistant, ToolCallID: "resolve",
+	})
+
+	if !result.OK {
+		t.Fatalf("resource_resolve result = %#v", result)
+	}
+	if result.Structured["status"] != "applied" || result.Structured["resourceCount"] != 2 {
+		t.Fatalf("resource_resolve structured result = %#v", result.Structured)
+	}
+	if !strings.Contains(result.ModelContent, "<available_skills>") || !strings.Contains(result.ModelContent, "<name>ui-review</name>") {
+		t.Fatalf("resource_resolve did not expose filtered Skill catalog: %s", result.ModelContent)
+	}
+	if strings.Contains(result.ModelContent, `<skill_content name="ui-review"`) || strings.Contains(result.ModelContent, "Check focus order and accessible names.") {
+		t.Fatalf("resource_resolve injected full Skill content instead of filtered metadata: %s", result.ModelContent)
+	}
+	if !strings.Contains(result.ModelContent, `<extension_context extension="com.example.ui" id="ui-checklist"`) || !strings.Contains(result.ModelContent, "Use the extension UI review checklist.") {
+		t.Fatalf("resource_resolve did not inject extension context: %s", result.ModelContent)
+	}
+	activeIDs, _ := service.activeSkills(ctx, session.ID)
+	if len(activeIDs) != 0 {
+		t.Fatalf("active Skills = %#v, want none from filtered catalog selection", activeIDs)
+	}
+	visibleIDs, visibleSkills := service.visibleSkills(ctx, session.ID)
+	if len(visibleIDs) != 1 || len(visibleSkills) != 1 || visibleSkills[0].Name != "ui-review" {
+		t.Fatalf("visible Skills = ids:%#v skills:%#v, want ui-review", visibleIDs, visibleSkills)
+	}
+	if contextText := service.activeExtensionContextsContext(ctx, session.ID); !strings.Contains(contextText, "Use the extension UI review checklist.") {
+		t.Fatalf("active extension context = %q", contextText)
+	}
+	history, err := service.modelVisibleSessionHistory(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, message := range history {
+		joined += "\n" + message.Text
+	}
+	if !strings.Contains(joined, "<available_skills>") || !strings.Contains(joined, "<name>ui-review</name>") || strings.Contains(joined, "Check focus order and accessible names.") || !strings.Contains(joined, "Use the extension UI review checklist.") {
+		t.Fatalf("session resource context was not persisted into later model history: %s", joined)
+	}
+}
+
+func TestResourceResolveExpandsSkillSelectionGroup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "hyperframes"), "hyperframes", "Mandatory entry point for HyperFrames video work", "Read routing instructions first.")
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "hyperframes-core"), "hyperframes-core", "HyperFrames composition contract", "Follow the composition contract.")
+	writeSkill(t, filepath.Join(home, ".codex", "skills", "hyperframes-cli"), "hyperframes-cli", "HyperFrames CLI loop", "Use the CLI loop.")
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil || len(scan.Candidates) != 3 {
+		t.Fatalf("scan = %#v, err = %v", scan, err)
+	}
+	for _, candidate := range scan.Candidates {
+		if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidate.ID, TargetScope: domain.SkillScopeGlobal}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "HyperFrames", ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, _ := service.toolsForWorkspace(session.ProjectPath)
+	rawTool, ok := registry.Get(ResourceResolveName)
+	if !ok {
+		t.Fatal("resource_resolve was not registered")
+	}
+	result := rawTool.Execute(ctx, json.RawMessage(`{"mode":"use","intent":"HyperFrames animation"}`), domain.ToolExecutionContext{
+		SessionID: session.ID, WorkspaceRoot: session.ProjectPath, AgentMode: domain.AgentModeAssistant, ToolCallID: "resolve",
+	})
+
+	if !result.OK {
+		t.Fatalf("resource_resolve result = %#v", result)
+	}
+	if result.Structured["status"] != "applied" || result.Structured["resourceCount"] != 1 {
+		t.Fatalf("resource_resolve structured result = %#v", result.Structured)
+	}
+	for _, name := range []string{"hyperframes", "hyperframes-core", "hyperframes-cli"} {
+		if !strings.Contains(result.ModelContent, "<name>"+name+"</name>") {
+			t.Fatalf("resource_resolve did not expose grouped Skill %q: %s", name, result.ModelContent)
+		}
+	}
+	if strings.Contains(result.ModelContent, "Read routing instructions first.") || strings.Contains(result.ModelContent, `<skill_content name="hyperframes"`) {
+		t.Fatalf("resource_resolve preloaded grouped Skill content: %s", result.ModelContent)
+	}
+	visibleIDs, visibleSkills := service.visibleSkills(ctx, session.ID)
+	if len(visibleIDs) != 3 || len(visibleSkills) != 3 {
+		t.Fatalf("visible grouped Skills = ids:%#v skills:%#v, want three HyperFrames skills", visibleIDs, visibleSkills)
+	}
+}
+
+func TestExplicitCapabilityActivationSkipsInitialAuxiliarySelection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "ui-review"), "ui-review", "Review UI accessibility", "Check focus order and accessible names.")
+	scan, err := service.ScanGlobalSkills(ctx)
+	if err != nil || len(scan.Candidates) != 1 {
+		t.Fatalf("scan = %#v, err = %v", scan, err)
+	}
+	imported, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: scan.Candidates[0].ID, TargetScope: domain.SkillScopeGlobal})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := NewRegistry()
+	for _, tool := range []struct {
+		name, description string
+	}{
+		{name: "manual_notes", description: "User-selected notes tool"},
+		{name: "auto_notes", description: "Automatically selected notes tool"},
+	} {
+		if err := registry.RegisterScoped(phase6EchoTool{spec: domain.ToolSpec{
+			Name: tool.name, Description: tool.description, InputSchema: map[string]any{"type": "object"},
+			Category: "extension", Toolsets: []string{"coding"}, ActivationPolicy: "auto",
+		}}, domain.ToolSourceExtension, "notes", "v1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	skillSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetSessionActiveSkills(ctx, domain.SessionActiveSkillsInput{SessionID: skillSession.ID, SkillIDs: []string{imported.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	skillResolution, err := service.resolveHostResources(ctx, hostResourceResolveRequest{
+		SessionID: skillSession.ID, TurnID: "turn-skill", Intent: "use notes", Registry: registry, Specs: registry.Specs(), AgentMode: domain.AgentModeCode,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skillResolution.ToolActivations["auto_notes"] != "" || skillResolution.ToolActivations[SkillsListToolName] != "skillCatalog" || skillResolution.ToolActivations[SkillsReadToolName] != "skillCatalog" {
+		t.Fatalf("skill-session activations = %#v, want explicit Skill catalog only and no automatic tool", skillResolution.ToolActivations)
+	}
+	automatic, initialized := service.autoSelectedTools(ctx, skillSession.ID)
+	if !initialized || len(automatic) != 0 {
+		t.Fatalf("skill-session automatic set = %#v initialized=%t, want initialized empty", automatic, initialized)
+	}
+	visibleIDs, visibleSkills := service.visibleSkills(ctx, skillSession.ID)
+	if len(visibleIDs) != 1 || len(visibleSkills) != 1 || visibleSkills[0].Name != "ui-review" {
+		t.Fatalf("visible Skill catalog = ids:%#v skills:%#v, want explicit ui-review", visibleIDs, visibleSkills)
+	}
+
+	toolSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetSessionActiveTools(ctx, domain.SessionActiveToolsInput{SessionID: toolSession.ID, ToolNames: []string{"manual_notes"}}); err != nil {
+		t.Fatal(err)
+	}
+	toolResolution, err := service.resolveHostResources(ctx, hostResourceResolveRequest{
+		SessionID: toolSession.ID, TurnID: "turn-tool", Intent: "use notes", Registry: registry, Specs: registry.Specs(), AgentMode: domain.AgentModeCode,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if toolResolution.ToolActivations["manual_notes"] != "manual" || toolResolution.ToolActivations["auto_notes"] != "" {
+		t.Fatalf("tool-session activations = %#v, want explicit manual tool only and no automatic tool", toolResolution.ToolActivations)
+	}
+	automatic, initialized = service.autoSelectedTools(ctx, toolSession.ID)
+	if !initialized || len(automatic) != 0 {
+		t.Fatalf("tool-session automatic set = %#v initialized=%t, want initialized empty", automatic, initialized)
+	}
+}
+
+func TestResourceResolveUseResolvesToolGroupsAndInstructionResources(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -180,9 +401,9 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 		w.Header().Set("Content-Type", "application/json")
 		switch index {
 		case 1:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"resources\":[{\"kind\":\"extension\",\"id\":\"extension_com_example_ui_ui_review\"},{\"kind\":\"mcp\",\"id\":\"mcp_group_docs\"}]}"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"resources\":[{\"kind\":\"extension\",\"id\":\"extension_com_example_ui_ui_review\"},{\"kind\":\"mcp\",\"id\":\"mcp_group_docs\"}]}"}}]}`))
 		case 2:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"resources\":[\"skill:ui-review\",\"context:com.example.ui:ui-checklist\"],\"skillInstructions\":[\"skill:ui-review\"],\"reason\":\"direct matches\"}"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"resources\":[\"skill:ui-review\",\"context:com.example.ui:ui-checklist\"]}"}}]}`))
 		default:
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"resolved"}}]}`))
 		}
@@ -200,84 +421,76 @@ func TestHostUsesOneAuxiliaryResolutionForToolSkillMCPAndExtensionContextCandida
 	if err != nil {
 		t.Fatal(err)
 	}
-	type visibleSelectionUpdate struct {
-		Created bool
-		Event   domain.SessionEvent
+	registry, _ := service.toolsForWorkspace(session.ProjectPath)
+	rawTool, ok := registry.Get(ResourceResolveName)
+	if !ok {
+		t.Fatal("resource_resolve was not registered")
 	}
-	visibleSelectionUpdates := []visibleSelectionUpdate{}
-	service.SetSessionEventUpdatedHook(func(event domain.SessionEvent, created bool) {
-		if event.Payload["kind"] == "host_tool_selection" {
-			visibleSelectionUpdates = append(visibleSelectionUpdates, visibleSelectionUpdate{Created: created, Event: event})
-		}
+	result := rawTool.Execute(ctx, json.RawMessage(`{"mode":"use","intent":"Review this UI accessibility"}`), domain.ToolExecutionContext{
+		SessionID: session.ID, WorkspaceRoot: session.ProjectPath, AgentMode: domain.AgentModeAssistant, ToolCallID: "resolve",
 	})
-	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "Review this UI accessibility"}); err != nil {
-		t.Fatal(err)
+	if !result.OK {
+		t.Fatalf("resource_resolve result = %#v", result)
 	}
-	if len(visibleSelectionUpdates) != 2 {
-		t.Fatalf("live visible selection updates = %#v, want running creation and completed update", visibleSelectionUpdates)
-	}
-	if !visibleSelectionUpdates[0].Created || visibleSelectionUpdates[0].Event.Payload["status"] != "running" {
-		t.Fatalf("first visible selection update = %#v, want created running event", visibleSelectionUpdates[0])
-	}
-	if visibleSelectionUpdates[1].Created || visibleSelectionUpdates[1].Event.Payload["status"] != "completed" {
-		t.Fatalf("second visible selection update = %#v, want completed update", visibleSelectionUpdates[1])
-	}
-	if visibleSelectionUpdates[0].Event.ID != visibleSelectionUpdates[1].Event.ID {
-		t.Fatalf("visible selection changed event identity: %#v", visibleSelectionUpdates)
+	if result.Structured["status"] != "replaced" || result.Structured["count"] != 7 || result.Structured["resourceCount"] != 4 {
+		t.Fatalf("resource_resolve structured result = %#v", result.Structured)
 	}
 
 	mu.Lock()
 	captured := append([]capturedRequest(nil), requests...)
 	mu.Unlock()
-	if len(captured) != 3 {
-		t.Fatalf("provider request count = %d, want tool-group resolution, resource resolution, and primary request", len(captured))
+	if len(captured) != 2 {
+		t.Fatalf("provider request count = %d, want resource_resolve-owned tool and instruction-resource selections", len(captured))
 	}
 	toolGroupText := ""
 	for _, message := range captured[0].Messages {
 		toolGroupText += message.Content
 	}
-	if !strings.Contains(toolGroupText, "Host tool-resource selector") || !strings.Contains(toolGroupText, "extension:extension_com_example_ui_ui_review：UI Inspector｜Inspect UI accessibility") || !strings.Contains(toolGroupText, "mcp:mcp_group_docs：Docs｜Search UI documentation") || strings.Contains(toolGroupText, "example_capture_ui") || strings.Contains(toolGroupText, "mcp_docs_read_docs") || len(captured[0].Tools) != 0 {
+	if !strings.Contains(toolGroupText, "Host resource-group selector") || !strings.Contains(toolGroupText, "extension:extension_com_example_ui_ui_review：UI Inspector｜Inspect UI accessibility") || !strings.Contains(toolGroupText, "mcp:mcp_group_docs：Docs｜Search UI documentation") || strings.Contains(toolGroupText, "example_capture_ui") || strings.Contains(toolGroupText, "mcp_docs_read_docs") || len(captured[0].Tools) != 0 {
 		t.Fatalf("first request was not the minimal grouped-or-individual resolver: %#v", captured[0])
 	}
-	primaryText := ""
-	for _, message := range captured[2].Messages {
-		primaryText += message.Content
+	instructionText := ""
+	for _, message := range captured[1].Messages {
+		instructionText += message.Content
 	}
-	if !strings.Contains(primaryText, `<skill_summary name="ui-review"`) || !strings.Contains(primaryText, `<skill_content name="ui-review"`) || !strings.Contains(primaryText, `<extension_context extension="com.example.ui" id="ui-checklist"`) {
-		t.Fatalf("primary request missing selected Skill/context: %s", primaryText)
+	if !strings.Contains(instructionText, `"resources"`) || !strings.Contains(instructionText, "skill:ui-review") || !strings.Contains(instructionText, "context:com.example.ui:ui-checklist") || len(captured[1].Tools) != 0 {
+		t.Fatalf("second request was not the instruction-resource resolver: %#v", captured[1])
 	}
+	if !strings.Contains(result.ModelContent, "<available_skills>") || !strings.Contains(result.ModelContent, "<name>ui-review</name>") || !strings.Contains(result.ModelContent, `<extension_context extension="com.example.ui" id="ui-checklist"`) {
+		t.Fatalf("resource_resolve missing Host-selected filtered catalog or extension context: %s", result.ModelContent)
+	}
+	if strings.Contains(result.ModelContent, "Check focus order and accessible names.") || strings.Contains(result.ModelContent, `<skill_content name="ui-review"`) {
+		t.Fatalf("resource_resolve preloaded full Skill content instead of filtered catalog: %s", result.ModelContent)
+	}
+	activations, _ := service.snapshotToolCandidates(ctx, session.ID, "next-turn", registry, registry.Specs())
+	for name, source := range service.visibleSkillToolActivations(ctx, session.ID) {
+		if activations[name] == "" {
+			activations[name] = source
+		}
+	}
+	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), activations)
 	toolNames := map[string]bool{}
-	for _, tool := range captured[2].Tools {
-		toolNames[tool.Function.Name] = true
+	for _, tool := range assembly.Specs {
+		toolNames[tool.Name] = true
 	}
-	if len(toolNames) != 14 || !toolNames["read"] || !toolNames["bash"] || !toolNames["edit"] || !toolNames["write"] || !toolNames["update_plan"] || !toolNames["ask_user"] || !toolNames[ToolResolveName] || !toolNames["example_inspect_ui"] || !toolNames["example_capture_ui"] || !toolNames["mcp_docs_search_docs"] || !toolNames["mcp_docs_read_docs"] || !toolNames["mcp_host_docs_list_resource_templates"] || !toolNames["mcp_host_docs_list_resources"] || !toolNames["mcp_host_docs_read_resource"] {
-		t.Fatalf("primary tools = %#v, want core, selection control, and every member of the selected groups", captured[2].Tools)
+	if len(toolNames) != 17 || !toolNames["read"] || !toolNames[ExecCommandToolName] || !toolNames[WriteStdinToolName] || !toolNames["edit"] || !toolNames["write"] || !toolNames["update_plan"] || !toolNames["ask_user"] || !toolNames[ResourceResolveName] || !toolNames[SkillsListToolName] || !toolNames[SkillsReadToolName] || !toolNames["example_inspect_ui"] || !toolNames["example_capture_ui"] || !toolNames["mcp_docs_search_docs"] || !toolNames["mcp_docs_read_docs"] || !toolNames["mcp_host_docs_list_resource_templates"] || !toolNames["mcp_host_docs_list_resources"] || !toolNames["mcp_host_docs_read_resource"] {
+		t.Fatalf("next-step tools = %#v, want core, selection control, filtered Skill controls, and every member of the selected groups", assembly.Specs)
 	}
 	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
 	if !initialized || !automatic["example_inspect_ui"] || !automatic["example_capture_ui"] || !automatic["mcp_docs_search_docs"] || !automatic["mcp_docs_read_docs"] || !automatic["mcp_host_docs_list_resource_templates"] || !automatic["mcp_host_docs_list_resources"] || !automatic["mcp_host_docs_read_resource"] || len(automatic) != 7 {
 		t.Fatalf("persisted automatic selection = %#v initialized=%t", automatic, initialized)
 	}
-	assertVisibleInitialToolSelection(t, service, ctx, session.ID, "conversation", []hostToolSelectionResource{
-		{Kind: "extension", ID: "extension_com_example_ui_ui_review", Name: "UI Inspector", ToolCount: 2},
-		{Kind: "mcp", ID: "mcp_group_docs", Name: "Docs", ToolCount: 5},
-	})
 	activeIDs, _ := service.activeSkills(ctx, session.ID)
 	if len(activeIDs) != 0 {
-		t.Fatalf("automatic Skill selection persisted across requests: %v", activeIDs)
+		t.Fatalf("automatic Skill selection must not persist active Skill content: %v", activeIDs)
 	}
-	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "Review the same UI again"}); err != nil {
-		t.Fatal(err)
+	visibleIDs, visibleSkills := service.visibleSkills(ctx, session.ID)
+	if len(visibleIDs) != 1 || len(visibleSkills) != 1 || visibleSkills[0].Name != "ui-review" {
+		t.Fatalf("automatic Skill selection did not persist filtered visible catalog: ids:%#v skills:%#v", visibleIDs, visibleSkills)
 	}
-	if len(visibleSelectionUpdates) != 2 {
-		t.Fatalf("later turn emitted duplicate visible selection updates: %#v", visibleSelectionUpdates)
-	}
-	assertVisibleInitialToolSelection(t, service, ctx, session.ID, "conversation", []hostToolSelectionResource{
-		{Kind: "extension", ID: "extension_com_example_ui_ui_review", Name: "UI Inspector", ToolCount: 2},
-		{Kind: "mcp", ID: "mcp_group_docs", Name: "Docs", ToolCount: 5},
-	})
 }
 
-func TestToolInventoryInspectionInjectsAllEligibleToolsForOneProviderRequest(t *testing.T) {
+func TestResourceResolveInspectSummarizesEligibleToolsWithoutActivation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -339,10 +552,7 @@ func TestToolInventoryInspectionInjectsAllEligibleToolsForOneProviderRequest(t *
 		index := len(requests)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		if index == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"inspect\",\"resources\":[]}"}}]}`))
-			return
-		}
+		_ = index
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"inventory response"}}]}`))
 	}))
 	defer server.Close()
@@ -358,8 +568,34 @@ func TestToolInventoryInspectionInjectsAllEligibleToolsForOneProviderRequest(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "当前有哪些工具可调用"}); err != nil {
-		t.Fatal(err)
+	registry, _ := service.toolsForWorkspace(session.ProjectPath)
+	rawTool, ok := registry.Get(ResourceResolveName)
+	if !ok {
+		t.Fatal("resource_resolve was not registered")
+	}
+	result := rawTool.Execute(ctx, json.RawMessage(`{"mode":"inspect","intent":"当前有哪些工具可调用"}`), domain.ToolExecutionContext{
+		SessionID: session.ID, WorkspaceRoot: session.ProjectPath, AgentMode: domain.AgentModeAssistant, ToolCallID: "resolve",
+	})
+	if !result.OK {
+		t.Fatalf("resource_resolve inspect result = %#v", result)
+	}
+	if result.Structured["status"] != "inspected" || result.Structured["appliesNextStep"] != false {
+		t.Fatalf("resource_resolve inspect structured result = %#v", result.Structured)
+	}
+	resources := hostResourceSelectionResourcesFromAny(result.Structured["resources"])
+	var inventory *hostResourceSelectionResource
+	for index := range resources {
+		if resources[index].Kind == "extension" && resources[index].ID == "extension_com_example_inventory_inventory" {
+			inventory = &resources[index]
+			break
+		}
+	}
+	if inventory == nil || inventory.ToolCount != inventoryToolCount {
+		t.Fatalf("inspect resources = %#v, want one unsplit inventory extension source beyond the legacy member limit", resources)
+	}
+	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
+	if initialized || len(automatic) != 0 {
+		t.Fatalf("inspection automatic set = %#v initialized=%t, want unchanged empty", automatic, initialized)
 	}
 	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "谢谢"}); err != nil {
 		t.Fatal(err)
@@ -368,64 +604,25 @@ func TestToolInventoryInspectionInjectsAllEligibleToolsForOneProviderRequest(t *
 	mu.Lock()
 	captured := append([]capturedRequest(nil), requests...)
 	mu.Unlock()
-	if len(captured) != 3 {
-		t.Fatalf("provider request count = %d, want auxiliary inspection and two primary requests", len(captured))
+	if len(captured) != 1 {
+		t.Fatalf("provider request count = %d, want one primary request after inspection", len(captured))
 	}
 	firstPrimary := map[string]bool{}
-	for _, tool := range captured[1].Tools {
+	for _, tool := range captured[0].Tools {
 		firstPrimary[tool.Function.Name] = true
-	}
-	secondPrimary := map[string]bool{}
-	for _, tool := range captured[2].Tools {
-		secondPrimary[tool.Function.Name] = true
 	}
 	for index := 0; index < inventoryToolCount; index++ {
 		name := fmt.Sprintf("inventory_tool_%02d", index)
-		if !firstPrimary[name] {
-			t.Fatalf("inspection Provider tools are missing %q from the complete eligible extension group", name)
+		if firstPrimary[name] {
+			t.Fatalf("inspection leaked %q into a later Provider request", name)
 		}
 	}
-	if !firstPrimary[ToolResolveName] {
-		t.Fatalf("inspection Provider tools are missing %q", ToolResolveName)
-	}
-	if secondPrimary["inventory_tool_00"] || secondPrimary["inventory_tool_65"] || !secondPrimary[ToolResolveName] {
-		t.Fatalf("later Provider tools = %#v, request-only tools leaked into the conversation", secondPrimary)
-	}
-	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
-	if !initialized || len(automatic) != 0 {
-		t.Fatalf("inspection automatic set = %#v initialized=%t, want initialized empty", automatic, initialized)
-	}
-	selectionEvents, err := service.ListEvents(ctx, session.ID, false, 500)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, event := range selectionEvents {
-		if event.Type != domain.EventTypeSystemNote || event.Payload["kind"] != "host_tool_selection" {
-			continue
-		}
-		found = true
-		if event.Payload["lifetime"] != "request" {
-			t.Fatalf("inspection event lifetime = %#v", event.Payload["lifetime"])
-		}
-		selected := hostToolSelectionResourcesFromAny(event.Payload["resources"])
-		var inventory *hostToolSelectionResource
-		for index := range selected {
-			if selected[index].Kind == "extension" && selected[index].ID == "extension_com_example_inventory_inventory" {
-				inventory = &selected[index]
-				break
-			}
-		}
-		if inventory == nil || inventory.ToolCount != inventoryToolCount {
-			t.Fatalf("inspection event resources = %#v, want one unsplit inventory extension source beyond the legacy member limit", selected)
-		}
-	}
-	if !found {
-		t.Fatal("missing visible request-only tool-selection event")
+	if !firstPrimary[ResourceResolveName] {
+		t.Fatalf("later Provider tools are missing %q", ResourceResolveName)
 	}
 }
 
-func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T) {
+func TestResourceResolveUsesAuxiliarySkillSelectionAndPersistsSessionResource(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -458,15 +655,11 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 		index := len(requests)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		if index == 1 {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"intent\":\"use\",\"resources\":[]}"}}]}`))
-			return
-		}
 		if index == 2 {
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tools\":[],\"resources\":[\"skill:ui-summary\"],\"reason\":\"summary is sufficient\"}"}}]}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"summary received"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"unexpected"}}]}`))
 	}))
 	defer server.Close()
 	if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
@@ -477,214 +670,87 @@ func TestAuxiliarySummaryOnlySkillSelectionInjectsCanonicalSummary(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "Skill summary", ProjectPath: t.TempDir()})
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, Title: "Skill catalog", ProjectPath: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "Explain what the ui-summary Skill offers"}); err != nil {
-		t.Fatal(err)
+	registry, _ := service.toolsForWorkspace(session.ProjectPath)
+	rawTool, ok := registry.Get(ResourceResolveName)
+	if !ok {
+		t.Fatal("resource_resolve was not registered")
+	}
+	result := rawTool.Execute(ctx, json.RawMessage(`{"mode":"use","intent":"Explain what the ui-summary Skill offers"}`), domain.ToolExecutionContext{
+		SessionID: session.ID, WorkspaceRoot: session.ProjectPath, AgentMode: domain.AgentModeAssistant, ToolCallID: "resolve",
+	})
+	if !result.OK {
+		t.Fatalf("resource_resolve result = %#v", result)
 	}
 
 	mu.Lock()
 	captured := append([]capturedRequest(nil), requests...)
 	mu.Unlock()
-	if len(captured) != 3 {
-		t.Fatalf("provider request count = %d, want tool-resource auxiliary, instruction auxiliary, and primary", len(captured))
+	if len(captured) != 2 {
+		t.Fatalf("provider request count = %d, want explicit resource_resolve-owned tool and instruction-resource selections", len(captured))
 	}
 	auxiliaryText := ""
 	for _, message := range captured[1].Messages {
 		auxiliaryText += message.Content
 	}
 	if !strings.Contains(auxiliaryText, "Explain the available UI component workflow") || strings.Contains(auxiliaryText, "PRIVATE_UI_WORKFLOW") {
-		t.Fatalf("auxiliary catalog was not summary-only: %s", auxiliaryText)
+		t.Fatalf("auxiliary catalog exposed more than bounded Skill descriptions: %s", auxiliaryText)
 	}
-	primaryText := ""
-	for _, message := range captured[2].Messages {
-		primaryText += message.Content
+	if !strings.Contains(result.ModelContent, "<available_skills>") || !strings.Contains(result.ModelContent, "<name>ui-summary</name>") {
+		t.Fatalf("resource_resolve did not expose selected Skill catalog: %s", result.ModelContent)
 	}
-	if !strings.Contains(primaryText, `<skill_summary name="ui-summary"`) || !strings.Contains(primaryText, "Explain the available UI component workflow") {
-		t.Fatalf("primary request missing canonical Skill summary: %s", primaryText)
+	if strings.Contains(result.ModelContent, "PRIVATE_UI_WORKFLOW") || strings.Contains(result.ModelContent, `<skill_content name="ui-summary"`) {
+		t.Fatalf("resource_resolve leaked selected Skill body before skills_read: %s", result.ModelContent)
 	}
-	if strings.Contains(primaryText, "PRIVATE_UI_WORKFLOW") || strings.Contains(primaryText, `<skill_content name="ui-summary"`) {
-		t.Fatalf("summary-only selection exposed Skill instructions: %s", primaryText)
+	activeIDs, _ := service.activeSkills(ctx, session.ID)
+	if len(activeIDs) != 0 {
+		t.Fatalf("active Skills = %#v, want none from filtered catalog selection", activeIDs)
 	}
-	assertVisibleInitialToolSelection(t, service, ctx, session.ID, "conversation", nil)
-}
-
-func assertVisibleInitialToolSelection(t *testing.T, service *Service, ctx context.Context, sessionID, lifetime string, want []hostToolSelectionResource) {
-	t.Helper()
-	events, err := service.ListEvents(ctx, sessionID, false, 500)
-	if err != nil {
-		t.Fatal(err)
-	}
-	matching := make([]domain.SessionEvent, 0, 1)
-	for _, event := range events {
-		if event.Type == domain.EventTypeSystemNote && event.Payload["kind"] == "host_tool_selection" {
-			matching = append(matching, event)
-		}
-	}
-	if len(matching) != 1 {
-		t.Fatalf("visible initial tool-selection events = %#v, want exactly one", matching)
-	}
-	event := matching[0]
-	got := hostToolSelectionResourcesFromAny(event.Payload["resources"])
-	if !reflect.DeepEqual(got, normalizeHostToolSelectionResources(want)) {
-		t.Fatalf("visible initial tool selection = %#v, want %#v", got, want)
-	}
-	if event.Payload["lifetime"] != lifetime {
-		t.Fatalf("visible initial tool selection lifetime = %#v, want %q", event.Payload["lifetime"], lifetime)
-	}
-	if event.Payload["status"] != "completed" {
-		t.Fatalf("visible initial tool selection status = %#v, want completed", event.Payload["status"])
-	}
-	for _, forbidden := range []string{"reason", "description", "schema", "prompt", "candidates"} {
-		if _, ok := event.Payload[forbidden]; ok {
-			t.Fatalf("visible initial selection exposed %q: %#v", forbidden, event.Payload)
-		}
+	visibleIDs, visibleSkills := service.visibleSkills(ctx, session.ID)
+	if len(visibleIDs) != 1 || len(visibleSkills) != 1 || visibleSkills[0].Name != "ui-summary" {
+		t.Fatalf("visible Skills = ids:%#v skills:%#v, want selected Skill persisted as filtered catalog", visibleIDs, visibleSkills)
 	}
 }
 
-func hostToolSelectionResourcesFromAny(value any) []hostToolSelectionResource {
+func hostResourceSelectionResourcesFromAny(value any) []hostResourceSelectionResource {
 	raw, _ := json.Marshal(value)
-	var resources []hostToolSelectionResource
+	var resources []hostResourceSelectionResource
 	_ = json.Unmarshal(raw, &resources)
 	return resources
 }
 
-func TestHostPreCallSkillInventoryIsInjectedWithoutSessionActivation(t *testing.T) {
+func TestHostSkillCandidatesIncludeAvailableSystemSkills(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
 	defer cleanup()
 	ctx := context.Background()
-
-	writeSkill(t, filepath.Join(home, ".claude", "skills", "ui-components"), "ui-components", "Build and inspect reusable UI components", "Use the private UI component workflow.")
-	scan, err := service.ScanGlobalSkills(ctx)
-	if err != nil || len(scan.Candidates) != 1 {
-		t.Fatalf("scan = %#v, err = %v", scan, err)
-	}
-	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: scan.Candidates[0].ID, TargetScope: domain.SkillScopeGlobal}); err != nil {
+	if err := service.store.SaveProviderAuth(ctx, domain.ProviderAuthRecord{ProviderID: "openai", Method: "oauth-browser", AccessToken: "token"}); err != nil {
 		t.Fatal(err)
 	}
-	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+
+	candidates, err := service.hostSkillCandidates(ctx, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	contextText := service.preCallInstructionContext(ctx, session.ID, "当前有哪些 UI 组件技能", domain.AgentModeCode, session.ProjectPath)
-	if !strings.Contains(contextText, "<available_skills>") || !strings.Contains(contextText, "<name>ui-components</name>") || !strings.Contains(contextText, "Build and inspect reusable UI components") {
-		t.Fatalf("pre-call inventory missing enabled Skill: %q", contextText)
+	byName := map[string]SkillResolveCandidate{}
+	for _, candidate := range candidates {
+		byName[candidate.Name] = candidate
 	}
-	if strings.Contains(contextText, "private UI component workflow") || strings.Contains(contextText, "skill tool") {
-		t.Fatalf("inventory exposed full Skill content or stale discovery instructions: %q", contextText)
+	for _, name := range []string{"skill-creator", "skill-installer", "openai-docs", "plugin-creator", "review-agent"} {
+		if byName[name].Name == "" {
+			t.Fatalf("missing available system Skill candidate %q in %#v", name, candidates)
+		}
 	}
-	activeIDs, _ := service.activeSkills(ctx, session.ID)
-	if len(activeIDs) != 0 {
-		t.Fatalf("inventory query persisted automatic activation: %v", activeIDs)
-	}
-	repeated := service.preCallInstructionContext(ctx, session.ID, "列出当前技能", domain.AgentModeCode, session.ProjectPath)
-	if repeated != contextText {
-		t.Fatalf("repeated inventory resolution changed: first=%q second=%q", contextText, repeated)
-	}
-	other, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherActive, _ := service.activeSkills(ctx, other.ID)
-	if len(otherActive) != 0 {
-		t.Fatalf("automatic Skill activation leaked to another conversation: %v", otherActive)
+	if byName["imagegen"].Name == "" {
+		t.Fatalf("missing available Codex tool-backed Skill candidate imagegen in %#v", candidates)
 	}
 }
 
-func TestHostPreCallRendersOnlyValidatedSkillAndExtensionContextSelections(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	service, cleanup := newSkillTestService(t)
-	defer cleanup()
-	ctx := context.Background()
-
-	writeSkill(t, filepath.Join(home, ".claude", "skills", "ui-review"), "ui-review", "Review UI component accessibility", "Check focus order and accessible names.")
-	scan, err := service.ScanGlobalSkills(ctx)
-	if err != nil || len(scan.Candidates) != 1 {
-		t.Fatalf("scan = %#v, err = %v", scan, err)
-	}
-	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: scan.Candidates[0].ID, TargetScope: domain.SkillScopeGlobal}); err != nil {
-		t.Fatal(err)
-	}
-
-	extensionRoot := t.TempDir()
-	writeTestFile(t, filepath.Join(extensionRoot, "context", "tokens.md"), "Use semantic color and spacing tokens.", 0o600)
-	writeTestExtensionManifest(t, extensionRoot, map[string]any{
-		"schemaVersion": 2, "id": "com.example.design", "name": "Design Context", "description": "UI design token guidance", "version": "1", "apiVersion": "2",
-		"runtime":     map[string]any{"type": "static"},
-		"contributes": map[string]any{"contexts": []any{map[string]any{"id": "design-tokens", "kind": "instructions", "path": "context/tokens.md"}}},
-	})
-	status, err := service.extensionSupervisor.Discover(extensionRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.extensionSupervisor.Enable(ctx, status.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	skills, err := service.hostSkillCandidates(ctx, "")
-	if err != nil || len(skills) != 1 {
-		t.Fatalf("skills = %#v, err = %v", skills, err)
-	}
-	contexts := service.extensionSupervisor.ContextCatalog()
-	if len(contexts) != 1 {
-		t.Fatalf("contexts = %#v", contexts)
-	}
-	candidates := []hostInstructionCandidate{
-		{Key: "skill:" + skills[0].Name, Kind: "skill", Name: skills[0].Name, Description: skills[0].Description, Source: skills[0].Source, Skill: &skills[0]},
-		{Key: contexts[0].Key, Kind: "context", Name: contexts[0].Name, Description: contexts[0].Description, Source: contexts[0].ExtensionID, Context: &contexts[0]},
-	}
-	selected := validateHostInstructionSelection(candidates, []string{"skill:ui-review", contexts[0].Key, "skill:not-installed", contexts[0].Key}, 4)
-	if len(selected) != 2 {
-		t.Fatalf("selected = %#v, want exact valid deduplicated candidates", selected)
-	}
-	instructionKeys := validateHostSkillInstructionSelection(selected, []string{"skill:ui-review", contexts[0].Key, "skill:not-installed"})
-	rendered := service.renderSelectedHostInstructions(ctx, "", "", selected, instructionKeys)
-	if !strings.Contains(rendered, `<skill_summary name="ui-review"`) || !strings.Contains(rendered, `<skill_content name="ui-review"`) || !strings.Contains(rendered, "Check focus order and accessible names.") {
-		t.Fatalf("selected Skill was not rendered: %q", rendered)
-	}
-	if !strings.Contains(rendered, `<extension_context extension="com.example.design" id="design-tokens"`) || !strings.Contains(rendered, "Use semantic color and spacing tokens.") {
-		t.Fatalf("selected extension context was not rendered: %q", rendered)
-	}
-	if len(rendered) > hostPreCallContextLimit {
-		t.Fatalf("rendered context length = %d, limit = %d", len(rendered), hostPreCallContextLimit)
-	}
-}
-
-func TestHostPreCallSummaryOnlySkillSelectionDoesNotReadInstructions(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	service, cleanup := newSkillTestService(t)
-	defer cleanup()
-	ctx := context.Background()
-
-	writeSkill(t, filepath.Join(home, ".claude", "skills", "ui-summary"), "ui-summary", "Canonical UI summary", "PRIVATE_INSTRUCTION_BODY")
-	scan, err := service.ScanGlobalSkills(ctx)
-	if err != nil || len(scan.Candidates) != 1 {
-		t.Fatalf("scan = %#v, err = %v", scan, err)
-	}
-	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: scan.Candidates[0].ID, TargetScope: domain.SkillScopeGlobal}); err != nil {
-		t.Fatal(err)
-	}
-
-	_, candidates := service.hostInstructionCandidates(ctx, "")
-	selected := validateHostInstructionSelection(candidates, []string{"skill:ui-summary"}, hostInstructionSelectionLimit)
-	instructionKeys := validateHostSkillInstructionSelection(selected, []string{"context:not-a-skill", "skill:not-selected"})
-	rendered := service.renderSelectedHostInstructions(ctx, "", "", selected, instructionKeys)
-	if !strings.Contains(rendered, `<skill_summary name="ui-summary"`) || !strings.Contains(rendered, "Canonical UI summary") {
-		t.Fatalf("summary-only selection missing canonical summary: %q", rendered)
-	}
-	if strings.Contains(rendered, "PRIVATE_INSTRUCTION_BODY") || strings.Contains(rendered, `<skill_content name="ui-summary"`) {
-		t.Fatalf("summary-only selection exposed Skill instructions: %q", rendered)
-	}
-}
-
-func TestHostResourceDecisionParsesAndBoundsSkillInstructionSubset(t *testing.T) {
+func TestHostResourceDecisionIgnoresLegacySkillInstructionsField(t *testing.T) {
 	decision, err := parseHostResourceDecision(`{"tools":[],"resources":["skill:ui-review","context:design:tokens"],"skillInstructions":["skill:ui-review","skill:ui-review","context:design:tokens","skill:invented"],"reason":"execute review"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -693,21 +759,24 @@ func TestHostResourceDecisionParsesAndBoundsSkillInstructionSubset(t *testing.T)
 		{Key: "skill:ui-review", Kind: "skill", Name: "ui-review", Skill: &SkillResolveCandidate{Name: "ui-review"}},
 		{Key: "context:design:tokens", Kind: "context", Name: "tokens", Context: &extensionContextCandidate{}},
 	}
-	selected := validateHostInstructionSelection(candidates, decision.ResourceKeys, hostInstructionSelectionLimit)
-	validated := validateHostSkillInstructionSelection(selected, decision.SkillInstructionKeys)
-	if len(validated) != 1 || !validated["skill:ui-review"] {
-		t.Fatalf("validated Skill instruction subset = %#v", validated)
+	selected := validateHostInstructionSelection(candidates, decision.ResourceKeys)
+	selectedKeys := map[string]bool{}
+	for _, candidate := range selected {
+		selectedKeys[candidate.Key] = true
+	}
+	if len(selected) != 2 || !selectedKeys["skill:ui-review"] || !selectedKeys["context:design:tokens"] {
+		t.Fatalf("selected resources = %#v", selected)
 	}
 }
 
-func TestHostPreCallLocalResolutionIsBoundedAndExact(t *testing.T) {
+func TestHostPreSnapshotLocalResolutionIsBoundedAndExact(t *testing.T) {
 	candidates := []hostInstructionCandidate{
 		{Key: "skill:ui-review", Kind: "skill", Name: "ui-review", Description: "Review UI accessibility"},
 		{Key: "context:design:tokens", Kind: "context", Name: "design tokens", Description: "Semantic UI colors and spacing"},
 		{Key: "skill:database", Kind: "skill", Name: "database", Description: "Tune SQL queries"},
 	}
-	decision := localHostInstructionResolve("Review UI accessibility with design tokens", candidates, 2)
-	selected := validateHostInstructionSelection(candidates, append(decision.Keys, "skill:invented"), 2)
+	decision := localHostInstructionResolve("Review UI accessibility with design tokens", candidates)
+	selected := validateHostInstructionSelection(candidates, append(decision.Keys, "skill:invented"))
 	selectedKeys := map[string]bool{}
 	for _, candidate := range selected {
 		selectedKeys[candidate.Key] = true
@@ -742,7 +811,7 @@ func TestCachedEnabledMCPWithoutToolRowsStillExposesResourceUtilities(t *testing
 	}
 }
 
-func TestFailedEnabledMCPRefreshIsExcludedFromPreCallCandidates(t *testing.T) {
+func TestFailedEnabledMCPRefreshIsExcludedFromPreSnapshotCandidates(t *testing.T) {
 	store := &memoryProviderStore{
 		mcpServers: []domain.MCPServerConfig{{
 			ID: "broken-mcp", Name: "Broken MCP", Transport: domain.MCPTransportStdio,
@@ -809,7 +878,7 @@ func TestCancelledHostCatalogPreparationPreservesCoreEligibility(t *testing.T) {
 	for _, spec := range specs {
 		names[spec.Name] = true
 	}
-	for _, name := range []string{"read", "bash", "edit", "write", "update_plan", "ask_user"} {
+	for _, name := range []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user"} {
 		if !names[name] {
 			t.Fatalf("cancelled preparation removed core tool %q: %#v", name, specs)
 		}
@@ -821,10 +890,10 @@ func TestCancelledHostCatalogPreparationPreservesCoreEligibility(t *testing.T) {
 	}
 }
 
-func TestHostPreCallContextMessageIsEphemeralAndOrderedAfterAgentPrompt(t *testing.T) {
+func TestHostPreSnapshotContextMessageIsEphemeralAndOrderedAfterAgentPrompt(t *testing.T) {
 	messages := []domain.ChatMessage{{Role: domain.EventRoleSystem, Text: "agent"}, {Role: domain.EventRoleUser, Text: "request"}}
-	resolved := appendHostPreCallContext(messages, "selected")
-	if len(resolved) != 3 || resolved[0].Text != "agent" || !strings.Contains(resolved[1].Text, "<host_preactivated_resources>") || resolved[2].Text != "request" {
+	resolved := appendHostPreSnapshotContext(messages, "selected")
+	if len(resolved) != 3 || resolved[0].Text != "agent" || !strings.Contains(resolved[1].Text, "<host_selected_resources>") || resolved[2].Text != "request" {
 		t.Fatalf("resolved messages = %#v", resolved)
 	}
 	if len(messages) != 2 {

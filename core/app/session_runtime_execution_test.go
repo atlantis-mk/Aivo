@@ -178,12 +178,12 @@ func TestCancelTurnIsolatesLaterModelHistoryAndPendingInteractions(t *testing.T)
 		t.Fatal(err)
 	}
 	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{
-		ID: "cancelled-bash", SessionID: session.ID, TurnID: cancelledTurn.ID, Name: "bash", Status: domain.ToolCallStatusPending,
+		ID: "cancelled-exec-command", SessionID: session.ID, TurnID: cancelledTurn.ID, Name: ExecCommandToolName, Status: domain.ToolCallStatusPending,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	permission, err := service.store.CreatePermissionRequest(ctx, domain.PermissionRequest{
-		SessionID: session.ID, TurnID: cancelledTurn.ID, ToolCallID: "cancelled-bash", ToolName: "bash", Action: "shell",
+		SessionID: session.ID, TurnID: cancelledTurn.ID, ToolCallID: "cancelled-exec-command", ToolName: ExecCommandToolName, Action: "shell",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestCancelTurnIsolatesLaterModelHistoryAndPendingInteractions(t *testing.T)
 		t.Fatal(err)
 	}
 	otherPermission, err := service.store.CreatePermissionRequest(ctx, domain.PermissionRequest{
-		SessionID: otherSession.ID, TurnID: otherTurn.ID, ToolCallID: "other-bash", ToolName: "bash", Action: "shell",
+		SessionID: otherSession.ID, TurnID: otherTurn.ID, ToolCallID: "other-exec-command", ToolName: ExecCommandToolName, Action: "shell",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +311,7 @@ func TestExecutionControlInterruptCompactCursorAndQueuedInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{ID: "call_running", SessionID: session.ID, TurnID: turn.ID, Name: "bash", Status: domain.ToolCallStatusRunning}); err != nil {
+	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{ID: "call_running", SessionID: session.ID, TurnID: turn.ID, Name: ExecCommandToolName, Status: domain.ToolCallStatusRunning}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.store.UpsertSessionExecutionState(ctx, domain.SessionExecutionState{SessionID: session.ID, TurnID: turn.ID, Status: domain.ExecutionStatusRunning}); err != nil {
@@ -384,7 +384,7 @@ func TestStartupRecoveryMarksRunningToolCallsInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{ID: "call_startup", SessionID: session.ID, Name: "bash", Status: domain.ToolCallStatusRunning}); err != nil {
+	if _, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{ID: "call_startup", SessionID: session.ID, Name: ExecCommandToolName, Status: domain.ToolCallStatusRunning}); err != nil {
 		t.Fatal(err)
 	}
 	service.Shutdown()

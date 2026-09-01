@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	skillDescriptionMaxBytes = 4096
+	skillDescriptionMaxBytes = 1024
 	skillContentMaxBytes     = 262144
 )
 
@@ -51,7 +51,7 @@ func (m *SkillManager) Update(ctx context.Context, input domain.SkillUpdateInput
 		return domain.SkillEditResult{}, errors.New("skill description is required")
 	}
 	if len([]byte(input.Description)) > skillDescriptionMaxBytes {
-		return domain.SkillEditResult{}, errors.New("skill description exceeds 4096 bytes")
+		return domain.SkillEditResult{}, fmt.Errorf("skill description exceeds %d bytes", skillDescriptionMaxBytes)
 	}
 	if len([]byte(input.Content)) > skillContentMaxBytes {
 		return domain.SkillEditResult{}, errors.New("skill content exceeds 262144 bytes")
@@ -90,7 +90,15 @@ func (m *SkillManager) Update(ctx context.Context, input domain.SkillUpdateInput
 	if err != nil {
 		return domain.SkillEditResult{}, err
 	}
-	raw := marshalSkillMarkdown(skill.Name, input.Description, current.Metadata, input.Content)
+	metadata := current.Metadata
+	if skill.Source == domain.SkillSourceAivoSystem {
+		metadata = make(map[string]string, len(current.Metadata)+1)
+		for key, value := range current.Metadata {
+			metadata[key] = value
+		}
+		metadata["aivo.user_modified"] = "true"
+	}
+	raw := marshalSkillMarkdown(skill.Name, input.Description, metadata, input.Content)
 	if err := atomicReplaceFile(path, raw, info.Mode().Perm()); err != nil {
 		return domain.SkillEditResult{}, err
 	}
@@ -136,8 +144,8 @@ func (m *SkillManager) skillEditSnapshot(ctx context.Context, skill domain.Skill
 }
 
 func (m *SkillManager) editableSkillPath(skill domain.SkillEntry) (string, error) {
-	if skill.Source == domain.SkillSourceCodexSystem {
-		return "", errors.New("Codex system skills are read-only and updated by the Host")
+	if isSystemSkillSource(skill.Source) {
+		return "", errors.New("system skills are read-only and updated by the Host")
 	}
 	managedRoot := filepath.Join(m.home, ".aivo", "skills")
 	root := filepath.Clean(strings.TrimSpace(skill.RootPath))
@@ -183,7 +191,7 @@ func marshalSkillMarkdown(name string, description string, metadata map[string]s
 	builder.WriteByte('\n')
 	keys := make([]string, 0, len(metadata))
 	for key := range metadata {
-		if key != "name" && key != "description" {
+		if key != "name" && key != "description" && !strings.HasPrefix(key, "metadata.") {
 			keys = append(keys, key)
 		}
 	}
@@ -194,6 +202,27 @@ func marshalSkillMarkdown(name string, description string, metadata map[string]s
 		builder.WriteString(": ")
 		builder.Write(value)
 		builder.WriteByte('\n')
+	}
+	nestedKeys := make([]string, 0)
+	for key := range metadata {
+		if strings.HasPrefix(key, "metadata.") {
+			nestedKey := strings.TrimPrefix(key, "metadata.")
+			if nestedKey != "" {
+				nestedKeys = append(nestedKeys, nestedKey)
+			}
+		}
+	}
+	sort.Strings(nestedKeys)
+	if len(nestedKeys) > 0 {
+		builder.WriteString("metadata:\n")
+		for _, key := range nestedKeys {
+			value, _ := json.Marshal(metadata["metadata."+key])
+			builder.WriteString("  ")
+			builder.WriteString(key)
+			builder.WriteString(": ")
+			builder.Write(value)
+			builder.WriteByte('\n')
+		}
 	}
 	builder.WriteString("---\n")
 	if strings.TrimSpace(content) != "" {

@@ -154,21 +154,21 @@ func TestToolsForModelRouteBridgesCodexShellOnlyForOAuth(t *testing.T) {
 	defer service.Shutdown()
 	definition := ProviderDefinition{ID: "openai", BuiltIn: true, Transport: TransportOpenAIResponses}
 	specs := []domain.ToolSpec{
-		NewReadTool("").Spec(), NewBashTool("", NewLocalSandboxRunner(), nil).Spec(),
+		NewReadTool("").Spec(), NewExecCommandTool("", nil, nil).Spec(),
 	}
 	oauthRoute := ResolvedModelRoute{
 		Provider: domain.ProviderConfig{ID: "openai"}, Model: domain.ModelRef{ProviderID: "openai", ModelID: "gpt-codex"},
 		Definition: definition, Transport: TransportOpenAIResponses, Credential: llmCredential{Method: "oauth-browser"},
 	}
 	oauthTools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, oauthRoute, specs)
-	if !toolSpecNamed(oauthTools, "read") || !toolSpecNamed(oauthTools, "bash") {
+	if !toolSpecNamed(oauthTools, "read") || !toolSpecNamed(oauthTools, ExecCommandToolName) {
 		t.Fatalf("OAuth Codex tools = %#v, want read plus declared shell", oauthTools)
 	}
 	apiKeyRoute := oauthRoute
 	apiKeyRoute.Credential = llmCredential{Method: "api-key", APIKey: "key"}
 	apiKeyTools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, apiKeyRoute, specs)
-	if !toolSpecNamed(apiKeyTools, "bash") {
-		t.Fatalf("API-key tools = %#v, want ordinary bash", apiKeyTools)
+	if !toolSpecNamed(apiKeyTools, ExecCommandToolName) {
+		t.Fatalf("API-key tools = %#v, want ordinary exec_command", apiKeyTools)
 	}
 }
 
@@ -186,9 +186,9 @@ func TestToolsForModelRouteCodexDeclarationsFailClosed(t *testing.T) {
 		Definition: ProviderDefinition{ID: "openai", BuiltIn: true, Transport: TransportOpenAIResponses},
 		Transport:  TransportOpenAIResponses, Credential: llmCredential{Method: "oauth-browser"},
 	}
-	specs := []domain.ToolSpec{NewReadTool("").Spec(), NewBashTool("", NewLocalSandboxRunner(), nil).Spec()}
+	specs := []domain.ToolSpec{NewReadTool("").Spec(), NewExecCommandTool("", nil, nil).Spec()}
 	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{}, route, specs)
-	if !toolSpecNamed(tools, "read") || toolSpecNamed(tools, "bash") {
+	if !toolSpecNamed(tools, "read") || toolSpecNamed(tools, ExecCommandToolName) {
 		t.Fatalf("explicitly disabled Codex tools = %#v, want only unaffected read", tools)
 	}
 }

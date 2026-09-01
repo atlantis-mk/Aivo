@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"aivo/core/domain"
 	"aivo/core/infra/persistence"
@@ -22,6 +23,24 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 	sourceRoot := filepath.Join(home, ".claude", "skills", "code-review")
 	writeSkill(t, sourceRoot, "code-review", "Review code changes", "Use this skill to review code.")
 	if err := os.WriteFile(filepath.Join(sourceRoot, "reference.md"), []byte("reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(sourceRoot, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "references", "guide.md"), []byte("guide"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(sourceRoot, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "scripts", "check.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(sourceRoot, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "assets", "sample.txt"), []byte("asset"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,6 +65,11 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".aivo", "skills", "code-review", "SKILL.md")); err != nil {
 		t.Fatalf("managed skill copy missing: %v", err)
 	}
+	for _, rel := range []string{"reference.md", filepath.Join("references", "guide.md"), filepath.Join("scripts", "check.sh"), filepath.Join("assets", "sample.txt")} {
+		if _, err := os.Stat(filepath.Join(home, ".aivo", "skills", "code-review", rel)); err != nil {
+			t.Fatalf("managed skill copy missing %s: %v", rel, err)
+		}
+	}
 
 	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
 	if err != nil {
@@ -62,8 +86,8 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := contextSectionsText(result.Sections)
-	if strings.Contains(joined, "<available_skills>") || strings.Contains(joined, "skill_guidance") {
-		t.Fatalf("context should not expose the available skill catalog: %q", joined)
+	if !strings.Contains(joined, "<available_skills>") || !strings.Contains(joined, "<name>code-review</name>") {
+		t.Fatalf("context missing explicit visible skill catalog: %q", joined)
 	}
 	if !strings.Contains(joined, `<skill_content name="code-review"`) || !strings.Contains(joined, "# Skill: code-review") || !strings.Contains(joined, "Use this skill to review code.") {
 		t.Fatalf("context missing loaded skill: %q", joined)
@@ -82,7 +106,19 @@ func TestSkillScanImportLoadAndContext(t *testing.T) {
 		t.Fatal("registry is nil")
 	}
 	if _, ok := registry.Get("skill"); ok {
-		t.Fatal("skill is a Host context protocol and must not be a model execution tool")
+		t.Fatal("legacy skill Host control tool is still registered")
+	}
+	if _, ok := registry.Get(SkillsListToolName); !ok {
+		t.Fatal("skills_list package control tool should be registered for filtered Skill catalogs")
+	}
+	if _, ok := registry.Get(SkillsReadToolName); !ok {
+		t.Fatal("skills_read package control tool should be registered for filtered Skill catalogs")
+	}
+	assembly := AssembleToolSpecsWithSources(registry, registry.SpecsForToolsets([]string{"safe", "coding"}), nil)
+	for _, spec := range assembly.Specs {
+		if spec.Name == SkillsListToolName || spec.Name == SkillsReadToolName {
+			t.Fatalf("%s should not be visible before Host filters a Skill catalog", spec.Name)
+		}
 	}
 	if _, ok := registry.Get("skill_load"); ok {
 		t.Fatal("model tool should not be registered as skill_load")
@@ -102,8 +138,8 @@ func TestSkillListDoesNotScanImplicitly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(before.Entries) != 0 || len(before.Candidates) != 0 {
-		t.Fatalf("list before scan = %+v, want empty", before)
+	if len(before.Candidates) != 0 {
+		t.Fatalf("list before scan = %+v, want no scanned candidates", before)
 	}
 	if _, err := service.ScanGlobalSkills(ctx); err != nil {
 		t.Fatal(err)
@@ -114,6 +150,56 @@ func TestSkillListDoesNotScanImplicitly(t *testing.T) {
 	}
 	if len(after.Candidates) != 1 || after.Candidates[0].Name != "list-skill" {
 		t.Fatalf("list after scan = %+v, want scanned candidate", after)
+	}
+}
+
+func TestSkillListOmitsCandidatesDeletedFromDisk(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	sourceRoot := filepath.Join(home, ".agents", "skills", "deleted-candidate")
+	writeSkill(t, sourceRoot, "deleted-candidate", "Deleted candidate", "Use this skill.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(sourceRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true, IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Candidates) != 0 {
+		t.Fatalf("candidates = %+v, want deleted source omitted", list.Candidates)
+	}
+}
+
+func TestSkillListOmitsManagedSkillsDeletedFromDisk(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	root := filepath.Join(home, ".aivo", "skills", "deleted-managed")
+	writeSkill(t, root, "deleted-managed", "Deleted managed", "Use this skill.")
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := skillEntryByName(list.Entries, "deleted-managed"); ok {
+		t.Fatalf("entries = %+v, want deleted managed skill omitted", list.Entries)
 	}
 }
 
@@ -130,11 +216,12 @@ func TestManagedSkillEditSavesDescriptionAndInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
-	if err != nil || len(list.Entries) != 1 {
+	editable, ok := skillEntryByName(list.Entries, "editable-skill")
+	if err != nil || !ok {
 		t.Fatalf("skills = %+v, err = %v", list.Entries, err)
 	}
 
-	editor, err := service.GetManagedSkillForEdit(ctx, list.Entries[0].ID)
+	editor, err := service.GetManagedSkillForEdit(ctx, editable.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,10 +260,11 @@ func TestManagedSkillEditRejectsStaleRevisionAndOutsidePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
-	if err != nil || len(list.Entries) != 1 {
+	stale, ok := skillEntryByName(list.Entries, "stale-skill")
+	if err != nil || !ok {
 		t.Fatalf("skills = %+v, err = %v", list.Entries, err)
 	}
-	editor, err := service.GetManagedSkillForEdit(ctx, list.Entries[0].ID)
+	editor, err := service.GetManagedSkillForEdit(ctx, stale.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +323,67 @@ func TestSkillScanIgnoresSameNameContentConflicts(t *testing.T) {
 	}
 }
 
+func TestSkillImportConflictDoesNotOverwriteManagedDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	service, cleanup := newSkillTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	managedRoot := filepath.Join(home, ".aivo", "skills", "dup-skill")
+	writeSkill(t, managedRoot, "dup-skill", "Managed", "Original managed content.")
+	if err := os.MkdirAll(filepath.Join(managedRoot, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(managedRoot, "assets", "keep.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ScanGlobalSkills(ctx); err != nil {
+		t.Fatal(err)
+	}
+	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeDisabled: true})
+	managed, ok := skillEntryByName(list.Entries, "dup-skill")
+	if err != nil || !ok {
+		t.Fatalf("managed skills = %+v, err = %v", list.Entries, err)
+	}
+
+	sourceRoot := filepath.Join(home, ".agents", "skills", "dup-skill")
+	writeSkill(t, sourceRoot, "dup-skill", "External", "Different external content.")
+	source, err := parseSkillDirectory(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := service.ensureSkillManager()
+	candidate, err := manager.store.SaveSkillImportCandidate(ctx, domain.SkillImportCandidate{
+		ID: "manual-conflict", Name: source.Name, Description: source.Description, Scope: domain.SkillScopeGlobal, Source: domain.SkillSourceAgents,
+		RootPath: source.RootPath, SkillPath: source.SkillPath, ContentHash: source.ContentHash, Status: domain.SkillCandidateStatusPending, LastSeenAt: domain.NowString(time.Now()),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidate.ID}); err == nil || !strings.Contains(err.Error(), "different content") {
+		t.Fatalf("import error = %v, want same-name content conflict", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(managedRoot, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "Original managed content.") || strings.Contains(string(raw), "Different external content.") {
+		t.Fatalf("managed SKILL.md was overwritten: %q", string(raw))
+	}
+	if _, err := os.Stat(filepath.Join(managedRoot, "assets", "keep.txt")); err != nil {
+		t.Fatalf("managed supporting file was removed: %v", err)
+	}
+	after, err := manager.store.GetSkillImportCandidate(ctx, candidate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != domain.SkillCandidateStatusIgnored || after.ConflictID != managed.ID {
+		t.Fatalf("candidate after conflict = %+v", after)
+	}
+}
+
 func TestSkillIgnoreByNamePersistsAcrossIncrementalScans(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -278,7 +427,7 @@ func TestSkillIgnoreByNamePersistsAcrossIncrementalScans(t *testing.T) {
 	}
 }
 
-func TestSkillToolOnlyListsAndLoadsImportedSkills(t *testing.T) {
+func TestSkillsReadAndListOnlyExposeImportedSkills(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -286,6 +435,7 @@ func TestSkillToolOnlyListsAndLoadsImportedSkills(t *testing.T) {
 	ctx := context.Background()
 
 	writeSkill(t, filepath.Join(home, ".claude", "skills", "tool-skill"), "tool-skill", "Tool import", "Loaded by tool.")
+	writeSkill(t, filepath.Join(home, ".claude", "skills", "hidden-skill"), "hidden-skill", "Hidden import", "Hidden by filtered catalog.")
 	if _, err := service.ScanGlobalSkills(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -293,65 +443,114 @@ func TestSkillToolOnlyListsAndLoadsImportedSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := NewSkillLoadTool(service)
-	listed := tool.Execute(ctx, json.RawMessage(`{"mode":"list"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-list"})
+	listTool := NewSkillsListTool(service)
+	readTool := NewSkillsReadTool(service)
+	listed := listTool.Execute(ctx, json.RawMessage(`{}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-list"})
 	if !listed.OK || strings.Contains(listed.ModelContent, "tool-skill") {
 		t.Fatalf("list result = %+v, pending skill must not be visible to the model", listed)
 	}
-	blockedPending := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-pending"})
-	if !blockedPending.OK || !strings.Contains(blockedPending.Content, "no_match") {
-		t.Fatalf("pending load result = %+v, pending skill must not be loadable by the model", blockedPending)
+	blockedPending := readTool.Execute(ctx, json.RawMessage(`{"package":"skill://aivo/tool-skill"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-read-pending"})
+	if blockedPending.OK || !strings.Contains(blockedPending.Error, "skill package is not available") {
+		t.Fatalf("pending read result = %+v, pending skill must not be readable by the model", blockedPending)
 	}
 	candidates, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true})
-	if err != nil || len(candidates.Candidates) != 1 {
+	if err != nil || len(candidates.Candidates) != 2 {
 		t.Fatalf("candidates = %+v, err = %v", candidates, err)
 	}
-	if _, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidates.Candidates[0].ID}); err != nil {
+	var imported domain.SkillEntry
+	for _, candidate := range candidates.Candidates {
+		skill, err := service.ImportSkill(ctx, domain.SkillImportInput{CandidateID: candidate.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if skill.Name == "tool-skill" {
+			imported = skill
+		}
+	}
+	if imported.ID == "" {
+		t.Fatalf("imported candidates did not include tool-skill: %+v", candidates.Candidates)
+	}
+	if _, err := service.rememberVisibleSkills(ctx, session.ID, []domain.SkillEntry{imported}); err != nil {
 		t.Fatal(err)
 	}
-	listed = tool.Execute(ctx, json.RawMessage(`{"mode":"list"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-list-imported"})
-	if !listed.OK || !strings.Contains(listed.ModelContent, "<name>tool-skill</name>") || strings.Contains(listed.ModelContent, "Loaded by tool.") {
+	listed = listTool.Execute(ctx, json.RawMessage(`{"authority":"orchestrator"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-list-imported"})
+	if !listed.OK || !strings.Contains(listed.ModelContent, `"name": "tool-skill"`) || !strings.Contains(listed.ModelContent, `"package": "skill://aivo/tool-skill"`) || strings.Contains(listed.ModelContent, "hidden-skill") || strings.Contains(listed.ModelContent, "Loaded by tool.") {
 		t.Fatalf("list result = %+v, want imported catalog metadata without skill body", listed)
 	}
-	load := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-call-1"})
-	if !load.OK || !strings.Contains(load.ModelContent, "Loaded by tool.") {
-		t.Fatalf("load result = %+v, want imported and loaded", load)
+	hiddenRead := readTool.Execute(ctx, json.RawMessage(`{"package":"skill://aivo/hidden-skill"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-read-hidden"})
+	if hiddenRead.OK || !strings.Contains(hiddenRead.Error, "skill package is not available") {
+		t.Fatalf("hidden read result = %+v, want filtered-out Skill unreadable", hiddenRead)
 	}
-	duplicate := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-call-duplicate"})
-	if !duplicate.OK || !strings.Contains(duplicate.ModelContent, "already_active") || strings.Contains(duplicate.ModelContent, "Loaded by tool.") {
-		t.Fatalf("duplicate activation = %+v, want deduplicated activation without reinjection", duplicate)
+	read := readTool.Execute(ctx, json.RawMessage(`{"package":"skill://aivo/tool-skill"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-read-1"})
+	if !read.OK || !strings.Contains(read.ModelContent, "Loaded by tool.") || !strings.Contains(read.ModelContent, `"resource": "skill://aivo/tool-skill/SKILL.md"`) {
+		t.Fatalf("read result = %+v, want imported SKILL.md contents", read)
+	}
+	supportingFiles := map[string]string{
+		"references/guide.md":       "supporting guidance\n",
+		"scripts/build.sh":          "#!/bin/sh\n",
+		"assets/icon.txt":           "asset payload\n",
+		"fixtures/nested/input.txt": "nested fixture\n",
+		"notes.md":                  "top-level note\n",
+	}
+	for relative, contents := range supportingFiles {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(imported.RootPath, relative)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(imported.RootPath, relative), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		readResource := readTool.Execute(ctx, mustJSONRaw(t, map[string]any{
+			"package":  "skill://aivo/tool-skill",
+			"resource": "skill://aivo/tool-skill/" + filepath.ToSlash(relative),
+		}), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-read-" + strings.ReplaceAll(filepath.ToSlash(relative), "/", "-")})
+		if !readResource.OK || !strings.Contains(readResource.ModelContent, strings.TrimSpace(contents)) || !strings.Contains(readResource.ModelContent, `"resource": "skill://aivo/tool-skill/`+filepath.ToSlash(relative)+`"`) {
+			t.Fatalf("resource read result for %s = %+v, want supporting file contents", relative, readResource)
+		}
+	}
+	active, err := service.GetSessionActiveSkills(ctx, session.ID)
+	if err != nil || len(active.Skills) != 0 {
+		t.Fatalf("skills_read must not persist activation: %+v, err = %v", active, err)
 	}
 	list, err := service.ListSkills(ctx, domain.SkillListInput{IncludeCandidates: true, IncludeDisabled: true, IncludeIgnored: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Entries) != 1 || list.Entries[0].Name != "tool-skill" {
+	toolSkill, ok := skillEntryByName(list.Entries, "tool-skill")
+	if !ok {
 		t.Fatalf("entries = %+v, want imported tool-skill", list.Entries)
 	}
-	if len(list.Candidates) != 1 || list.Candidates[0].Status != domain.SkillCandidateStatusImported {
-		t.Fatalf("candidates = %+v, want imported candidate", list.Candidates)
+	if len(list.Candidates) != 2 {
+		t.Fatalf("candidates = %+v, want imported candidates", list.Candidates)
 	}
-	if _, err := service.SetSkillEnabled(ctx, domain.SkillEnabledInput{SkillID: list.Entries[0].ID, Enabled: false}); err != nil {
+	for _, candidate := range list.Candidates {
+		if candidate.Status != domain.SkillCandidateStatusImported {
+			t.Fatalf("candidates = %+v, want imported candidates", list.Candidates)
+		}
+	}
+	if _, err := service.SetSkillEnabled(ctx, domain.SkillEnabledInput{SkillID: toolSkill.ID, Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
 	nextSession, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	blocked := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: nextSession.ID, ToolCallID: "skill-call-3"})
-	if !blocked.OK || !strings.Contains(blocked.Content, "no_match") {
-		t.Fatalf("blocked load = %+v, want disabled skill omitted from the resolvable catalog", blocked)
+	blocked := readTool.Execute(ctx, json.RawMessage(`{"package":"skill://aivo/tool-skill"}`), domain.ToolExecutionContext{SessionID: nextSession.ID, ToolCallID: "skills-read-disabled"})
+	if blocked.OK || !strings.Contains(blocked.Error, "skill package is not available") {
+		t.Fatalf("blocked read = %+v, want disabled skill omitted from the readable catalog", blocked)
 	}
-	if _, err := service.SetSkillEnabled(ctx, domain.SkillEnabledInput{SkillID: list.Entries[0].ID, Enabled: true}); err != nil {
+	if _, err := service.SetSkillEnabled(ctx, domain.SkillEnabledInput{SkillID: toolSkill.ID, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	reloaded := tool.Execute(ctx, json.RawMessage(`{"mode":"activate","names":["tool-skill"]}`), domain.ToolExecutionContext{SessionID: nextSession.ID, ToolCallID: "skill-call-5"})
+	if _, err := service.rememberVisibleSkills(ctx, nextSession.ID, []domain.SkillEntry{toolSkill}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := readTool.Execute(ctx, json.RawMessage(`{"package":"skill://aivo/tool-skill"}`), domain.ToolExecutionContext{SessionID: nextSession.ID, ToolCallID: "skills-read-reenabled"})
 	if !reloaded.OK {
-		t.Fatalf("reload result = %+v, want ok", reloaded)
+		t.Fatalf("reenabled read result = %+v, want ok", reloaded)
 	}
 }
 
-func TestSkillToolDoesNotImportIgnoredCandidate(t *testing.T) {
+func TestSkillsReadDoesNotImportIgnoredCandidate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -369,13 +568,13 @@ func TestSkillToolDoesNotImportIgnoredCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := NewSkillLoadTool(service).Execute(ctx, json.RawMessage(`{"mode":"activate","names":["ignored-tool"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-call-ignored"})
-	if !result.OK || !strings.Contains(result.Content, "no_match") {
-		t.Fatalf("result = %+v, want ignored candidate omitted from the resolvable catalog", result)
+	result := NewSkillsReadTool(service).Execute(ctx, json.RawMessage(`{"package":"skill://aivo/ignored-tool"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skills-read-ignored"})
+	if result.OK || !strings.Contains(result.Error, "skill package is not available") {
+		t.Fatalf("result = %+v, want ignored candidate omitted from the readable catalog", result)
 	}
 }
 
-func TestSkillToolResolvesWithAuxiliarySelector(t *testing.T) {
+func TestLocalSkillResolveReturnsOnlyCatalogMatches(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	service, cleanup := newSkillTestService(t)
@@ -393,33 +592,24 @@ func TestSkillToolResolvesWithAuxiliarySelector(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	candidates, err := service.skillResolveCandidates(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	called := false
-	resolver := func(_ context.Context, request SkillResolveRequest) (SkillResolveDecision, error) {
-		called = true
-		if request.Intent != "create a PDF report" || len(request.Candidates) != 2 {
-			t.Fatalf("resolve request = %+v", request)
-		}
-		return SkillResolveDecision{Names: []string{"pdf-workflow", "invented-skill"}, Reason: "PDF workflow matched"}, nil
+	candidateNames := map[string]bool{}
+	for _, candidate := range candidates {
+		candidateNames[candidate.Name] = true
 	}
-	result := NewSkillLoadTool(service, resolver).Execute(ctx, json.RawMessage(`{"mode":"discover","intent":"create a PDF report"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-discover"})
-	if !called || !result.OK || !strings.Contains(result.ModelContent, "<name>pdf-workflow</name>") || strings.Contains(result.ModelContent, "Follow the PDF workflow.") || strings.Contains(result.ModelContent, "invented-skill") {
-		t.Fatalf("discover result = %+v", result)
+	if !candidateNames["pdf-workflow"] || !candidateNames["code-review"] || !candidateNames["skill-creator"] || !candidateNames["skill-installer"] {
+		t.Fatalf("resolve candidates = %+v", candidates)
 	}
-	active, err := service.GetSessionActiveSkills(ctx, session.ID)
-	if err != nil || len(active.Skills) != 0 {
-		t.Fatalf("discovery must not activate skills: %+v, err = %v", active, err)
+	decision, err := localSkillResolve(ctx, SkillResolveRequest{Intent: "create a PDF report", Candidates: candidates})
+	if err != nil {
+		t.Fatal(err)
 	}
-	activated := NewSkillLoadTool(service, resolver).Execute(ctx, json.RawMessage(`{"mode":"activate","names":["pdf-workflow"]}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "skill-activate"})
-	if !activated.OK || !strings.Contains(activated.ModelContent, "Follow the PDF workflow.") {
-		t.Fatalf("activate result = %+v", activated)
-	}
-	active, err = service.GetSessionActiveSkills(ctx, session.ID)
-	if err != nil || len(active.Skills) != 1 || active.Skills[0].Name != "pdf-workflow" {
-		t.Fatalf("active skills = %+v, err = %v", active, err)
+	names := validateSkillResolveSelection(candidates, append(decision.Names, "invented-skill"), 0)
+	if len(names) == 0 || names[0] != "pdf-workflow" {
+		t.Fatalf("resolved names = %#v from decision %#v", names, decision)
 	}
 }
 
@@ -482,7 +672,7 @@ func TestParseSkillRejectsInvalidFrontmatter(t *testing.T) {
 }
 
 func TestParseSkillMarkdownFoldedDescription(t *testing.T) {
-	raw := "---\nname: folded-description\ndescription: >\n  Turn an idea into a goal package.\n  Build a reviewed execution plan.\nmetadata: test\n---\n\n# Instructions\n"
+	raw := "---\nname: folded-description\ndescription: >\n  Turn an idea into a goal package.\n  Build a reviewed execution plan.\nlicense: MIT\ncompatibility: Requires git.\nallowed-tools: Bash(git:*) Read\nmetadata:\n  author: mattpocock\n  version: \"1.0\"\n---\n\n# Instructions\n"
 	name, description, metadata, _, err := parseSkillMarkdown(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -493,8 +683,69 @@ func TestParseSkillMarkdownFoldedDescription(t *testing.T) {
 	if description != "Turn an idea into a goal package. Build a reviewed execution plan." {
 		t.Fatalf("description = %q", description)
 	}
-	if metadata["metadata"] != "test" {
+	if metadata["license"] != "MIT" || metadata["compatibility"] != "Requires git." || metadata["allowed-tools"] != "Bash(git:*) Read" {
+		t.Fatalf("top-level metadata = %+v", metadata)
+	}
+	if metadata["metadata.author"] != "mattpocock" || metadata["metadata.version"] != "1.0" {
 		t.Fatalf("metadata = %+v", metadata)
+	}
+}
+
+func TestMarshalSkillMarkdownPreservesNestedMetadata(t *testing.T) {
+	raw := marshalSkillMarkdown("meta-skill", "Updated description", map[string]string{
+		"license":          "MIT",
+		"metadata.author":  "Aivo",
+		"metadata.version": "1",
+	}, "Use this workflow.")
+	text := string(raw)
+	if !strings.Contains(text, "metadata:\n  author: \"Aivo\"\n  version: \"1\"") {
+		t.Fatalf("marshaled metadata = %q", text)
+	}
+	name, description, metadata, content, err := parseSkillMarkdown(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "meta-skill" || description != "Updated description" || content != "Use this workflow." {
+		t.Fatalf("parsed = %q %q %q", name, description, content)
+	}
+	if metadata["license"] != "MIT" || metadata["metadata.author"] != "Aivo" || metadata["metadata.version"] != "1" {
+		t.Fatalf("metadata = %+v", metadata)
+	}
+}
+
+func TestParseSkillMarkdownFollowsAgentSkillsSpecBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "uppercase name", raw: "---\nname: Bad-Skill\ndescription: Valid description.\n---\n", want: "skill name is invalid"},
+		{name: "consecutive hyphen", raw: "---\nname: bad--skill\ndescription: Valid description.\n---\n", want: "skill name is invalid"},
+		{name: "too long name", raw: "---\nname: " + strings.Repeat("a", 65) + "\ndescription: Valid description.\n---\n", want: "skill name is invalid"},
+		{name: "too long description", raw: "---\nname: long-description\ndescription: " + strings.Repeat("a", 1025) + "\n---\n", want: "skill description exceeds 1024 bytes"},
+		{name: "scalar metadata", raw: "---\nname: scalar-metadata\ndescription: Valid description.\nmetadata: no\n---\n", want: "skill metadata must be a string map"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, _, _, err := parseSkillMarkdown(test.raw); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("parse error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestParseSkillDirectoryRejectsSymlinkResources(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "linked-skill")
+	writeSkill(t, root, "linked-skill", "Reject symlink resources", "Use this skill.")
+	target := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "references.md")); err != nil {
+		t.Skipf("symlink unsupported on this platform: %v", err)
+	}
+	if _, err := parseSkillDirectory(root); err == nil || !strings.Contains(err.Error(), "symlinks") {
+		t.Fatalf("parse error = %v, want symlink refusal", err)
 	}
 }
 
@@ -517,6 +768,15 @@ func writeSkill(t *testing.T, root string, name string, description string, body
 	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func skillEntryByName(entries []domain.SkillEntry, name string) (domain.SkillEntry, bool) {
+	for _, entry := range entries {
+		if entry.Name == name {
+			return entry, true
+		}
+	}
+	return domain.SkillEntry{}, false
 }
 
 func contextSectionsText(sections []domain.ContextSection) string {

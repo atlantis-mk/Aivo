@@ -20,7 +20,7 @@ type preparedShellCommand struct {
 	workspace string
 }
 
-func prepareShellCommand(workspaceRoot string, execCtx domain.ToolExecutionContext, toolName string, command string, cwdArg string, timeoutSeconds int, network string, mode string, stdin string, env map[string]string) (preparedShellCommand, error) {
+func prepareShellCommand(workspaceRoot string, execCtx domain.ToolExecutionContext, toolName string, command string, cwdArg string, timeoutSeconds int, network string, mode string, stdin string, shell string, login bool, env map[string]string) (preparedShellCommand, error) {
 	prepared := preparedShellCommand{toolName: toolName, workspace: workspaceRoot}
 	mode = normalizeSandboxMode(mode)
 	externalCWD, cwd, err := cwdIsExternal(workspaceRoot, cwdArg)
@@ -35,9 +35,13 @@ func prepareShellCommand(workspaceRoot string, execCtx domain.ToolExecutionConte
 	timeout = clampCommandTimeout(timeout)
 	timeoutSeconds = int(timeout.Seconds())
 	detection := DetectCommand(command, cwd, workspaceRoot, toolName)
+	rawCommand := detection.RawCommand
 	capabilities := []string{"shell.exec." + mode}
 	if stdin != "" {
 		capabilities = append(capabilities, "shell.stdin")
+	}
+	if login {
+		capabilities = append(capabilities, "shell.login")
 	}
 	if len(env) > 0 {
 		for key := range env {
@@ -60,7 +64,7 @@ func prepareShellCommand(workspaceRoot string, execCtx domain.ToolExecutionConte
 		capabilities = append(capabilities, "shell.network")
 	}
 	detection.Capabilities = appendUniqueStrings(detection.Capabilities, capabilities...)
-	detection.ApprovalKey = commandApprovalKey(workspaceRoot, cwd, detection.NormalizedCommand, detection.Argv, toolName, "local", "default", firstNonEmpty(network, detection.NetworkHint), detection.Category, detection.RiskLevel, detection.Capabilities)
+	detection.ApprovalKey = commandApprovalKey(workspaceRoot, cwd, rawCommand, detection.Argv, toolName, "local", "default", firstNonEmpty(network, detection.NetworkHint), detection.Category, detection.RiskLevel, shell, login, detection.Capabilities)
 	policy := EvaluateCommandPolicy(detection, toolName)
 	if network == "" {
 		network = policy.NetworkPolicy
@@ -78,11 +82,11 @@ func prepareShellCommand(workspaceRoot string, execCtx domain.ToolExecutionConte
 	prepared.cwd = cwd
 	prepared.timeout = timeout
 	prepared.timeoutS = timeoutSeconds
-	prepared.metadata = commandPolicyMetadata(detection, policy, timeoutSeconds, cwd)
+	prepared.metadata = commandPolicyMetadata(detection, policy, timeoutSeconds, cwd, shell, login)
 	prepared.request = SandboxRequest{
 		WorkspaceRoot:    workspaceRoot,
 		CWD:              cwd,
-		Command:          detection.NormalizedCommand,
+		Command:          rawCommand,
 		Argv:             detection.Argv,
 		Mode:             mode,
 		Timeout:          timeout,
@@ -98,7 +102,8 @@ func prepareShellCommand(workspaceRoot string, execCtx domain.ToolExecutionConte
 		EnvAllowlist:     defaultEnvAllowlist(),
 		Env:              nil,
 		EnvOverrides:     env,
-		Shell:            "",
+		Shell:            shell,
+		LoginShell:       login,
 		AllowExternalCWD: externalCWD,
 	}
 	if policy.Decision == CommandDecisionDeny {

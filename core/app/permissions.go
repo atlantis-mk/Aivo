@@ -48,6 +48,7 @@ type PermissionEngine struct {
 	notifier                 *permissionNotifier
 	ProjectPreflight         func(context.Context, string, json.RawMessage, domain.ToolExecutionContext) ([]string, map[string]any, bool, error)
 	MCPRegistrationPreflight func(context.Context, string, json.RawMessage, domain.ToolExecutionContext) ([]string, map[string]any, bool, error)
+	PTYRegistry              *AgentPTYRegistry
 }
 
 func NewPermissionEngine(store PermissionStore) *PermissionEngine {
@@ -78,15 +79,17 @@ func (e *PermissionEngine) Evaluate(ctx context.Context, tool domain.Tool, args 
 	var err error
 	if e.ProjectPreflight != nil && (spec.Name == projectAddToolName || spec.Name == projectAssociateToolName) {
 		paths, metadata, idempotent, err = e.ProjectPreflight(ctx, spec.Name, args, execCtx)
-	} else if e.MCPRegistrationPreflight != nil && spec.Name == toolRegistrationMCPName {
+	} else if e.MCPRegistrationPreflight != nil && isExactRegistrationToolName(spec.Name) {
 		paths, metadata, idempotent, err = e.MCPRegistrationPreflight(ctx, spec.Name, args, execCtx)
 	} else {
-		paths, metadata, err = permissionPathsForTool(spec.Name, args, execCtx)
+		paths, metadata, err = e.permissionPathsForTool(spec.Name, args, execCtx)
 	}
 	if err != nil {
 		code := projectErrorCode(err, "permission_denied")
 		if spec.Name == toolRegistrationMCPName {
 			code = mcpRegistrationErrorCode(err)
+		} else if spec.Name == toolRegistrationResourceName {
+			code = resourceRegistrationErrorCode(err)
 		}
 		return PermissionEvaluation{Decision: domain.PermissionDecisionDeny, Reason: err.Error(), Code: code}
 	}
@@ -99,10 +102,12 @@ func (e *PermissionEngine) Evaluate(ctx context.Context, tool domain.Tool, args 
 	if e == nil || e.store == nil {
 		return PermissionEvaluation{Decision: domain.PermissionDecisionDeny, Reason: "permission store is not configured"}
 	}
-	if !requiresExactNativeConfirmation(spec) {
-		if decision := e.savedDecision(ctx, execCtx, spec.Name, action, paths, metadata); decision != "" {
-			return PermissionEvaluation{Decision: decision}
+	if requiresExactNativeConfirmation(spec) {
+		if e.currentPermissionMode(ctx, execCtx) == domain.PermissionModeFullAccess {
+			return PermissionEvaluation{Decision: domain.PermissionDecisionAllow}
 		}
+	} else if decision := e.savedDecision(ctx, execCtx, spec.Name, action, paths, metadata); decision != "" {
+		return PermissionEvaluation{Decision: decision}
 	}
 	var arguments map[string]any
 	_ = json.Unmarshal(args, &arguments)
@@ -150,17 +155,28 @@ func sanitizePermissionArguments(toolName string, arguments map[string]any) {
 		text, _ := value.(string)
 		pressEnter, _ := arguments["press_enter"].(bool)
 		arguments["stdinPresent"] = (present && text != "") || pressEnter
-	case "bash":
+	case ExecCommandToolName:
 		if value, present := arguments["stdin"]; present {
 			text, _ := value.(string)
 			arguments["stdinPresent"] = text != ""
 			delete(arguments, "stdin")
 		}
+	case toolRegistrationResourceName:
+		files, _ := arguments["files"].([]any)
+		delete(arguments, "files")
+		if len(files) > 0 {
+			arguments["filesProvided"] = true
+			arguments["fileCount"] = len(files)
+		}
 	}
 }
 
 func requiresExactNativeConfirmation(spec domain.ToolSpec) bool {
-	return spec.Name == toolRegistrationMCPName
+	return isExactRegistrationToolName(spec.Name)
+}
+
+func isExactRegistrationToolName(name string) bool {
+	return name == toolRegistrationMCPName || name == toolRegistrationResourceName
 }
 
 func (e *PermissionEngine) waitForDecision(ctx context.Context, requestID string, decisionCh <-chan struct{}) PermissionEvaluation {
@@ -226,6 +242,20 @@ func (e *PermissionEngine) savedDecision(ctx context.Context, execCtx domain.Too
 	return ""
 }
 
+func (e *PermissionEngine) currentPermissionMode(ctx context.Context, execCtx domain.ToolExecutionContext) string {
+	if e == nil || e.store == nil {
+		return ""
+	}
+	rules, err := e.store.ListPermissionRules(ctx, execCtx.WorkspaceRoot, execCtx.SessionID)
+	if err != nil {
+		return ""
+	}
+	if latestPermissionModeIsLegacyAutoApprove(rules) {
+		return domain.PermissionModeRequestApproval
+	}
+	return latestPermissionMode(rules)
+}
+
 func latestPermissionMode(rules []domain.PermissionRule) string {
 	for _, rule := range rules {
 		if mode := permissionModeFromRule(rule); mode != "" {
@@ -269,7 +299,7 @@ func (s *Service) ApprovePermissionRequest(ctx context.Context, input domain.App
 	if current.Status != domain.PermissionRequestStatusPending {
 		return current, nil
 	}
-	if current.ToolName == toolRegistrationMCPName {
+	if isExactRegistrationToolName(current.ToolName) {
 		input.Remember = false
 	}
 	request, err := s.store.UpdatePermissionRequest(ctx, input.RequestID, domain.PermissionRequestStatusApproved, input.Remember, "")
@@ -305,10 +335,13 @@ func (s *Service) DenyPermissionRequest(ctx context.Context, input domain.DenyPe
 	if current.Status != domain.PermissionRequestStatusPending {
 		return current, nil
 	}
-	if current.ToolName == toolRegistrationMCPName {
+	if isExactRegistrationToolName(current.ToolName) {
 		input.Remember = false
 		if s.mcpRegistrationProposals != nil {
 			s.mcpRegistrationProposals.discard(current.ToolCallID)
+		}
+		if s.resourceRegistrationProposals != nil {
+			s.resourceRegistrationProposals.discard(current.ToolCallID)
 		}
 	}
 	request, err := s.store.UpdatePermissionRequest(ctx, input.RequestID, domain.PermissionRequestStatusDenied, input.Remember, input.Reason)

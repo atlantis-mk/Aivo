@@ -104,8 +104,8 @@ func (r *ToolRuntime) ExecuteWithContext(ctx context.Context, call domain.ChatTo
 			return r.finish(call, start, toolFailure(call.ID, name, "invalid_arguments", "invalid JSON arguments: "+err.Error()), false)
 		}
 	}
-	if name == "bash" {
-		if _, err := parsePrimitiveBashArgs(call.Arguments); err != nil {
+	if name == ExecCommandToolName {
+		if _, err := parseExecCommandArgs(call.Arguments); err != nil {
 			return r.finish(call, start, toolFailure(call.ID, name, "invalid_arguments", err.Error()), false)
 		}
 	}

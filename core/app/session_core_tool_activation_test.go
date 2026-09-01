@@ -20,7 +20,7 @@ func TestSessionCoreToolsStayActiveWhenOmittedFromManualSelection(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsToolNames(active.CoreToolNames, "read", "bash", "edit", "write", "update_plan", "ask_user") {
+	if !containsToolNames(active.CoreToolNames, "read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user") {
 		t.Fatalf("default core tools = %#v, want all core tools", active.CoreToolNames)
 	}
 
@@ -31,7 +31,7 @@ func TestSessionCoreToolsStayActiveWhenOmittedFromManualSelection(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsToolNames(updated.CoreToolNames, "read", "bash", "edit", "write", "update_plan", "ask_user") || !containsToolNames(updated.ToolNames, "extension_notes") {
+	if !containsToolNames(updated.CoreToolNames, "read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user") || !containsToolNames(updated.ToolNames, "extension_notes") {
 		t.Fatalf("updated active tools = %#v, core = %#v", updated.ToolNames, updated.CoreToolNames)
 	}
 
@@ -56,7 +56,7 @@ func TestSessionCoreToolsIgnoreLegacyDisabledMetadata(t *testing.T) {
 	if state.Metadata == nil {
 		state.Metadata = map[string]any{}
 	}
-	state.Metadata[sessionMetadataDisabledCoreTools] = []string{"bash", "write", "update_plan", "ask_user"}
+	state.Metadata[sessionMetadataDisabledCoreTools] = []string{ExecCommandToolName, "write", "update_plan", "ask_user"}
 	if _, err := service.store.UpsertSessionExecutionState(ctx, state); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestSessionCoreToolsIgnoreLegacyDisabledMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsToolNames(active.CoreToolNames, "read", "bash", "edit", "write", "update_plan", "ask_user") {
+	if !containsToolNames(active.CoreToolNames, "read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user") {
 		t.Fatalf("legacy metadata suppressed required core tools: %#v", active.CoreToolNames)
 	}
 }
@@ -75,13 +75,13 @@ func TestCoreToolAssemblyOmitsExplicitlyDisabledTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), map[string]string{"bash": "disabled"})
+	assembly := AssembleToolSpecsWithSources(registry, registry.Specs(), map[string]string{ExecCommandToolName: "disabled"})
 	for _, spec := range assembly.Specs {
-		if spec.Name == "bash" {
-			t.Fatalf("assembly exposed disabled bash: %#v", assembly.Specs)
+		if spec.Name == ExecCommandToolName {
+			t.Fatalf("assembly exposed disabled exec_command: %#v", assembly.Specs)
 		}
 	}
-	if !containsToolNames(toolSpecNames(assembly.Specs), "read", "edit", "write") {
+	if !containsToolNames(toolSpecNames(assembly.Specs), "read", WriteStdinToolName, "edit", "write") {
 		t.Fatalf("assembly = %#v, want remaining core tools", assembly.Specs)
 	}
 }

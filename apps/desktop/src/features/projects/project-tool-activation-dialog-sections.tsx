@@ -9,41 +9,43 @@ import {
   ToolActivationDialogSkeleton,
   ToolActivationToolList,
 } from "@/features/projects/project-tool-activation-lists";
-import type { ToolCatalogGroup } from "@/features/projects/project-tool-activation-model";
-import type { SkillEntry } from "@/services/aivo";
+import type {
+  SkillCatalogGroup,
+  ToolCatalogGroup,
+} from "@/features/projects/project-tool-activation-model";
 
 export function ToolActivationDialogTabs({
   activeSkillSet,
   activeToolSet,
   disabled,
+  groupedSkills,
   groupedTools,
   loading,
   onToggleSkill,
   onToggleToolGroup,
-  skills,
   toggleableToolCount,
   usedToolSet,
 }: {
   activeSkillSet: Set<string>;
   activeToolSet: Set<string>;
   disabled: boolean;
+  groupedSkills: SkillCatalogGroup[];
   groupedTools: ToolCatalogGroup[];
   loading: boolean;
-  onToggleSkill: (id: string, enabled: boolean) => void;
+  onToggleSkill: (ids: string[], enabled: boolean) => void;
   onToggleToolGroup: (names: string[], enabled: boolean) => void;
-  skills: SkillEntry[];
   toggleableToolCount: number;
   usedToolSet: Set<string>;
 }) {
   return (
     <Tabs
       key={loading ? "loading" : "ready"}
-      defaultValue={defaultActivationSection(groupedTools, skills.length)}
+      defaultValue={defaultActivationSection(groupedTools, groupedSkills.length)}
       className="flex min-h-0 flex-1 flex-col gap-0"
     >
       <ToolActivationDialogStatusBar
         groupedTools={groupedTools}
-        skillCount={skills.length}
+        skillCount={groupedSkills.length}
         toggleableToolCount={toggleableToolCount}
       />
 
@@ -85,7 +87,7 @@ export function ToolActivationDialogTabs({
                 activeSkillSet={activeSkillSet}
                 disabled={disabled}
                 onToggleSkill={onToggleSkill}
-                skills={skills}
+                skills={groupedSkills.flatMap((group) => group.skills)}
               />
             )}
           </div>

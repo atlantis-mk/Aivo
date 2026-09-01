@@ -178,6 +178,17 @@ func mcpRegistrationInputHash(input domain.MCPRegistrationProposalInput) string 
 	return hex.EncodeToString(sum[:])
 }
 
+func (s *Service) prepareToolRegistrationPermission(ctx context.Context, name string, args json.RawMessage, execCtx domain.ToolExecutionContext) ([]string, map[string]any, bool, error) {
+	switch name {
+	case toolRegistrationMCPName:
+		return s.prepareMCPRegistrationPermission(ctx, name, args, execCtx)
+	case toolRegistrationResourceName:
+		return s.prepareResourceRegistrationPermission(ctx, name, args, execCtx)
+	default:
+		return nil, nil, false, newMCPRegistrationError("invalid_registration_tool", "unknown registration tool")
+	}
+}
+
 func (s *Service) prepareMCPRegistrationPermission(ctx context.Context, name string, args json.RawMessage, execCtx domain.ToolExecutionContext) ([]string, map[string]any, bool, error) {
 	if name != toolRegistrationMCPName {
 		return nil, nil, false, newMCPRegistrationError("invalid_registration_tool", "unknown registration tool")

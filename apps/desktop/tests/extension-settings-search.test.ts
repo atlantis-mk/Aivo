@@ -11,7 +11,8 @@ test("tools tab shows only manageable Aivo tools", () => {
   const visible = filterTools(
     [
       { name: "read", source: "builtin", enabled: true },
-      { name: "bash", source: "builtin", enabled: true },
+      { name: "exec_command", source: "builtin", enabled: true },
+      { name: "write_stdin", source: "builtin", enabled: true },
       { name: "grep", source: "builtin", enabled: true },
       { name: "find", source: "builtin", enabled: true },
       { name: "ls", source: "builtin", enabled: true },

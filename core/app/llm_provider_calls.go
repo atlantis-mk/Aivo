@@ -111,7 +111,8 @@ func callOpenAICompatible(ctx context.Context, provider domain.ProviderConfig, m
 	}
 	var endpoint string
 	var body map[string]any
-	if providerUsesResponsesAPI(provider, tools) {
+	usesResponsesAPI := providerUsesResponsesAPI(provider, tools)
+	if usesResponsesAPI {
 		endpoint = baseURL + "/responses"
 		body = responsesRequestBody(model.ModelID, messages, tools, reasoningEffort, serviceTier)
 	} else {
@@ -120,6 +121,11 @@ func callOpenAICompatible(ctx context.Context, provider domain.ProviderConfig, m
 	}
 	applyProviderNativeWebSearchOptions(body, provider, tools)
 	applyRequestProfile(body, requestProfile, provider, model.ModelID)
+	if usesResponsesAPI {
+		applyOpenAIResponsesRequestDefaults(body)
+	} else {
+		applyOpenAIChatCompletionsRequestDefaults(body, reasoningEffort)
+	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return domain.ChatResponse{}, err
@@ -189,6 +195,7 @@ func callAzureOpenAI(ctx context.Context, provider domain.ProviderConfig, model 
 	}
 	body := responsesRequestBody(model.ModelID, messages, tools, reasoningEffort, serviceTier)
 	applyRequestProfile(body, requestProfile, provider, model.ModelID)
+	applyOpenAIResponsesRequestDefaults(body)
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return domain.ChatResponse{}, err

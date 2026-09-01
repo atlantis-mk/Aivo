@@ -2,8 +2,8 @@
   "schemaVersion": 2,
   "id": "aivo.tools",
   "name": "Aivo Tool Registration",
-  "version": "1.1.0",
-  "description": "Propose registering an MCP tool source through exact Host confirmation. 对话式注册 MCP 工具来源。",
+  "version": "1.2.0",
+  "description": "Propose registering MCP tool sources and external Skill resources through exact Host confirmation. 对话式注册 MCP 工具来源和 Skill 资源。",
   "apiVersion": "2",
   "runtime": {
     "type": "builtin"
@@ -33,6 +33,39 @@
             "bearerTokenEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$", "description": "Existing Host environment-variable name. Never provide its value." },
             "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 120, "default": 30 },
             "connectTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 60, "default": 30 }
+          }
+        }
+      },
+      {
+        "name": "aivo_tools_register_resource",
+        "description": "Propose and, only after exact native user approval, install one external Agent Skill resource into Aivo-managed global Skill storage. Provide a stable skills.sh id/URL or a public GitHub repository URL plus an exact skill slug so the Host runs the skills CLI, imports the complete installed directory into Aivo, removes the ~/.agents staging copy, and refreshes Skill discovery; when providing files directly, include every file in the Skill folder, not only SKILL.md. 对话式安装完整 Skill 目录资源。",
+        "activation": "auto",
+        "capability": "extensions.write",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["skill"], "description": "Resource kind. Currently only Agent Skill directories are supported." },
+            "id": { "type": "string", "maxLength": 240, "description": "Stable resource id such as owner/repo/skill-name. Use only when it identifies one exact Skill." },
+            "source": { "type": "string", "maxLength": 160, "description": "Optional skills package source such as owner/repo; combined with skill when id is omitted." },
+            "skill": { "type": "string", "maxLength": 80, "description": "Optional Skill slug or name; combined with source when id is omitted." },
+            "url": { "type": "string", "description": "Optional skills.sh URL identifying one Skill, or a GitHub repository URL combined with the exact skill slug. Pack and ambiguous repository URLs require a separate selection flow and are refused." },
+            "scope": { "type": "string", "enum": ["global"], "default": "global", "description": "Installation scope. Conversational registration currently installs global Skills." },
+            "files": {
+              "type": "array",
+              "maxItems": 128,
+              "description": "Optional complete Skill file snapshot. Include every file in the Skill directory using relative paths; SKILL.md is required.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "contents"],
+                "properties": {
+                  "path": { "type": "string", "maxLength": 240 },
+                  "contents": { "type": "string" }
+                }
+              }
+            }
           }
         }
       }

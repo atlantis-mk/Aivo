@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   defaultActiveBuiltinToolNames,
+  groupSkillCatalogEntries,
   groupToolCatalogEntries,
   isToggleableCatalogTool,
 } from "../src/features/projects/project-tool-activation-model.ts";
@@ -10,6 +11,8 @@ import {
 test("tool activation shows globally enabled tools in their source categories", () => {
   const tools = [
     { name: "read", source: "builtin", enabled: true },
+    { name: "update_plan", source: "builtin", enabled: true },
+    { name: "ask_user", source: "builtin", enabled: true },
     {
       name: "aivo_projects_list",
       source: "extension",
@@ -113,9 +116,12 @@ test("tool activation shows globally enabled tools in their source categories", 
 test("required core tools stay active even when legacy global state hides one", () => {
   const tools = [
     { name: "read", source: "builtin", enabled: true },
-    { name: "bash", source: "builtin", enabled: true },
+    { name: "exec_command", source: "builtin", enabled: true },
+    { name: "write_stdin", source: "builtin", enabled: true },
     { name: "edit", source: "builtin", enabled: false },
     { name: "write", source: "builtin", enabled: true },
+    { name: "update_plan", source: "builtin", enabled: true },
+    { name: "ask_user", source: "builtin", enabled: true },
     { name: "grep", source: "builtin", enabled: true },
     { name: "find", source: "builtin", enabled: true },
     { name: "ls", source: "builtin", enabled: true },
@@ -123,8 +129,63 @@ test("required core tools stay active even when legacy global state hides one", 
 
   assert.deepEqual(defaultActiveBuiltinToolNames(tools), [
     "read",
-    "bash",
+    "exec_command",
+    "write_stdin",
     "edit",
     "write",
+    "update_plan",
+    "ask_user",
   ]);
+});
+
+test("skill activation groups explicit Skill selection groups", () => {
+  const skills = [
+    {
+      id: "skill-1",
+      name: "hyperframes",
+      description: "HyperFrames entry point",
+      selectionGroup: {
+        id: "hyperframes",
+        name: "HyperFrames",
+        description: "HyperFrames workflow skills",
+      },
+    },
+    {
+      id: "skill-2",
+      name: "hyperframes-core",
+      description: "HyperFrames core contract",
+      selectionGroup: {
+        id: "hyperframes",
+        name: "HyperFrames",
+        description: "HyperFrames workflow skills",
+      },
+    },
+    {
+      id: "skill-3",
+      name: "pdf",
+      description: "PDF workflow",
+    },
+  ];
+
+  const groups = groupSkillCatalogEntries(skills);
+
+  assert.deepEqual(
+    groups.map((group) => ({
+      grouped: group.grouped,
+      label: group.label,
+      skills: group.skills.map((skill) => skill.name),
+    })),
+    [
+      {
+        grouped: true,
+        label: "HyperFrames",
+        skills: ["hyperframes", "hyperframes-core"],
+      },
+      {
+        grouped: false,
+        label: "pdf",
+        skills: ["pdf"],
+      },
+    ],
+  );
 });

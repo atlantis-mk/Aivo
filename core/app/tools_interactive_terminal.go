@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,15 +18,16 @@ const (
 )
 
 type execCommandInput struct {
-	Command        string            `json:"command"`
-	CWD            string            `json:"cwd"`
-	YieldTimeMS    int               `json:"yield_time_ms"`
-	MaxOutputChars int               `json:"max_output_chars"`
-	Network        string            `json:"network"`
-	Env            map[string]string `json:"env"`
-	Rows           int               `json:"rows"`
-	Cols           int               `json:"cols"`
-	Justification  string            `json:"justification"`
+	Cmd                string   `json:"cmd"`
+	Workdir            string   `json:"workdir"`
+	Shell              string   `json:"shell"`
+	Login              *bool    `json:"login"`
+	TTY                *bool    `json:"tty"`
+	YieldTimeMS        int      `json:"yield_time_ms"`
+	MaxOutputTokens    int      `json:"max_output_tokens"`
+	SandboxPermissions string   `json:"sandbox_permissions"`
+	Justification      string   `json:"justification"`
+	PrefixRule         []string `json:"prefix_rule"`
 }
 
 type writeStdinInput struct {
@@ -45,63 +47,95 @@ type ExecCommandTool struct {
 	workspaceRoot string
 	registry      *AgentPTYRegistry
 	outputSink    ShellOutputSink
+	environment   ExecutionEnvironment
 }
 
 type WriteStdinTool struct {
 	workspaceRoot string
 	registry      *AgentPTYRegistry
+	environment   ExecutionEnvironment
 }
 
 func NewExecCommandTool(workspaceRoot string, registry *AgentPTYRegistry, outputSink ShellOutputSink) *ExecCommandTool {
 	if registry == nil {
-		registry = defaultAgentPTYRegistry
+		registry = NewAgentPTYRegistry()
 	}
 	return &ExecCommandTool{workspaceRoot: workspaceRoot, registry: registry, outputSink: outputSink}
 }
 
 func NewWriteStdinTool(workspaceRoot string, registry *AgentPTYRegistry) *WriteStdinTool {
 	if registry == nil {
-		registry = defaultAgentPTYRegistry
+		registry = NewAgentPTYRegistry()
 	}
 	return &WriteStdinTool{workspaceRoot: workspaceRoot, registry: registry}
 }
 
 func (t *ExecCommandTool) Spec() domain.ToolSpec {
+	yieldTimeMSDescription := "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."
+	if runtime.GOOS == "windows" {
+		yieldTimeMSDescription = "Maximum time to wait before returning a session ID for a still-running command. Commands that finish sooner return immediately. For ordinary commands, omit this parameter to use the 10000 ms default. Effective range on Windows is 10000-30000 ms."
+	}
 	return domain.ToolSpec{
 		Name:        ExecCommandToolName,
-		Description: "Start one new interactive command in an owned PTY. Before starting, reuse a suitable live terminal from the live_terminals context when the user refers to a previous or ongoing process; continue it with write_stdin instead of launching a duplicate. Returns after output becomes idle, the output bound is reached, the process exits, or yield_time_ms elapses. If status is running, continue with write_stdin using processRef and cursor.",
+		Description: execCommandDescription(),
 		Namespace:   filesystemNamespace, NamespaceDescription: shellNamespaceDescription,
 		Capability: "shell.exec", RiskLevel: "critical", Category: "shell", Toolsets: []string{"shell", "coding"}, RequiresWorkspace: true,
 		InputSchema: map[string]any{
-			"type": "object",
+			"type":                 "object",
+			"additionalProperties": false,
 			"properties": map[string]any{
-				"command":          map[string]any{"type": "string", "description": "Command to run inside a real PTY."},
-				"cwd":              map[string]any{"type": "string", "description": "Optional workspace-relative working directory."},
-				"yield_time_ms":    map[string]any{"type": "integer", "minimum": 100, "maximum": int(agentPTYMaxYield.Milliseconds())},
-				"max_output_chars": map[string]any{"type": "integer", "minimum": 256, "maximum": agentPTYBufferCap},
-				"network":          map[string]any{"type": "string", "enum": []string{"deny", "inherit"}},
-				"env":              map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
-				"rows":             map[string]any{"type": "integer", "minimum": 4, "maximum": 200},
-				"cols":             map[string]any{"type": "integer", "minimum": 20, "maximum": 400},
-				"justification":    map[string]any{"type": "string"},
+				"cmd":               map[string]any{"type": "string", "description": "Shell command to execute."},
+				"workdir":           map[string]any{"type": "string", "description": "Working directory for the command. Defaults to the turn cwd."},
+				"shell":             map[string]any{"type": "string", "description": "Shell binary to launch. Defaults to the user's default shell."},
+				"login":             map[string]any{"type": "boolean", "description": "True runs the shell with -l/-i semantics; false disables them. Defaults to true."},
+				"tty":               map[string]any{"type": "boolean", "description": "True allocates a PTY for the command; false or omitted uses plain pipes."},
+				"yield_time_ms":     map[string]any{"type": "number", "description": yieldTimeMSDescription},
+				"max_output_tokens": map[string]any{"type": "number", "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy."},
+				"sandbox_permissions": map[string]any{
+					"type":        "string",
+					"enum":        []string{"use_default", "require_escalated"},
+					"description": "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
+				},
+				"justification": map[string]any{"type": "string", "description": "User-facing approval question for `require_escalated`; omit otherwise."},
+				"prefix_rule":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Reusable approval prefix for `cmd`, only with `sandbox_permissions: \"require_escalated\"`; for example [\"git\", \"pull\"]."},
 			},
-			"required": []string{"command"},
+			"required": []string{"cmd"},
 		},
 	}
 }
 
+func execCommandDescription() string {
+	description := "Runs a command in a PTY, returning output or a session ID for ongoing interaction."
+	if runtime.GOOS == "windows" {
+		return description + "\n\n" + windowsShellGuidance()
+	}
+	return description
+}
+
+func windowsShellGuidance() string {
+	return "Windows safety rules:\n- Do not compose destructive filesystem commands across shells. Do not enumerate paths in PowerShell and then pass them to `cmd /c`, batch builtins, or another shell for deletion or moving. Use one shell end-to-end, prefer native PowerShell cmdlets such as `Remove-Item` / `Move-Item` with `-LiteralPath`, and avoid string-built shell commands for file operations.\n- Before any recursive delete or move on Windows, verify the resolved absolute target paths stay within the intended workspace or explicitly named target directory. Never issue a recursive delete or move against a computed path if the final target has not been checked.\n- When using `Start-Process` to launch a background helper or service, pass `-WindowStyle Hidden` unless the user explicitly asked for a visible interactive window. Use visible windows only for interactive tools the user needs to see or control."
+}
+
 func (t *ExecCommandTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+	if t.environment != nil {
+		return t.environment.ExecutePrimitive(ctx, ExecCommandToolName, args, execCtx)
+	}
 	input, err := parseExecCommandArgs(args)
 	if err != nil {
 		return toolError(ExecCommandToolName, err)
 	}
 	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
-	prepared, err := prepareShellCommand(workspaceRoot, execCtx, ExecCommandToolName, input.Command, input.CWD, 0, input.Network, "pty", "", input.Env)
+	shell, err := resolveCommandShell(workspaceRoot, input.Shell)
+	if err != nil {
+		return toolError(ExecCommandToolName, err)
+	}
+	login := resolveLoginShell(input.Login, shell)
+	prepared, err := prepareShellCommand(workspaceRoot, execCtx, ExecCommandToolName, input.Cmd, input.Workdir, 0, "", "pty", "", shell, login, nil)
 	if err != nil {
 		return commandToolError(ExecCommandToolName, prepared, err)
 	}
 	prepared.request.OutputSink = t.outputSink
-	result, err := t.registry.Start(ctx, prepared.request, input.Rows, input.Cols, time.Duration(input.YieldTimeMS)*time.Millisecond, input.MaxOutputChars)
+	result, err := t.registry.Start(ctx, prepared.request, 0, 0, time.Duration(input.YieldTimeMS)*time.Millisecond, outputTokenBudgetToChars(input.MaxOutputTokens))
 	if err != nil {
 		if result.ProcessRef != "" {
 			return interactiveTerminalWaitError(ExecCommandToolName, result, err)
@@ -137,6 +171,9 @@ func (t *WriteStdinTool) Spec() domain.ToolSpec {
 }
 
 func (t *WriteStdinTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
+	if t.environment != nil {
+		return t.environment.ExecutePrimitive(ctx, WriteStdinToolName, args, execCtx)
+	}
 	input, err := parseWriteStdinArgs(args)
 	if err != nil {
 		return toolError(WriteStdinToolName, err)
@@ -167,31 +204,41 @@ func (t *WriteStdinTool) Execute(ctx context.Context, args json.RawMessage, exec
 
 func parseExecCommandArgs(args json.RawMessage) (execCommandInput, error) {
 	var input execCommandInput
-	if err := json.Unmarshal(args, &input); err != nil {
+	if err := decodeStrictToolArgs(args, &input); err != nil {
 		return input, errors.New("invalid exec_command arguments")
 	}
-	input.Command = strings.TrimSpace(input.Command)
-	input.CWD = strings.TrimSpace(input.CWD)
-	input.Network = strings.TrimSpace(input.Network)
+	input.Cmd = strings.TrimSpace(input.Cmd)
+	input.Workdir = strings.TrimSpace(input.Workdir)
+	input.Shell = strings.TrimSpace(input.Shell)
+	input.SandboxPermissions = strings.TrimSpace(input.SandboxPermissions)
 	input.Justification = strings.TrimSpace(input.Justification)
-	if input.Command == "" {
-		return input, errors.New("command is required")
+	if input.Cmd == "" {
+		return input, errors.New("cmd is required")
 	}
-	if input.Network != "" && input.Network != "deny" && input.Network != "inherit" {
-		return input, errors.New("network must be deny or inherit")
-	}
-	if (input.Rows == 0) != (input.Cols == 0) {
-		return input, errors.New("rows and cols must be provided together")
+	if input.SandboxPermissions != "" && input.SandboxPermissions != "use_default" && input.SandboxPermissions != "require_escalated" {
+		return input, errors.New("sandbox_permissions must be use_default or require_escalated")
 	}
 	if input.YieldTimeMS < 0 || input.YieldTimeMS > int(agentPTYMaxYield.Milliseconds()) {
 		return input, fmt.Errorf("yield_time_ms must be between 0 and %d", agentPTYMaxYield.Milliseconds())
 	}
-	for key := range input.Env {
-		if isSecretEnvName(key) {
-			return input, fmt.Errorf("env override %s is denied because it looks secret-bearing", key)
-		}
+	if input.MaxOutputTokens < 0 {
+		return input, errors.New("max_output_tokens must be non-negative")
 	}
 	return input, nil
+}
+
+func outputTokenBudgetToChars(tokens int) int {
+	if tokens <= 0 {
+		return 0
+	}
+	chars := tokens * 4
+	if chars < 256 {
+		return 256
+	}
+	if chars > agentPTYBufferCap {
+		return agentPTYBufferCap
+	}
+	return chars
 }
 
 func parseWriteStdinArgs(args json.RawMessage) (writeStdinInput, error) {

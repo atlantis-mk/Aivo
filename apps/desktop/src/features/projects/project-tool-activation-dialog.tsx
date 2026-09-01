@@ -35,11 +35,11 @@ export function ToolActivationDialog(props: ToolActivationDialogProps) {
           activeSkillSet={state.activeSkillSet}
           activeToolSet={state.activeToolSet}
           disabled={state.loading || state.saving}
+          groupedSkills={state.groupedSkills}
           groupedTools={state.groupedTools}
           loading={state.loading}
           onToggleSkill={state.toggleSkill}
           onToggleToolGroup={state.toggleToolGroup}
-          skills={state.skills}
           toggleableToolCount={state.toggleableToolCount}
           usedToolSet={state.usedToolSet}
         />

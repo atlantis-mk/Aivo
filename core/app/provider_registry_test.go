@@ -74,7 +74,10 @@ func TestProviderRegistryIncludesOpenAICompatibleProviderCoverage(t *testing.T) 
 		{id: "groq", alias: "groqcloud", baseURL: "https://api.groq.com/openai/v1", env: "GROQ_API_KEY", defaultModel: "openai/gpt-oss-120b", transport: TransportOpenAICompatible, refreshable: true, capability: "reasoning"},
 		{id: "deepinfra", alias: "deep-infra", baseURL: "https://api.deepinfra.com/v1/openai", env: "DEEPINFRA_API_KEY", defaultModel: "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo", transport: TransportOpenAICompatible, refreshable: true, capability: "tools"},
 		{id: "cerebras", alias: "cerebras-ai", baseURL: "https://api.cerebras.ai/v1", env: "CEREBRAS_API_KEY", defaultModel: "zai-glm-4.7", transport: TransportOpenAICompatible, refreshable: true, capability: "reasoning"},
-		{id: "together", alias: "together-ai", baseURL: "https://api.together.ai/v1", env: "TOGETHER_API_KEY", defaultModel: "moonshotai/Kimi-K2.5", transport: TransportOpenAICompatible, refreshable: true, capability: "tools"},
+		{id: "baseten", alias: "baseten", baseURL: "https://inference.baseten.co/v1", env: "BASETEN_API_KEY", defaultModel: "custom-profile", transport: TransportOpenAICompatible, refreshable: true, capability: "streaming"},
+		{id: "deepseek", alias: "deep-seek", baseURL: "https://api.deepseek.com/v1", env: "DEEPSEEK_API_KEY", defaultModel: "deepseek-chat", transport: TransportOpenAICompatible, refreshable: true, capability: "tools"},
+		{id: "fireworks", alias: "fireworks-ai", baseURL: "https://api.fireworks.ai/inference/v1", env: "FIREWORKS_API_KEY", defaultModel: "accounts/fireworks/models/glm-5p2", transport: TransportOpenAICompatible, refreshable: true, capability: "reasoning"},
+		{id: "together", alias: "togetherai", baseURL: "https://api.together.xyz/v1", env: "TOGETHER_API_KEY", defaultModel: "moonshotai/Kimi-K2.5", transport: TransportOpenAICompatible, refreshable: true, capability: "tools"},
 		{id: "perplexity", alias: "pplx", baseURL: "https://api.perplexity.ai", env: "PERPLEXITY_API_KEY", defaultModel: "sonar-pro", transport: TransportOpenAICompatible, refreshable: false, capability: "search"},
 	}
 
@@ -103,6 +106,20 @@ func TestProviderRegistryIncludesOpenAICompatibleProviderCoverage(t *testing.T) 
 			model, ok := findModelInfo(info.Models, tt.defaultModel)
 			if !ok || !model.Streaming || !modelSupportsCapability(model, tt.capability) {
 				t.Fatalf("model = %+v ok=%v, want streaming and capability %q", model, ok, tt.capability)
+			}
+		})
+	}
+}
+
+func TestGoogleDefaultRequestProfileDoesNotForceThinking(t *testing.T) {
+	for _, providerID := range []string{"gemini", "google", "google-vertex"} {
+		t.Run(providerID, func(t *testing.T) {
+			def, ok := providerDefinition(providerID)
+			if !ok {
+				t.Fatalf("provider definition %q missing", providerID)
+			}
+			if len(def.RequestProfile.Params) != 0 || len(def.RequestProfile.ModelOverrides) != 0 {
+				t.Fatalf("RequestProfile = %+v, want no default generation overrides", def.RequestProfile)
 			}
 		})
 	}

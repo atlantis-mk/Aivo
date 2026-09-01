@@ -416,8 +416,8 @@ func TestReplaySessionToolCallCreatesFreshToolCall(t *testing.T) {
 	original, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{
 		ID:        "call_failed",
 		SessionID: session.ID,
-		Name:      "bash",
-		Arguments: map[string]any{"command": "pwd"},
+		Name:      ExecCommandToolName,
+		Arguments: map[string]any{"cmd": "pwd"},
 		Status:    domain.ToolCallStatusFailed,
 		Error:     "previous run failed",
 	})
@@ -432,8 +432,8 @@ func TestReplaySessionToolCallCreatesFreshToolCall(t *testing.T) {
 	if replayed.ID == original.ID || !strings.HasPrefix(replayed.ID, "replay_") {
 		t.Fatalf("replayed id = %q, original = %q", replayed.ID, original.ID)
 	}
-	if replayed.Name != "bash" || replayed.Status != domain.ToolCallStatusSuccess {
-		t.Fatalf("replayed call = %#v, want successful bash call", replayed)
+	if replayed.Name != ExecCommandToolName || replayed.Status != domain.ToolCallStatusSuccess {
+		t.Fatalf("replayed call = %#v, want successful exec_command call", replayed)
 	}
 	if replayed.Result["replayOfToolCallId"] != original.ID || replayed.Result["replayOfToolName"] != original.Name {
 		t.Fatalf("replayed metadata = %#v, want replay source", replayed.Result)
@@ -481,8 +481,8 @@ func TestReplaySessionCoreToolCallIgnoresLegacyGlobalPreference(t *testing.T) {
 	original, err := service.SaveToolCall(ctx, domain.CreateToolCallRequest{
 		ID:        "call_globally_disabled",
 		SessionID: session.ID,
-		Name:      "bash",
-		Arguments: map[string]any{"command": "touch replay-must-not-exist"},
+		Name:      ExecCommandToolName,
+		Arguments: map[string]any{"cmd": "touch replay-must-not-exist"},
 		Status:    domain.ToolCallStatusFailed,
 		Error:     "previous run failed",
 	})
@@ -493,7 +493,7 @@ func TestReplaySessionCoreToolCallIgnoresLegacyGlobalPreference(t *testing.T) {
 	if !ok {
 		t.Fatal("global tool preference store unavailable")
 	}
-	if err := preferences.SetGlobalToolEnabled(ctx, "bash", false); err != nil {
+	if err := preferences.SetGlobalToolEnabled(ctx, ExecCommandToolName, false); err != nil {
 		t.Fatal(err)
 	}
 

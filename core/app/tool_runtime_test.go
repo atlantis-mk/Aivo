@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -362,38 +363,50 @@ func TestCodingToolRegistryOmitsLegacyQualityTools(t *testing.T) {
 	}
 }
 
-func TestBashSpecOwnsForegroundCLIWork(t *testing.T) {
+func TestExecCommandSpecMatchesCodexStyleSchema(t *testing.T) {
 	root := t.TempDir()
-	bash := NewBashTool(root, nil).Spec()
-	if bash.RiskLevel != "critical" {
-		t.Fatalf("bash risk level = %q, want critical", bash.RiskLevel)
+	execCommand := NewExecCommandTool(root, nil, nil).Spec()
+	if execCommand.Name != ExecCommandToolName {
+		t.Fatalf("exec command name = %q, want %q", execCommand.Name, ExecCommandToolName)
 	}
-	for _, required := range []string{
-		"foreground, non-interactive Bash command",
-		"independent shell state",
-		"bounded stdout/stderr",
-	} {
-		if !strings.Contains(bash.Description, required) {
-			t.Fatalf("bash description missing %q: %q", required, bash.Description)
+	if execCommand.RiskLevel != "critical" {
+		t.Fatalf("exec command risk level = %q, want critical", execCommand.RiskLevel)
+	}
+	if !strings.Contains(execCommand.Description, "Runs a command in a PTY, returning output or a session ID for ongoing interaction.") {
+		t.Fatalf("exec command description = %q", execCommand.Description)
+	}
+	properties, ok := execCommand.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("exec command schema properties = %#v", execCommand.InputSchema["properties"])
+	}
+	required, ok := execCommand.InputSchema["required"].([]string)
+	if !ok || !reflect.DeepEqual(required, []string{"cmd"}) {
+		t.Fatalf("exec command required = %#v, want cmd", execCommand.InputSchema["required"])
+	}
+	wantDescriptions := map[string]string{
+		"cmd":                 "Shell command to execute.",
+		"workdir":             "Working directory for the command. Defaults to the turn cwd.",
+		"shell":               "Shell binary to launch. Defaults to the user's default shell.",
+		"login":               "True runs the shell with -l/-i semantics; false disables them. Defaults to true.",
+		"tty":                 "True allocates a PTY for the command; false or omitted uses plain pipes.",
+		"yield_time_ms":       "Wait before yielding output.",
+		"max_output_tokens":   "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.",
+		"sandbox_permissions": "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
+		"justification":       "User-facing approval question for `require_escalated`; omit otherwise.",
+		"prefix_rule":         "Reusable approval prefix for `cmd`, only with `sandbox_permissions: \"require_escalated\"`; for example [\"git\", \"pull\"].",
+	}
+	for name, want := range wantDescriptions {
+		property, ok := properties[name].(map[string]any)
+		if !ok {
+			t.Fatalf("exec command property %s = %#v", name, properties[name])
+		}
+		description, _ := property["description"].(string)
+		if !strings.Contains(description, want) {
+			t.Fatalf("exec command property %s description = %q, want %q", name, description, want)
 		}
 	}
-	properties, ok := bash.InputSchema["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("bash schema properties = %#v", bash.InputSchema["properties"])
-	}
-	command, ok := properties["command"].(map[string]any)
-	if !ok {
-		t.Fatalf("bash command schema = %#v", properties["command"])
-	}
-	commandDescription, _ := command["description"].(string)
-	if strings.TrimSpace(commandDescription) == "" {
-		t.Fatalf("bash command description should explain foreground execution: %q", commandDescription)
-	}
-	if _, ok := properties["timeout"].(map[string]any); !ok {
-		t.Fatalf("bash timeout schema = %#v", properties["timeout"])
-	}
-	if len(properties) != 2 {
-		t.Fatalf("bash properties = %#v, want command and timeout only", properties)
+	if len(properties) != len(wantDescriptions) {
+		t.Fatalf("exec command properties = %#v", properties)
 	}
 }
 

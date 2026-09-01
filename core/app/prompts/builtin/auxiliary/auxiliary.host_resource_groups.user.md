@@ -1,8 +1,8 @@
 ---
 schema: aivo.prompt/v1
-id: auxiliary.host_tool_groups.user
+id: auxiliary.host_resource_groups.user
 category: auxiliary
-title: Host Tool Group Candidates
+title: Host Resource Group Candidates
 enabled: true
 ---
 

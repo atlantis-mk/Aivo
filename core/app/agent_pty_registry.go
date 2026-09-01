@@ -220,7 +220,7 @@ func (r *AgentPTYRegistry) Start(ctx context.Context, request SandboxRequest, ro
 	}
 	rows, cols = normalizeTerminalSize(rows, cols)
 	shell := firstNonEmpty(strings.TrimSpace(request.Shell), defaultShell())
-	cmd := exec.Command(shell, "-lc", command)
+	cmd := exec.Command(shell, shellCommandArgs(shell, command, request.LoginShell)...)
 	cmd.Dir = cwd
 	controlRead, controlWrite, err := os.Pipe()
 	if err != nil {

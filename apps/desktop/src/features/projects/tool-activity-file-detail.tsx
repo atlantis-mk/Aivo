@@ -26,37 +26,39 @@ export function FileActivityDetail({
   const { endRef, scrollAreaRef } = useFollowScrollToEnd(followScrollKey);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-border/70 px-1 py-1.5">
-        <FileActivityHeader onApplyFileState={onApplyFileState} tab={tab} />
-        {tab.revertReason ? (
-          <div className="mt-1 px-1 text-[11px] text-muted-foreground">
-            {tab.revertReason}
-          </div>
-        ) : null}
-      </div>
-      <ScrollArea className="min-h-0 flex-1" ref={scrollAreaRef}>
-        <div className="flex min-h-full flex-col gap-3">
-          {tab.error ? <ErrorBlock message={tab.error} /> : null}
-          {body ? (
-            <pre className="min-h-0 whitespace-pre-wrap break-words bg-muted/25 p-2 font-mono text-[11px] leading-relaxed">
-              {body.split("\n").map((line, index) => (
-                <span
-                  className={cn("block min-h-[1.35em]", diffLineClass(line))}
-                  key={`${index}:${line}`}
-                >
-                  {line || " "}
-                </span>
-              ))}
-            </pre>
-          ) : (
-            <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
-              暂无可显示内容
+    <div className="flex h-full min-h-0 flex-col bg-background p-2">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-foreground/[0.03]">
+        <div className="shrink-0 px-4 pt-3 pb-2">
+          <FileActivityHeader onApplyFileState={onApplyFileState} tab={tab} />
+          {tab.revertReason ? (
+            <div className="mt-1 px-1 text-[11px] text-muted-foreground">
+              {tab.revertReason}
             </div>
-          )}
-          <div ref={endRef} />
+          ) : null}
         </div>
-      </ScrollArea>
+        <ScrollArea className="min-h-0 flex-1" ref={scrollAreaRef}>
+          <div className="flex min-h-full flex-col gap-3 px-4 pb-4 pt-1">
+            {tab.error ? <ErrorBlock message={tab.error} /> : null}
+            {body ? (
+              <pre className="min-h-0 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+                {body.split("\n").map((line, index) => (
+                  <span
+                    className={cn("block min-h-[1.35em]", diffLineClass(line))}
+                    key={`${index}:${line}`}
+                  >
+                    {line || " "}
+                  </span>
+                ))}
+              </pre>
+            ) : (
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
+                暂无可显示内容
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+        </ScrollArea>
+      </section>
     </div>
   );
 }

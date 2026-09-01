@@ -92,3 +92,52 @@ func chatCompletionsReasoningEffort(effort string) string {
 		return ""
 	}
 }
+
+func applyOpenAIChatCompletionsRequestDefaults(body map[string]any, reasoningEffort string) {
+	if body == nil {
+		return
+	}
+	ensureOpenAIChatStreamOptions(body)
+	if effort := stringParamValue(body["reasoningEffort"]); effort != "" {
+		if normalized := chatCompletionsReasoningEffort(effort); normalized != "" {
+			body["reasoning_effort"] = normalized
+		}
+		delete(body, "reasoningEffort")
+	}
+	if effort := stringParamValue(body["reasoning_effort"]); effort != "" {
+		if normalized := chatCompletionsReasoningEffort(effort); normalized != "" {
+			body["reasoning_effort"] = normalized
+		}
+	} else if strings.TrimSpace(reasoningEffort) != "" {
+		if effort := chatCompletionsReasoningEffort(reasoningEffort); effort != "" {
+			body["reasoning_effort"] = effort
+		}
+	}
+	delete(body, "reasoningSummary")
+	delete(body, "reasoning_summary")
+	delete(body, "textVerbosity")
+	delete(body, "text_verbosity")
+}
+
+func ensureOpenAIChatStreamOptions(body map[string]any) {
+	if stream, ok := body["stream"].(bool); ok && !stream {
+		return
+	}
+	switch options := body["stream_options"].(type) {
+	case map[string]any:
+		if _, ok := options["include_usage"]; !ok {
+			options["include_usage"] = true
+		}
+	case map[string]bool:
+		converted := map[string]any{}
+		for key, value := range options {
+			converted[key] = value
+		}
+		if _, ok := converted["include_usage"]; !ok {
+			converted["include_usage"] = true
+		}
+		body["stream_options"] = converted
+	default:
+		body["stream_options"] = map[string]any{"include_usage": true}
+	}
+}

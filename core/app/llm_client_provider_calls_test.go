@@ -30,6 +30,10 @@ func TestCallOpenAICompatibleUsesChatCompletionsStream(t *testing.T) {
 		if stream, _ := body["stream"].(bool); !stream {
 			t.Fatalf("stream = %#v, want true", body["stream"])
 		}
+		streamOptions, _ := body["stream_options"].(map[string]any)
+		if streamOptions["include_usage"] != true {
+			t.Fatalf("stream_options = %#v, want include_usage true", body["stream_options"])
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
 	}))
@@ -44,6 +48,63 @@ func TestCallOpenAICompatibleUsesChatCompletionsStream(t *testing.T) {
 		[]llmChatMessage{{Role: "user", Text: "hello"}},
 		nil,
 		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleResponsesUsesCodexRequestControls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		reasoning, _ := body["reasoning"].(map[string]any)
+		if reasoning["effort"] != "max" || reasoning["summary"] != "auto" {
+			t.Fatalf("reasoning = %#v", reasoning)
+		}
+		text, _ := body["text"].(map[string]any)
+		if text["verbosity"] != "low" {
+			t.Fatalf("text = %#v", text)
+		}
+		includes, _ := body["include"].([]any)
+		if len(includes) != 2 || includes[0] != "web_search_call.action.sources" || includes[1] != "reasoning.encrypted_content" {
+			t.Fatalf("include = %#v", body["include"])
+		}
+		if _, ok := body["reasoningEffort"]; ok {
+			t.Fatalf("body retained reasoningEffort alias: %#v", body)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{
+			ID: "openai", Type: "openai", BaseURL: server.URL,
+			RequestParams: map[string]any{
+				"reasoningEffort": "ultra",
+				"textVerbosity":   "low",
+				"include":         []any{"web_search_call.action.sources"},
+			},
+		},
+		domain.ModelRef{ProviderID: "openai", ModelID: "gpt-5.5"},
+		llmCredential{APIKey: "test-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		nil,
+		"low",
 		"",
 		nil,
 		nil,

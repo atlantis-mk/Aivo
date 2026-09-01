@@ -7,6 +7,7 @@ const (
 	SkillSourceAivo        = "aivo"
 	SkillSourceClaude      = "claude"
 	SkillSourceAgents      = "agents"
+	SkillSourceAivoSystem  = "aivo-system"
 	SkillSourceCodex       = "codex"
 	SkillSourceCodexSystem = "codex-system"
 	SkillSourceOpenCode    = "opencode"
@@ -15,21 +16,28 @@ const (
 	SkillCandidateStatusImported = "imported"
 	SkillCandidateStatusIgnored  = "ignored"
 	SkillCandidateStatusConflict = "conflict"
+
+	SkillActionActivate   = "activate"
+	SkillActionSetEnabled = "set_enabled"
+	SkillActionEdit       = "edit"
+	SkillActionDelete     = "delete"
 )
 
 type SkillEntry struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Scope       string            `json:"scope"`
-	Source      string            `json:"source"`
-	RootPath    string            `json:"rootPath"`
-	SkillPath   string            `json:"skillPath"`
-	ContentHash string            `json:"contentHash"`
-	Enabled     bool              `json:"enabled"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	TimeCreated string            `json:"timeCreated"`
-	TimeUpdated string            `json:"timeUpdated"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	Scope          string              `json:"scope"`
+	Source         string              `json:"source"`
+	RootPath       string              `json:"rootPath"`
+	SkillPath      string              `json:"skillPath"`
+	ContentHash    string              `json:"contentHash"`
+	Enabled        bool                `json:"enabled"`
+	Metadata       map[string]string   `json:"metadata,omitempty"`
+	Actions        []string            `json:"actions,omitempty"`
+	SelectionGroup *ToolSelectionGroup `json:"selectionGroup,omitempty"`
+	TimeCreated    string              `json:"timeCreated"`
+	TimeUpdated    string              `json:"timeUpdated"`
 }
 
 type SkillSource struct {

@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	toolRegistrationExtensionID = "aivo.tools"
-	toolRegistrationMCPName     = "aivo_tools_register_mcp"
+	toolRegistrationExtensionID  = "aivo.tools"
+	toolRegistrationMCPName      = "aivo_tools_register_mcp"
+	toolRegistrationResourceName = "aivo_tools_register_resource"
 )
 
 //go:embed builtin_extensions/aivo.tools.json
@@ -49,6 +50,17 @@ func (c *toolRegistrationBuiltinExtensionClient) Execute(ctx context.Context, na
 		if len(toolNames) > 0 {
 			content += " Available tools: " + strings.Join(toolNames, ", ")
 		}
+		return domain.ToolResult{Name: name, OK: true, Content: content, Structured: projectStructuredResult(result)}, nil
+	case toolRegistrationResourceName:
+		var input domain.ResourceRegistrationProposalInput
+		if err := decodeStrictToolArgs(args, &input); err != nil {
+			return primitiveError(name, "invalid_arguments", err), nil
+		}
+		result, err := c.service.commitResourceRegistrationProposal(ctx, input, execCtx)
+		if err != nil {
+			return primitiveError(name, resourceRegistrationErrorCode(err), errors.New(err.Error())), nil
+		}
+		content := fmt.Sprintf("Installed Skill %s into Aivo-managed %s Skill storage with %d files.", result.Name, result.Scope, result.FileCount)
 		return domain.ToolResult{Name: name, OK: true, Content: content, Structured: projectStructuredResult(result)}, nil
 	default:
 		return primitiveError(name, "invalid_arguments", errors.New("unknown tool registration operation")), nil

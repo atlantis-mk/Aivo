@@ -78,7 +78,7 @@ function commandEntryFromStructured(
         : "none",
     leaseVersion: numberValue(structured?.leaseVersion),
     command: stringValue(structured?.command) || fallbackCommand,
-    cwd: stringValue(structured?.cwd) || stringArg(args, "cwd"),
+    cwd: stringValue(structured?.cwd) || stringArg(args, "workdir"),
     status:
       structured?.status === "running" || structured?.status === "waiting_input"
         ? "running"
@@ -119,8 +119,8 @@ function agentTerminalInputRequest(value: unknown): AgentTerminalInputRequest | 
 function commandFromToolArgs(toolCall: domain.ToolCall) {
   const args = toolCall.arguments ?? {};
   switch (toolCall.name) {
-    case "bash":
-      return stringArg(args, "command") || "bash";
+    case "exec_command":
+      return stringArg(args, "cmd") || "exec_command";
     case "run_tests":
       return [
         stringArg(args, "target") || "all",

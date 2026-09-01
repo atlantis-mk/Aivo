@@ -1,0 +1,35 @@
+schema: "2"
+id: "CHG-2026-065-full-access-registration-tools"
+title: "Let full access cover registration tools"
+type: "security"
+status: "Done"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Change the explicit full-access permission mode so it covers trusted conversational registration tools while preserving validation, stale proposal checks, and deterministic denial paths."
+requirements:
+  - "REQ-TOOL-001"
+  - "REQ-EXTENSION-001"
+  - "REQ-EXTENSION-002"
+tests:
+  - "AT-TOOL-001"
+  - "AT-EXTENSION-001"
+  - "AT-EXTENSION-002"
+  - "CT-SECURITY-001"
+adrs:
+  - "ADR-0035"
+context_refs:
+  - "docs/02-scope-matrix.md#Scope changes"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-001"
+  - "docs/03-functional-requirements.md#REQ-EXTENSION-002"
+  - "docs/06-security-privacy.md#Execution safety"
+related_changes:
+  - "CHG-2026-058-remove-auto-approval"
+  - "CHG-2026-063-persist-permission-mode-preference"
+boundaries:
+  - "Core permission evaluation for trusted conversational registration tools"
+  - "MCP and Skill resource proposal confirmation behavior"
+risks:
+  - "Full-access sessions can install trusted registration proposals without an additional native approval prompt."
+  - "Skipping the popup must not skip proposal validation, integrity checks, replay refusal, or deterministic denials."
+next: []

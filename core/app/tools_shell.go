@@ -6,113 +6,101 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
 	"aivo/core/domain"
 )
 
-const shellNamespaceDescription = "Foreground non-interactive Bash execution in the active execution environment."
+const shellNamespaceDescription = "Foreground non-interactive shell execution in the active execution environment; Windows uses PowerShell first and Command Prompt as fallback."
 
-type BashTool struct {
-	workspaceRoot string
-	runner        SandboxRunner
-	processes     *ShellProcessRegistry
-	agentShells   *AgentShellRegistry
-	loadSavedCWD  func(sessionID string, workspaceRoot string) string
-	saveCWD       func(sessionID string, workspaceRoot string, cwd string)
-	outputSink    ShellOutputSink
-	environment   ExecutionEnvironment
-}
-
-func NewBashTool(workspaceRoot string, runner SandboxRunner, outputSink ...ShellOutputSink) *BashTool {
-	if runner == nil {
-		runner = NewLocalSandboxRunner()
+func resolveCommandShell(workspaceRoot string, requested string) (string, error) {
+	if requested = strings.TrimSpace(requested); requested != "" {
+		return resolveShellExecutable(requested)
 	}
-	var sink ShellOutputSink
-	if len(outputSink) > 0 {
-		sink = outputSink[0]
-	}
-	return &BashTool{workspaceRoot: workspaceRoot, runner: runner, processes: defaultShellProcessRegistry, agentShells: defaultAgentShellRegistry, outputSink: sink}
-}
-
-func (t *BashTool) SetPersistentCWDHooks(load func(sessionID string, workspaceRoot string) string, save func(sessionID string, workspaceRoot string, cwd string)) {
-	t.loadSavedCWD = load
-	t.saveCWD = save
-}
-
-func (t *BashTool) Spec() domain.ToolSpec {
-	return domain.ToolSpec{
-		Name:                 "bash",
-		Description:          "Run one foreground, non-interactive Bash command in the active execution environment. Each call has independent shell state and bounded stdout/stderr.",
-		Namespace:            filesystemNamespace,
-		NamespaceDescription: shellNamespaceDescription,
-		Capability:           "shell.exec",
-		RiskLevel:            "critical",
-		Category:             "shell",
-		Toolsets:             []string{"shell", "coding"},
-		RequiresWorkspace:    true,
-		ImplementationHash:   executionEnvironmentHash(t.environment),
-		InputSchema: map[string]any{
-			"type":                 "object",
-			"additionalProperties": false,
-			"properties": map[string]any{
-				"command": map[string]any{"type": "string", "minLength": 1, "description": "One foreground, non-interactive Bash command. Shell state does not persist between calls."},
-				"timeout": map[string]any{"type": "integer", "minimum": 1, "maximum": int(maxCommandTimeout.Seconds()), "description": "Timeout in seconds. Defaults to 30 and caps at 300."},
-			},
-			"required": []string{"command"},
-		},
-	}
-}
-
-func (t *BashTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
-	if t.environment != nil {
-		return t.environment.ExecutePrimitive(ctx, "bash", args, execCtx)
-	}
-	input, err := parsePrimitiveBashArgs(args)
-	if err != nil {
-		return primitiveError("bash", "invalid_arguments", err)
-	}
-	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
-	prepared, err := prepareShellCommand(workspaceRoot, execCtx, "bash", input.Command, "", input.TimeoutSeconds, "", "foreground", "", nil)
-	if err != nil {
-		return commandToolError("bash", prepared, err)
-	}
-	bashPath, err := resolveBashExecutable(workspaceRoot)
-	if err != nil {
-		return primitiveError("bash", "bash_unavailable", err)
-	}
-	prepared.request.Shell = bashPath
-	prepared.request.OutputPolicy.MaxChars = defaultStreamMaxChars
-	prepared.request.OutputSink = t.outputSink
-	result, runErr := t.runner.Run(ctx, prepared.request)
-	return commandToolResult("bash", prepared, result, runErr)
-}
-
-func resolveBashExecutable(workspaceRoot string) (string, error) {
-	if configured := strings.TrimSpace(loadEffectiveRuntimeConfig(workspaceRoot).Config.ExecutionEnvironment.BashPath); configured != "" {
-		info, err := os.Stat(configured)
-		if err != nil || info.IsDir() {
-			return "", errors.New("configured Bash executable is unavailable")
-		}
-		return configured, nil
-	}
-	if configured := strings.TrimSpace(os.Getenv("AIVO_BASH_PATH")); configured != "" {
-		info, err := os.Stat(configured)
-		if err != nil || info.IsDir() {
-			return "", errors.New("configured Bash executable is unavailable")
-		}
-		return configured, nil
-	}
-	name := "bash"
 	if runtime.GOOS == "windows" {
-		name = "bash.exe"
+		for _, fallback := range windowsShellCandidates() {
+			if path, err := exec.LookPath(fallback); err == nil {
+				return path, nil
+			}
+		}
+		return "", errors.New("no supported Windows shell is available; install PowerShell or pass shell explicitly")
 	}
-	path, err := exec.LookPath(name)
+	if shell := strings.TrimSpace(os.Getenv("SHELL")); shell != "" {
+		if path, err := resolveShellExecutable(shell); err == nil {
+			return path, nil
+		}
+	}
+	for _, fallback := range []string{"/bin/zsh", "/bin/bash", "/bin/sh"} {
+		if path, err := resolveShellExecutable(fallback); err == nil {
+			return path, nil
+		}
+	}
+	if path, err := exec.LookPath("sh"); err == nil {
+		return path, nil
+	}
+	return "", errors.New("no supported command shell is available; pass shell explicitly")
+}
+
+func resolveShellExecutable(shell string) (string, error) {
+	shell = strings.TrimSpace(shell)
+	if shell == "" {
+		return "", errors.New("shell is required")
+	}
+	if !supportedCommandShellName(shellExecutableName(shell)) {
+		return "", errors.New("unsupported shell executable")
+	}
+	if filepath.IsAbs(shell) || strings.ContainsAny(shell, `/\`) {
+		info, err := os.Stat(shell)
+		if err != nil || info.IsDir() {
+			return "", errors.New("shell executable is unavailable")
+		}
+		return shell, nil
+	}
+	path, err := exec.LookPath(shell)
 	if err != nil {
-		return "", errors.New("Bash is unavailable; configure a Bash-compatible executable")
+		return "", errors.New("shell executable is unavailable")
 	}
 	return path, nil
+}
+
+func supportedCommandShellName(name string) bool {
+	switch name {
+	case "zsh", "zsh.exe", "bash", "bash.exe", "sh", "sh.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "cmd", "cmd.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func windowsShellCandidates() []string {
+	return []string{"powershell.exe", "pwsh.exe", "cmd.exe"}
+}
+
+func shellRuntimeInstruction(workspaceRoot string) string {
+	shell, err := resolveCommandShell(workspaceRoot, "")
+	if err != nil {
+		return "The `exec_command` tool has no available command shell in this environment. Do not call it until the environment is configured."
+	}
+	return shellRuntimeInstructionForExecutable(shell)
+}
+
+func shellRuntimeInstructionForExecutable(shell string) string {
+	switch shellExecutableName(shell) {
+	case "powershell", "powershell.exe", "pwsh", "pwsh.exe":
+		return "The `exec_command` tool executes through PowerShell in this environment. Write PowerShell syntax only; do not use Bash-specific syntax. The command is non-interactive."
+	case "cmd", "cmd.exe":
+		return "The `exec_command` tool executes through Windows Command Prompt in this environment. Write cmd.exe syntax only; do not use Bash or PowerShell syntax. The command is non-interactive."
+	case "zsh", "zsh.exe":
+		return "The `exec_command` tool executes through zsh in this environment. Write zsh-compatible shell syntax. The command is non-interactive. In zsh, unmatched globs fail before the command runs; prefer find or rg for file iteration, or enable scoped null_glob intentionally."
+	case "bash", "bash.exe":
+		return "The `exec_command` tool executes through Bash in this environment. Write Bash syntax. The command is non-interactive."
+	case "sh", "sh.exe":
+		return "The `exec_command` tool executes through sh in this environment. Write POSIX sh syntax. The command is non-interactive."
+	default:
+		return "The `exec_command` tool executes through a POSIX-compatible shell in this environment. Write portable shell syntax. The command is non-interactive."
+	}
 }
 
 type RunTestsTool struct {
@@ -135,7 +123,7 @@ func NewRunTestsTool(workspaceRoot string, runner SandboxRunner, outputSink ...S
 func (t *RunTestsTool) Spec() domain.ToolSpec {
 	return domain.ToolSpec{
 		Name:                 "run_tests",
-		Description:          "Preferred tool for declared test, lint, or build commands in this workspace. Use this instead of bash when target and kind can express the operation. This tool never accepts arbitrary shell text; it maps target and kind to known commands in code and runs through the same command policy, sandbox, timeout, and permission flow as bash.",
+		Description:          "Preferred tool for declared test, lint, or build commands in this workspace. Use this instead of exec_command when target and kind can express the operation. This tool never accepts arbitrary shell text; it maps target and kind to known commands in code and runs through the same command policy, sandbox, timeout, and permission flow as exec_command.",
 		Namespace:            filesystemNamespace,
 		NamespaceDescription: shellNamespaceDescription,
 		Capability:           "shell.test",
@@ -169,8 +157,13 @@ func (t *RunTestsTool) Execute(ctx context.Context, args json.RawMessage, execCt
 	ok := true
 	var firstErr error
 	var retained []string
+	workspaceRoot := toolWorkspaceRoot(t.workspaceRoot, execCtx)
+	shell, err := resolveCommandShell(workspaceRoot, "")
+	if err != nil {
+		return primitiveError("run_tests", "bash_unavailable", err)
+	}
 	for index, command := range commands {
-		prepared, err := prepareShellCommand(toolWorkspaceRoot(t.workspaceRoot, execCtx), execCtx, "run_tests", command, "", input.TimeoutSeconds, "deny", "foreground", "", nil)
+		prepared, err := prepareShellCommand(workspaceRoot, execCtx, "run_tests", command, "", input.TimeoutSeconds, "deny", "foreground", "", shell, false, nil)
 		if err != nil {
 			return commandToolError("run_tests", prepared, err)
 		}

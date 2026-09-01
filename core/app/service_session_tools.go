@@ -9,7 +9,7 @@ import (
 	"aivo/core/domain"
 )
 
-func (s *Service) preCallToolCandidates(ctx context.Context, sessionID, turnID string, registry *Registry, specs []domain.ToolSpec) (map[string]string, []domain.ToolCatalogEntry) {
+func (s *Service) snapshotToolCandidates(ctx context.Context, sessionID, turnID string, registry *Registry, specs []domain.ToolSpec) (map[string]string, []domain.ToolCatalogEntry) {
 	_ = turnID
 	activated := map[string]string{}
 	for name := range s.rememberedDeferredTools(ctx, sessionID) {
@@ -78,6 +78,16 @@ func (s *Service) replaceAutoSelectedTools(ctx context.Context, sessionID string
 	return err
 }
 
+func markAutoSelectedToolsInitialized(metadata map[string]any) {
+	if metadata == nil {
+		return
+	}
+	if _, ok := metadata[sessionMetadataAutoSelectedTools]; !ok {
+		metadata[sessionMetadataAutoSelectedTools] = []string{}
+	}
+	metadata[sessionMetadataAutoToolsInitialized] = true
+}
+
 func (s *Service) rememberedDeferredTools(ctx context.Context, sessionID string) map[string]bool {
 	remembered := map[string]bool{}
 	if s == nil || s.store == nil || strings.TrimSpace(sessionID) == "" {
@@ -136,6 +146,7 @@ func (s *Service) SetSessionActiveTools(ctx context.Context, input domain.Sessio
 	}
 	state.Metadata[sessionMetadataRememberedDeferredTools] = names
 	state.Metadata[sessionMetadataDisabledCoreTools] = []string{}
+	markAutoSelectedToolsInitialized(state.Metadata)
 	if _, err := s.store.UpsertSessionExecutionState(ctx, state); err != nil {
 		return domain.SessionActiveToolsResult{}, err
 	}
@@ -200,5 +211,5 @@ func (s *Service) disabledCoreTools(ctx context.Context, sessionID string) map[s
 }
 
 func coreToolNames() []string {
-	return []string{"read", "bash", "edit", "write", "update_plan", "ask_user"}
+	return []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user"}
 }

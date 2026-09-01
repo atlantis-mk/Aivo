@@ -1,5 +1,5 @@
 id: "CHG-2026-036-visible-precall-tool-selection"
-title: "Show pre-call automatic tool selection in the conversation"
+title: "Show resource-resolution disclosures in the conversation"
 type: "feature"
 profile: "controlled"
 spec_delta: "behavior_change"
@@ -32,15 +32,13 @@ related_changes:
   - "CHG-2026-034-source-group-tool-selection"
   - "CHG-2026-037-intent-scoped-tool-injection"
 affected_surfaces:
-  - "Host pre-call automatic tool selection"
-  - "session event history"
+  - "Host resource_resolve result disclosure"
   - "desktop conversation timeline"
 affected_formats:
-  - "typed system-note payload"
-  - "local session-event created/updated stream"
+  - "resource_resolve typed resource-summary result"
   - "renderer React composition"
 affected_versions:
   - "0.0.0-development"
-security_impact: "Persists and displays only the bounded selection state plus typed extension/MCP/tool/skill resource summaries and lifetime; concrete source-member names, candidate catalogs, descriptions, schemas, auxiliary output, prompts, errors, and credentials remain private"
-migration: "none; the existing session-event payload stores the new bounded summary and historical events remain unchanged"
+security_impact: "Displays only bounded selection state plus typed extension/MCP/tool resource summaries and lifetime; concrete source-member names, candidate catalogs, descriptions, schemas, auxiliary output, prompts, errors, Skill or extension-context content, and credentials remain private"
+migration: "none; the former pre-call system-note payload is removed without compatibility rendering"
 supersedes: []

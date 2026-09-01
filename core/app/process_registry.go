@@ -71,7 +71,8 @@ func (r *ShellProcessRegistry) Start(ctx context.Context, request SandboxRequest
 		return SandboxResult{}, &SandboxError{Code: SandboxErrorPolicyDenied, Message: "command is required"}
 	}
 	shell := firstNonEmpty(request.Shell, defaultShell())
-	cmd := exec.CommandContext(context.Background(), shell, "-c", command)
+	argv := shellCommandArgs(shell, command)
+	cmd := exec.CommandContext(context.Background(), shell, argv...)
 	cmd.Dir = cwd
 	cmd.Env = SanitizedEnvironment(workspaceRoot, request.EnvAllowlist, request.Env, request.EnvOverrides)
 	if request.Stdin != "" {
@@ -104,7 +105,7 @@ func (r *ShellProcessRegistry) Start(ctx context.Context, request SandboxRequest
 	r.mu.Unlock()
 	go r.wait(id, record, request)
 	return SandboxResult{
-		Command: command, Argv: append([]string{shell, "-c"}, command), Mode: "background",
+		Command: command, Argv: append([]string{shell}, argv...), Mode: "background",
 		CWD: cwd, ExitCode: 0, Stdout: "", Stderr: "", Backend: "local", NetworkPolicy: request.NetworkPolicy,
 		ProcessID: cmd.Process.Pid, ProcessRef: id,
 	}, nil

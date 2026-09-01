@@ -15,7 +15,6 @@ type RuntimeConfig struct {
 }
 
 type ExecutionEnvironmentConfig struct {
-	BashPath string `json:"bashPath,omitempty"`
 }
 
 type CommandTemplateDefinition struct {

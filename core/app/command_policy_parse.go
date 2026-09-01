@@ -65,3 +65,13 @@ func commandHasMetacharacters(command string) bool {
 	}
 	return false
 }
+
+func shellHeredocTokenIndex(tokens []string) int {
+	for index, token := range tokens {
+		token = strings.TrimSpace(token)
+		if strings.HasPrefix(token, "<<") {
+			return index
+		}
+	}
+	return -1
+}

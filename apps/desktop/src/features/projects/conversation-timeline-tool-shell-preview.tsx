@@ -16,7 +16,7 @@ export function InlineShellPreview({
   if (entries.length === 0) return null;
 
   return (
-    <div className="max-h-56 overflow-auto rounded-md bg-muted/50 px-3 py-2">
+    <div className="max-h-56 overflow-auto">
       <div className="flex min-w-0 flex-col gap-2">
         {entries.map((entry) => (
           <div

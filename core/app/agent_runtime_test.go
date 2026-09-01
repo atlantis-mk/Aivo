@@ -111,7 +111,7 @@ func TestAgentCatalogDefaults(t *testing.T) {
 	}
 	for _, required := range []string{
 		"assistant mode",
-		"Use read, bash, edit, and write",
+		"Use read, exec_command, write_stdin, edit, and write",
 		"runtime permissions",
 		"Host activates an extension",
 	} {
@@ -173,7 +173,7 @@ func TestAssistantModeWildcardToolsetsExposeAllTools(t *testing.T) {
 	registry := NewRegistry()
 	for _, tool := range []domain.Tool{
 		agentSpecTool{spec: domain.ToolSpec{Name: "read_file", Toolsets: []string{"safe", "coding"}}},
-		agentSpecTool{spec: domain.ToolSpec{Name: "bash", Toolsets: []string{"shell", "coding"}}},
+		agentSpecTool{spec: domain.ToolSpec{Name: ExecCommandToolName, Toolsets: []string{"shell", "coding"}}},
 		agentSpecTool{spec: domain.ToolSpec{Name: "extension_echo", Toolsets: []string{"extension"}}},
 		agentSpecTool{spec: domain.ToolSpec{Name: "mcp_fetch", Toolsets: []string{"mcp"}}},
 	} {
@@ -364,7 +364,7 @@ func TestPlannerVisibleToolSpecsExcludeMutation(t *testing.T) {
 		{Name: "read_file", Capability: "filesystem.read"},
 		{Name: "write_file", Capability: "filesystem.write"},
 		{Name: "run_tests", Capability: "shell.test"},
-		{Name: "bash", Capability: "shell.exec"},
+		{Name: ExecCommandToolName, Capability: "shell.exec"},
 		{Name: "automation_create_job", Capability: "scheduler.write", Category: "automation"},
 	}
 	visible := visibleToolSpecsForMode(domain.AgentModePlan, specs)
@@ -375,7 +375,7 @@ func TestPlannerVisibleToolSpecsExcludeMutation(t *testing.T) {
 	if !names["read_file"] || len(names) != 1 {
 		t.Fatalf("plan visible tools = %#v, want only read_file", visible)
 	}
-	if names["write_file"] || names["run_tests"] || names["bash"] {
+	if names["write_file"] || names["run_tests"] || names[ExecCommandToolName] {
 		t.Fatalf("plan exposed mutation tools: %#v", visible)
 	}
 
@@ -384,7 +384,7 @@ func TestPlannerVisibleToolSpecsExcludeMutation(t *testing.T) {
 	for _, spec := range visible {
 		names[spec.Name] = true
 	}
-	if !names["read_file"] || !names["run_tests"] || !names["bash"] {
+	if !names["read_file"] || !names["run_tests"] || !names[ExecCommandToolName] {
 		t.Fatalf("debug missing diagnostic tools: %#v", visible)
 	}
 	if names["write_file"] || names["automation_create_job"] {

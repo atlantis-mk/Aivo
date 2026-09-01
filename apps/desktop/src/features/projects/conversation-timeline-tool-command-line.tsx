@@ -141,7 +141,7 @@ export function ToolCallCommandLine({
     failed && "text-destructive",
     running && "text-muted-foreground",
     pendingApproval && "text-amber-700 dark:text-amber-300",
-    resultDetailsExpandable && "cursor-pointer rounded-sm hover:bg-muted/50",
+    resultDetailsExpandable && "cursor-pointer rounded-md hover:bg-muted/50",
   );
   const statusLineContent = (
     <>
@@ -182,54 +182,61 @@ export function ToolCallCommandLine({
   );
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div
+      className="my-2 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-foreground/[0.03]"
+      data-assistant-hover-ignore="true"
+    >
       {showCommandLine || showStatusLine ? (
-        resultDetailsExpandable ? (
-          <button
-            aria-expanded={resultDetailsOpen}
-            className={statusLineClassName}
-            onClick={() => setResultDetailsOpen((current) => !current)}
-            type="button"
-          >
-            {statusLineContent}
-          </button>
-        ) : (
-          <div className={statusLineClassName}>{statusLineContent}</div>
-        )
-      ) : null}
-      <AnimatedDisclosure open={showFileChanges}>
-        <ToolFileChangeLines files={fileChanges} live={running} />
-      </AnimatedDisclosure>
-      <AnimatedDisclosure open={showInlineResult}>
-        {resultText && commandTool ? (
-          <InlineShellPreview resultText={resultText} toolCall={toolCall} />
-        ) : resultText ? (
-          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
-            {resultText}
-          </pre>
-        ) : null}
-      </AnimatedDisclosure>
-      {retainedRefs.length > 0 && (!skillTool || resultDetailsOpen) ? (
-        <div className="flex min-w-0 flex-col gap-1">
-          {retainedOutput?.loading && !retainedOutput.content ? (
-            <div className="text-xs text-muted-foreground">
-              加载完整输出...
-            </div>
-          ) : null}
-          {retainedOutput?.error ? (
-            <div className="text-xs text-destructive">
-              {retainedOutput.error}
-            </div>
-          ) : null}
-          <AnimatedDisclosure open={Boolean(retainedOutput?.content)}>
-            {retainedOutput?.content ? (
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
-                {retainedOutput.content}
-              </pre>
-            ) : null}
-          </AnimatedDisclosure>
+        <div className="min-h-11 px-4 pt-3 pb-2">
+          {resultDetailsExpandable ? (
+            <button
+              aria-expanded={resultDetailsOpen}
+              className={cn(statusLineClassName, "w-full")}
+              onClick={() => setResultDetailsOpen((current) => !current)}
+              type="button"
+            >
+              {statusLineContent}
+            </button>
+          ) : (
+            <div className={statusLineClassName}>{statusLineContent}</div>
+          )}
         </div>
       ) : null}
+      <div className="min-w-0 px-4 pb-4 pt-1">
+        <AnimatedDisclosure open={showFileChanges}>
+          <ToolFileChangeLines files={fileChanges} live={running} />
+        </AnimatedDisclosure>
+        <AnimatedDisclosure open={showInlineResult}>
+          {resultText && commandTool ? (
+            <InlineShellPreview resultText={resultText} toolCall={toolCall} />
+          ) : resultText ? (
+            <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
+              {resultText}
+            </pre>
+          ) : null}
+        </AnimatedDisclosure>
+        {retainedRefs.length > 0 && (!skillTool || resultDetailsOpen) ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            {retainedOutput?.loading && !retainedOutput.content ? (
+              <div className="text-xs text-muted-foreground">
+                加载完整输出...
+              </div>
+            ) : null}
+            {retainedOutput?.error ? (
+              <div className="text-xs text-destructive">
+                {retainedOutput.error}
+              </div>
+            ) : null}
+            <AnimatedDisclosure open={Boolean(retainedOutput?.content)}>
+              {retainedOutput?.content ? (
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
+                  {retainedOutput.content}
+                </pre>
+              ) : null}
+            </AnimatedDisclosure>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

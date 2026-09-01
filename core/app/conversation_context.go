@@ -124,7 +124,12 @@ func (s *Service) assembleConversationContext(ctx context.Context, sessionID str
 		tools, _ = s.store.ListToolCalls(ctx, session.ID)
 	}
 	pendingPermissions, _ := s.store.ListPermissionRequests(ctx, session.ID, domain.PermissionRequestStatusPending)
+	visibleSkills := s.visibleSkillsContext(ctx, session.ID)
 	activeSkills := s.activeSkillsContext(ctx, session.ID)
+	activeExtensionContexts := s.activeExtensionContextsContext(ctx, session.ID)
+	if strings.TrimSpace(activeExtensionContexts) != "" {
+		activeSkills = strings.TrimSpace(activeSkills + "\n\n" + activeExtensionContexts)
+	}
 	projectInstructions := resolveProjectInstructions(session.ProjectPath, opts.TargetPaths)
 	configuredInstructions := resolveConfiguredRuntimeInstructions(ctx, session.ProjectPath)
 	if configuredInstructions != "" {
@@ -132,7 +137,7 @@ func (s *Service) assembleConversationContext(ctx context.Context, sessionID str
 	}
 	liveTerminals := s.liveSessionTerminalsContext(session, codingContext)
 
-	sections := s.contextSectionCandidates(session, summary, checkpoint, codingContext, tools, pendingPermissions, activeSkills, projectInstructions, liveTerminals, older, tail, opts)
+	sections := s.contextSectionCandidates(session, summary, checkpoint, codingContext, tools, pendingPermissions, visibleSkills, activeSkills, projectInstructions, liveTerminals, older, tail, opts)
 	applied := applyConversationSectionBudget(sections, opts.SectionBudget)
 	var messages []domain.ChatMessage
 	if text := renderDynamicContext(applied.Sections); text != "" {
@@ -158,6 +163,7 @@ func (s *Service) contextSectionCandidates(
 	cc domain.CodingContext,
 	tools []domain.ToolCall,
 	pendingPermissions []domain.PermissionRequest,
+	visibleSkills string,
 	activeSkills string,
 	projectInstructions string,
 	liveTerminals string,
@@ -209,6 +215,9 @@ func (s *Service) contextSectionCandidates(
 	}
 	if len(pendingPermissions) > 0 {
 		sections = append(sections, contextSectionCandidate{Name: "pending_permissions", Content: renderPendingPermissions(pendingPermissions, pendingPermissionLimit), MaxChars: sectionToolMaxChars, Required: true})
+	}
+	if strings.TrimSpace(visibleSkills) != "" {
+		sections = append(sections, contextSectionCandidate{Name: "available_skills", Content: visibleSkills, MaxChars: sectionSummaryMaxChars, Required: true})
 	}
 	if strings.TrimSpace(activeSkills) != "" {
 		sections = append(sections, contextSectionCandidate{Name: "active_skills", Content: activeSkills, MaxChars: sectionSummaryMaxChars, Required: true})

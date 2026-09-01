@@ -14,34 +14,31 @@ import (
 )
 
 const (
-	hostInstructionSelectionLimit = 4
-	hostToolSelectionLimit        = 8
-	hostPreCallContextLimit       = 12000
 	hostCatalogPreparationTimeout = 8 * time.Second
 )
 
-func (s *Service) resolveSessionToolReplacement(ctx context.Context, request ToolResolveRequest) (ToolResolveDecision, error) {
-	candidates, err := s.filterGloballyVisibleToolCatalogEntries(ctx, request.Candidates)
+func (s *Service) resolveSessionResources(ctx context.Context, request ResourceResolveRequest) (ResourceResolveDecision, error) {
+	resolved, err := s.resolveHostResources(ctx, hostResourceResolveRequest{
+		SessionID:      request.SessionID,
+		TurnID:         request.TurnID,
+		Intent:         request.Intent,
+		Mode:           request.Mode,
+		AgentMode:      request.AgentMode,
+		WorkspaceRoot:  request.WorkspaceRoot,
+		ToolCandidates: request.Candidates,
+		Explicit:       true,
+		Required:       request.Required,
+	})
 	if err != nil {
-		return ToolResolveDecision{}, err
+		return ResourceResolveDecision{}, err
 	}
-	manual := s.rememberedDeferredTools(ctx, request.SessionID)
-	filtered := make([]domain.ToolCatalogEntry, 0, len(candidates))
-	for _, candidate := range candidates {
-		if !manual[candidate.Name] {
-			filtered = append(filtered, candidate)
-		}
-	}
-	request.Candidates = filtered
-	if len(request.Candidates) == 0 {
-		return ToolResolveDecision{Reason: "no globally visible eligible automatic tool candidates"}, nil
-	}
-	groups := hostToolGroupCandidates(request.Candidates)
-	if len(groups) == 0 {
-		return ToolResolveDecision{Reason: "no eligible grouped or individual tool candidates"}, nil
-	}
-	decision := s.resolveHostToolGroupsWithAuxiliaryModel(ctx, request.Intent, groups, false)
-	return ToolResolveDecision{Names: normalizeDeferredToolNames(decision.ToolNames), Reason: decision.Reason}, nil
+	return ResourceResolveDecision{
+		Names:           resolved.ToolNames,
+		ResourceKeys:    resolved.ResourceKeys,
+		ResourceContext: resolved.ResourceContext,
+		Resources:       resolved.Resources,
+		Reason:          resolved.Reason,
+	}, nil
 }
 
 type hostToolGroupCandidate struct {
@@ -53,22 +50,22 @@ type hostToolGroupCandidate struct {
 	Grouped     bool
 }
 
-type hostToolSelectionResource struct {
+type hostResourceSelectionResource struct {
 	Kind      string
 	ID        string
 	Name      string
 	ToolCount int
 }
 
-type hostToolSelectionIntent string
+type hostResourceSelectionIntent string
 
 const (
-	hostToolSelectionInspect hostToolSelectionIntent = "inspect"
-	hostToolSelectionUse     hostToolSelectionIntent = "use"
+	hostResourceSelectionInspect hostResourceSelectionIntent = "inspect"
+	hostResourceSelectionUse     hostResourceSelectionIntent = "use"
 )
 
 type hostToolGroupDecision struct {
-	Intent    hostToolSelectionIntent
+	Intent    hostResourceSelectionIntent
 	Groups    []hostToolGroupCandidate
 	ToolNames []string
 	Reason    string
@@ -81,25 +78,44 @@ type hostInstructionCandidate struct {
 	Description string
 	Source      string
 	Skill       *SkillResolveCandidate
+	SkillGroup  []SkillResolveCandidate
 	Context     *extensionContextCandidate
 }
 
 type hostInstructionDecision struct {
-	Keys                 []string
-	SkillInstructionKeys []string
-	Reason               string
+	Keys   []string
+	Reason string
 }
 
 type hostResourceDecision struct {
-	ToolNames            []string
-	ResourceKeys         []string
-	SkillInstructionKeys []string
-	Reason               string
+	ToolNames    []string
+	ResourceKeys []string
+	Reason       string
 }
 
-type hostPreCallResolution struct {
+type hostResourceResolution struct {
 	ToolActivations map[string]string
+	ToolNames       []string
+	ResourceKeys    []string
+	Resources       []hostResourceSelectionResource
+	ResourceContext string
+	Reason          string
 	Context         string
+}
+
+type hostResourceResolveRequest struct {
+	SessionID                string
+	TurnID                   string
+	Intent                   string
+	Mode                     string
+	AgentMode                string
+	WorkspaceRoot            string
+	Registry                 *Registry
+	Specs                    []domain.ToolSpec
+	ToolCandidates           []domain.ToolCatalogEntry
+	Explicit                 bool
+	Required                 bool
+	SkipInstructionSelection bool
 }
 
 // prepareEnabledToolCatalogs restores readiness/catalog state for sources the
@@ -136,100 +152,167 @@ func filterEligibleToolSpecs(registry *Registry, specs []domain.ToolSpec, failed
 	return out
 }
 
-func (s *Service) resolveHostPreCallResources(
+func (s *Service) resolveHostResources(
 	ctx context.Context,
-	sessionID string,
-	turnID string,
-	intent string,
-	agentMode string,
-	workspaceRoot string,
-	registry *Registry,
-	specs []domain.ToolSpec,
-) (hostPreCallResolution, error) {
-	toolActivations, toolCandidates := s.preCallToolCandidates(ctx, sessionID, turnID, registry, specs)
+	request hostResourceResolveRequest,
+) (hostResourceResolution, error) {
+	sessionID := strings.TrimSpace(request.SessionID)
+	intent := strings.TrimSpace(request.Intent)
+	mode := string(hostResourceSelectionUse)
+	if request.Explicit || strings.TrimSpace(request.Mode) != "" {
+		normalized, err := normalizeResourceResolveMode(request.Mode)
+		if err != nil {
+			return hostResourceResolution{}, err
+		}
+		mode = normalized
+	}
+	toolActivations := map[string]string{}
+	toolCandidates := request.ToolCandidates
+	if !request.Explicit {
+		toolActivations, toolCandidates = s.snapshotToolCandidates(ctx, sessionID, request.TurnID, request.Registry, request.Specs)
+	}
+	for name, source := range s.visibleSkillToolActivations(ctx, sessionID) {
+		if toolActivations[name] == "" {
+			toolActivations[name] = source
+		}
+	}
+	if !request.Explicit {
+		return hostResourceResolution{ToolActivations: toolActivations}, nil
+	}
 	filteredToolCandidates, eligibilityErr := s.filterGloballyVisibleToolCatalogEntries(ctx, toolCandidates)
 	if eligibilityErr == nil {
 		toolCandidates = filteredToolCandidates
 	} else {
 		toolCandidates = nil
 	}
-	_, autoInitialized := s.autoSelectedTools(ctx, sessionID)
-	skillCandidates, instructionCandidates := s.hostInstructionCandidates(ctx, workspaceRoot)
-	if isSkillInventoryIntent(intent) {
-		if !autoInitialized && eligibilityErr == nil {
-			_ = s.replaceAutoSelectedTools(ctx, sessionID, nil)
+	if request.Explicit {
+		manual := s.rememberedDeferredTools(ctx, sessionID)
+		filtered := make([]domain.ToolCatalogEntry, 0, len(toolCandidates))
+		for _, candidate := range toolCandidates {
+			if !manual[candidate.Name] {
+				filtered = append(filtered, candidate)
+			}
 		}
-		return hostPreCallResolution{ToolActivations: toolActivations, Context: renderHostSkillInventory(skillCandidates)}, nil
+		toolCandidates = filtered
 	}
-	if strings.TrimSpace(intent) == "" || (autoInitialized && len(toolCandidates) == 0 && len(instructionCandidates) == 0) {
-		return hostPreCallResolution{ToolActivations: toolActivations}, nil
+	if intent == "" {
+		return hostResourceResolution{ToolActivations: toolActivations}, nil
+	}
+	instructionCandidates := []hostInstructionCandidate{}
+	if !request.SkipInstructionSelection {
+		_, instructionCandidates = s.hostInstructionCandidates(ctx, request.WorkspaceRoot)
+	}
+	if request.Explicit {
+		if len(toolCandidates) == 0 && len(instructionCandidates) == 0 {
+			if !request.Required && mode == string(hostResourceSelectionUse) {
+				if err := s.replaceAutoSelectedTools(ctx, sessionID, nil); err != nil {
+					return hostResourceResolution{}, err
+				}
+			}
+			return hostResourceResolution{ToolActivations: toolActivations, Reason: "no globally visible eligible automatic tool or instruction resources"}, nil
+		}
 	}
 	toolGroups := hostToolGroupCandidates(toolCandidates)
-	var progressEventID string
-	if !autoInitialized && eligibilityErr == nil && len(toolGroups) > 0 && len(s.resolveAuxiliaryModels(ctx, nil)) > 0 {
-		event, err := s.startInitialToolSelection(ctx, sessionID, turnID)
+	toolDecision := hostToolGroupDecision{Intent: hostResourceSelectionUse, Reason: "no eligible tool resources"}
+	if mode == string(hostResourceSelectionInspect) && isToolInventoryIntent(intent) {
+		groups, names, err := expandHostToolGroups(toolGroups, nil, false)
 		if err != nil {
-			return hostPreCallResolution{}, err
+			toolDecision = hostToolGroupDecision{Intent: hostResourceSelectionInspect, Reason: err.Error()}
+		} else {
+			toolDecision = hostToolGroupDecision{Intent: hostResourceSelectionInspect, Groups: groups, ToolNames: names, Reason: "matched by local catalog inspection"}
 		}
-		progressEventID = event.ID
+	} else if !(isSkillInventoryIntent(intent) && !isToolInventoryIntent(intent)) {
+		toolDecision = s.resolveHostToolGroupsWithAuxiliaryModel(ctx, intent, toolGroups)
 	}
-	toolDecision := s.resolveHostToolGroupsWithAuxiliaryModel(ctx, intent, toolGroups, true)
-	if toolDecision.Intent == hostToolSelectionInspect {
+	if toolDecision.Intent == hostResourceSelectionInspect {
 		toolDecision.ToolNames = make([]string, 0, len(toolCandidates))
 		for _, entry := range toolCandidates {
 			toolDecision.ToolNames = append(toolDecision.ToolNames, entry.Name)
 		}
 	}
-	selectedTools := validateToolResolveSelection(toolCandidates, toolDecision.ToolNames)
-	if !autoInitialized && eligibilityErr == nil {
-		names := make([]string, 0, len(selectedTools))
-		for _, entry := range selectedTools {
-			names = append(names, entry.Name)
-			activationSource := "automatic"
-			if toolDecision.Intent == hostToolSelectionInspect {
-				activationSource = "request"
-			}
-			toolActivations[entry.Name] = activationSource
-		}
-		committedNames := normalizeDeferredToolNames(names)
-		selectedResources := hostToolSelectionResources(toolDecision.Groups, committedNames)
-		persistedNames := committedNames
-		if toolDecision.Intent == hostToolSelectionInspect {
-			persistedNames = nil
-		}
-		if err := s.replaceAutoSelectedTools(ctx, sessionID, persistedNames); err != nil {
-			for _, name := range names {
-				delete(toolActivations, name)
-			}
-			if progressEventID != "" {
-				if _, updateErr := s.failInitialToolSelection(ctx, progressEventID); updateErr != nil {
-					return hostPreCallResolution{}, updateErr
-				}
-			}
-		} else {
-			lifetime := "conversation"
-			if toolDecision.Intent == hostToolSelectionInspect {
-				lifetime = "request"
-			}
-			if progressEventID != "" {
-				if _, err := s.completeInitialToolSelection(ctx, progressEventID, selectedResources, lifetime); err != nil {
-					return hostPreCallResolution{}, err
-				}
-			} else if err := s.recordInitialToolSelection(ctx, sessionID, turnID, selectedResources, lifetime); err != nil {
-				return hostPreCallResolution{}, err
-			}
-		}
-	}
 	instructionDecision := hostInstructionDecision{}
 	if len(instructionCandidates) > 0 {
-		instructionDecision = s.resolveHostInstructionsWithAuxiliaryModel(ctx, intent, agentMode, instructionCandidates)
+		localInstructionPreview := localHostInstructionResolve(intent, instructionCandidates)
+		if len(localInstructionPreview.Keys) > 0 {
+			instructionDecision = s.resolveHostInstructionsWithAuxiliaryModel(ctx, intent, request.AgentMode, instructionCandidates)
+		}
 	}
-	selected := validateHostInstructionSelection(instructionCandidates, instructionDecision.Keys, hostInstructionSelectionLimit)
-	skillInstructionKeys := validateHostSkillInstructionSelection(selected, instructionDecision.SkillInstructionKeys)
-	return hostPreCallResolution{
+	if request.Explicit && len(instructionDecision.Keys) > 0 && strings.HasPrefix(toolDecision.Reason, "matched by local Host resource-group search") {
+		toolDecision.Groups = nil
+		toolDecision.ToolNames = nil
+	}
+	selectedTools := validateResourceResolveToolSelection(toolCandidates, toolDecision.ToolNames)
+	if request.Explicit && mode == string(hostResourceSelectionInspect) {
+		resources := hostResourceSelectionResources(toolDecision.Groups, normalizeDeferredToolNames(selectedToolNames(selectedTools)))
+		if len(instructionDecision.Keys) > 0 {
+			selectedInstructions := validateHostInstructionSelection(instructionCandidates, instructionDecision.Keys)
+			resources = append(resources, s.hostInstructionSelectionResources(ctx, sessionID, selectedInstructions)...)
+		}
+		reason := strings.TrimSpace(toolDecision.Reason)
+		if strings.TrimSpace(instructionDecision.Reason) != "" {
+			reason = strings.TrimSpace(reason + "; " + strings.TrimSpace(instructionDecision.Reason))
+		}
+		if reason == "" {
+			reason = "no eligible grouped, individual, or instruction resources"
+		}
+		return hostResourceResolution{
+			ToolActivations: toolActivations,
+			Resources:       normalizeHostResourceSelectionResources(resources),
+			Reason:          reason,
+		}, nil
+	}
+	if request.Explicit {
+		if len(selectedTools) > 0 {
+			if err := s.replaceAutoSelectedTools(ctx, sessionID, normalizeDeferredToolNames(selectedToolNames(selectedTools))); err != nil {
+				return hostResourceResolution{}, err
+			}
+		}
+	}
+	selectedResources := hostResourceSelectionResources(toolDecision.Groups, normalizeDeferredToolNames(selectedToolNames(selectedTools)))
+	resourceContext := ""
+	resourceSummaries := []hostResourceSelectionResource{}
+	if request.Explicit && len(instructionDecision.Keys) > 0 {
+		var err error
+		resourceContext, resourceSummaries, err = s.applySessionInstructionResources(ctx, sessionID, request.WorkspaceRoot, instructionDecision.Keys)
+		if err != nil {
+			return hostResourceResolution{}, err
+		}
+		if hasHostResourceSelectionKind(resourceSummaries, domain.SessionResourceSkill) {
+			toolActivations[SkillsListToolName] = "skillCatalog"
+			toolActivations[SkillsReadToolName] = "skillCatalog"
+		}
+	}
+	resources := append([]hostResourceSelectionResource{}, selectedResources...)
+	resources = append(resources, resourceSummaries...)
+	if request.Explicit && len(selectedTools) == 0 && strings.TrimSpace(resourceContext) == "" && !request.Required {
+		if err := s.replaceAutoSelectedTools(ctx, sessionID, nil); err != nil {
+			return hostResourceResolution{}, err
+		}
+	}
+	reason := strings.TrimSpace(toolDecision.Reason)
+	if strings.TrimSpace(instructionDecision.Reason) != "" {
+		reason = strings.TrimSpace(reason + "; " + strings.TrimSpace(instructionDecision.Reason))
+	}
+	if reason == "" && request.Explicit {
+		reason = "no eligible grouped, individual, or instruction resources"
+	}
+	return hostResourceResolution{
 		ToolActivations: toolActivations,
-		Context:         s.renderSelectedHostInstructions(ctx, sessionID, workspaceRoot, selected, skillInstructionKeys),
+		ToolNames:       normalizeDeferredToolNames(selectedToolNames(selectedTools)),
+		ResourceKeys:    instructionDecision.Keys,
+		Resources:       normalizeHostResourceSelectionResources(resources),
+		ResourceContext: resourceContext,
+		Reason:          reason,
+		Context:         resourceContext,
 	}, nil
+}
+
+func selectedToolNames(entries []domain.ToolCatalogEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name)
+	}
+	return names
 }
 
 func hostToolGroupCandidates(entries []domain.ToolCatalogEntry) []hostToolGroupCandidate {
@@ -250,7 +333,7 @@ func hostToolGroupCandidates(entries []domain.ToolCatalogEntry) []hostToolGroupC
 		description := sanitizeHostToolGroupText(entry.Description, 4000)
 		grouped := false
 		if entry.SelectionGroup != nil {
-			kind = hostToolSelectionResourceKind(entry)
+			kind = hostResourceSelectionToolKind(entry)
 			candidateID = strings.TrimSpace(entry.SelectionGroup.ID)
 			candidateName = sanitizeHostToolGroupText(entry.SelectionGroup.Name, 100)
 			description = sanitizeHostToolGroupText(entry.SelectionGroup.Description, 4000)
@@ -303,7 +386,7 @@ func hostStandaloneToolNames(entries []domain.ToolCatalogEntry) []string {
 	return normalizeDeferredToolNames(names)
 }
 
-func hostToolSelectionResourceKind(entry domain.ToolCatalogEntry) string {
+func hostResourceSelectionToolKind(entry domain.ToolCatalogEntry) string {
 	if entry.Source == domain.ToolSourceMCP || entry.Category == "mcp" {
 		return domain.SessionResourceMCP
 	}
@@ -313,12 +396,12 @@ func hostToolSelectionResourceKind(entry domain.ToolCatalogEntry) string {
 	return domain.SessionResourceTool
 }
 
-func hostToolSelectionResources(groups []hostToolGroupCandidate, selectedToolNames []string) []hostToolSelectionResource {
+func hostResourceSelectionResources(groups []hostToolGroupCandidate, selectedToolNames []string) []hostResourceSelectionResource {
 	selected := make(map[string]bool, len(selectedToolNames))
 	for _, name := range selectedToolNames {
 		selected[name] = true
 	}
-	resources := make([]hostToolSelectionResource, 0, len(groups))
+	resources := make([]hostResourceSelectionResource, 0, len(groups))
 	for _, group := range groups {
 		count := 0
 		for _, name := range group.ToolNames {
@@ -329,9 +412,92 @@ func hostToolSelectionResources(groups []hostToolGroupCandidate, selectedToolNam
 		if count == 0 {
 			continue
 		}
-		resources = append(resources, hostToolSelectionResource{
+		resources = append(resources, hostResourceSelectionResource{
 			Kind: group.Kind, ID: group.ID, Name: group.Name, ToolCount: count,
 		})
+	}
+	return resources
+}
+
+func hasHostResourceSelectionKind(resources []hostResourceSelectionResource, kind string) bool {
+	for _, resource := range resources {
+		if resource.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) visibleSkillToolActivations(ctx context.Context, sessionID string) map[string]string {
+	activations := map[string]string{}
+	if strings.TrimSpace(sessionID) == "" {
+		return activations
+	}
+	ids, _ := s.visibleSkills(ctx, sessionID)
+	if len(ids) == 0 {
+		return activations
+	}
+	activations[SkillsListToolName] = "skillCatalog"
+	activations[SkillsReadToolName] = "skillCatalog"
+	return activations
+}
+
+func (s *Service) hostInstructionSelectionResources(ctx context.Context, sessionID string, selected []hostInstructionCandidate) []hostResourceSelectionResource {
+	activeNames := map[string]bool{}
+	activeContextKeys := map[string]bool{}
+	if strings.TrimSpace(sessionID) != "" {
+		_, activeSkills := s.activeSkills(ctx, sessionID)
+		for _, skill := range activeSkills {
+			activeNames[skill.Name] = true
+		}
+		for _, key := range s.activeExtensionContextKeys(ctx, sessionID) {
+			activeContextKeys[key] = true
+		}
+	}
+	resources := make([]hostResourceSelectionResource, 0, len(selected))
+	manager := s.ensureSkillManager()
+	for _, candidate := range selected {
+		if candidate.Skill != nil {
+			if activeNames[candidate.Skill.Name] {
+				continue
+			}
+			skill, err := manager.Resolve(ctx, "", candidate.Skill.Name, candidate.Skill.Scope)
+			if err != nil || !skill.Enabled {
+				continue
+			}
+			resources = append(resources, hostResourceSelectionResource{
+				Kind: domain.SessionResourceSkill, ID: skill.Name, Name: skill.Name, ToolCount: 0,
+			})
+			continue
+		}
+		if len(candidate.SkillGroup) > 0 {
+			count := 0
+			for _, member := range candidate.SkillGroup {
+				if activeNames[member.Name] {
+					continue
+				}
+				skill, err := manager.Resolve(ctx, "", member.Name, member.Scope)
+				if err != nil || !skill.Enabled {
+					continue
+				}
+				count++
+			}
+			if count > 0 {
+				resources = append(resources, hostResourceSelectionResource{
+					Kind: domain.SessionResourceSkill, ID: strings.TrimPrefix(candidate.Key, skillGroupResourceKeyPrefix),
+					Name: candidate.Name, ToolCount: 0,
+				})
+			}
+			continue
+		}
+		if candidate.Context != nil {
+			if activeContextKeys[candidate.Context.Key] {
+				continue
+			}
+			resources = append(resources, hostResourceSelectionResource{
+				Kind: domain.SessionResourceExtension, ID: candidate.Context.Key, Name: candidate.Context.Name, ToolCount: 0,
+			})
+		}
 	}
 	return resources
 }
@@ -355,7 +521,7 @@ func renderHostToolGroupSelectionPrompt(intent string, candidates []hostToolGrou
 	for _, candidate := range candidates {
 		lines = append(lines, renderHostToolSelectionCandidate(candidate))
 	}
-	prompt, err := renderPromptTemplate(builtinPromptBody("auxiliary.host_tool_groups.user"), map[string]string{
+	prompt, err := renderPromptTemplate(builtinPromptBody("auxiliary.host_resource_groups.user"), map[string]string{
 		"intent": boundedHostToolGroupText(intent, 4000), "candidates": strings.Join(lines, "\n"),
 	})
 	if err != nil {
@@ -364,25 +530,19 @@ func renderHostToolGroupSelectionPrompt(intent string, candidates []hostToolGrou
 	return prompt
 }
 
-func (s *Service) resolveHostToolGroupsWithAuxiliaryModel(ctx context.Context, intent string, candidates []hostToolGroupCandidate, allowInspect bool) hostToolGroupDecision {
+func (s *Service) resolveHostToolGroupsWithAuxiliaryModel(ctx context.Context, intent string, candidates []hostToolGroupCandidate) hostToolGroupDecision {
 	if strings.TrimSpace(intent) == "" || len(candidates) == 0 {
-		return hostToolGroupDecision{Intent: hostToolSelectionUse, Reason: "no eligible tool resources"}
+		return hostToolGroupDecision{Intent: hostResourceSelectionUse, Reason: "no eligible tool resources"}
 	}
-	selectionRule := "Classify intent as use and select only grouped or individual tool resources directly needed to perform the requested action."
-	intentShape := "\"use\""
-	if allowInspect {
-		selectionRule = "Classify intent as inspect only when the user asks to list, inspect, explain, or compare available tools/capabilities without asking to perform an action; inspect requires resources:[] and the Host will expose the complete eligible catalog once. Otherwise classify as use and select only grouped or individual resources directly needed to perform the requested action."
-		intentShape = "\"inspect\"|\"use\""
-	}
-	systemPrompt, systemErr := s.renderManagedPrompt("auxiliary.host_tool_groups.system", map[string]string{"selection_rule": selectionRule, "intent_shape": intentShape})
+	systemPrompt, systemErr := s.renderManagedPrompt("auxiliary.host_resource_groups.system", nil)
 	candidateLines := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		candidateLines = append(candidateLines, renderHostToolSelectionCandidate(candidate))
 	}
-	userPrompt, userErr := s.renderManagedPrompt("auxiliary.host_tool_groups.user", map[string]string{"intent": boundedHostToolGroupText(intent, 4000), "candidates": strings.Join(candidateLines, "\n")})
+	userPrompt, userErr := s.renderManagedPrompt("auxiliary.host_resource_groups.user", map[string]string{"intent": boundedHostToolGroupText(intent, 4000), "candidates": strings.Join(candidateLines, "\n")})
 	if systemErr != nil || userErr != nil {
-		decision, _ := localHostToolGroupSelection(intent, candidates, allowInspect)
-		decision.Reason = "matched by bounded local Host tool-group search"
+		decision, _ := localHostToolGroupSelection(intent, candidates)
+		decision.Reason = "matched by local Host resource-group search"
 		return decision
 	}
 	messages := []domain.ChatMessage{{Role: "system", Text: systemPrompt}, {Role: "user", Text: userPrompt}}
@@ -391,20 +551,17 @@ func (s *Service) resolveHostToolGroupsWithAuxiliaryModel(ctx context.Context, i
 		if err != nil {
 			continue
 		}
-		decision, err := parseAndExpandHostToolGroupSelection(reply, candidates, hostToolSelectionLimit, allowInspect)
+		decision, err := parseAndExpandHostToolGroupSelection(reply, candidates)
 		if err == nil {
-			decision.Reason = "selected by auxiliary Host tool-group resolver"
+			decision.Reason = "selected by auxiliary Host resource-group resolver"
 			return decision
 		}
 	}
-	decision, err := localHostToolGroupSelection(intent, candidates, allowInspect)
+	decision, err := localHostToolGroupSelection(intent, candidates)
 	if err != nil {
-		if allowInspect && isToolInventoryIntent(intent) {
-			return hostToolGroupDecision{Intent: hostToolSelectionInspect, Reason: err.Error()}
-		}
-		return hostToolGroupDecision{Intent: hostToolSelectionUse, Reason: err.Error()}
+		return hostToolGroupDecision{Intent: hostResourceSelectionUse, Reason: err.Error()}
 	}
-	decision.Reason = "matched by bounded local Host tool-group search"
+	decision.Reason = "matched by local Host resource-group search"
 	return decision
 }
 
@@ -412,13 +569,12 @@ func renderHostToolSelectionCandidate(candidate hostToolGroupCandidate) string {
 	return candidate.Kind + ":" + candidate.ID + "：" + sanitizeHostToolGroupText(candidate.Name, 100) + "｜" + sanitizeHostToolGroupText(candidate.Description, 4000)
 }
 
-func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroupCandidate, limit int, allowInspect bool) (hostToolGroupDecision, error) {
+func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroupCandidate) (hostToolGroupDecision, error) {
 	text := strings.TrimSpace(raw)
 	if text == "" || !strings.HasPrefix(text, "{") || !strings.HasSuffix(text, "}") {
 		return hostToolGroupDecision{}, errors.New("tool-group selection must be a strict JSON object")
 	}
 	var payload struct {
-		Intent    string `json:"intent"`
 		Resources *[]struct {
 			Kind string `json:"kind"`
 			ID   string `json:"id"`
@@ -432,40 +588,17 @@ func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroup
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return hostToolGroupDecision{}, errors.New("tool-group selection contains trailing content")
 	}
-	selectionIntent := hostToolSelectionIntent(payload.Intent)
-	if selectionIntent != hostToolSelectionInspect && selectionIntent != hostToolSelectionUse {
-		return hostToolGroupDecision{}, errors.New("tool-group selection contains an invalid intent")
-	}
 	if payload.Resources == nil {
-		return hostToolGroupDecision{}, errors.New("tool selection is missing resources")
+		return hostToolGroupDecision{}, errors.New("resource selection is missing resources")
 	}
 	resources := *payload.Resources
-	if selectionIntent == hostToolSelectionInspect {
-		if !allowInspect {
-			return hostToolGroupDecision{}, errors.New("tool inspection is unavailable for persistent replacement")
-		}
-		if len(resources) != 0 {
-			return hostToolGroupDecision{}, errors.New("tool inspection must not select partial groups")
-		}
-		groups, toolNames, err := expandHostToolGroups(candidates, nil, false)
-		if err != nil {
-			return hostToolGroupDecision{}, err
-		}
-		return hostToolGroupDecision{Intent: selectionIntent, Groups: groups, ToolNames: toolNames}, nil
-	}
-	if limit <= 0 || limit > hostToolSelectionLimit {
-		limit = hostToolSelectionLimit
-	}
-	if len(resources) > limit {
-		return hostToolGroupDecision{}, errors.New("tool selection exceeds the resource limit")
-	}
 	keys := make([]string, 0, len(resources))
 	for _, resource := range resources {
 		if resource.Kind != domain.SessionResourceMCP && resource.Kind != domain.SessionResourceExtension && resource.Kind != domain.SessionResourceTool {
-			return hostToolGroupDecision{}, errors.New("tool selection contains an invalid resource kind")
+			return hostToolGroupDecision{}, errors.New("resource selection contains an invalid resource kind")
 		}
 		if resource.ID == "" || strings.TrimSpace(resource.ID) != resource.ID || sanitizeHostToolGroupText(resource.ID, 512) != resource.ID {
-			return hostToolGroupDecision{}, errors.New("tool selection contains an invalid resource id")
+			return hostToolGroupDecision{}, errors.New("resource selection contains an invalid resource id")
 		}
 		keys = append(keys, resource.Kind+"\x00"+resource.ID)
 	}
@@ -473,7 +606,7 @@ func parseAndExpandHostToolGroupSelection(raw string, candidates []hostToolGroup
 	if err != nil {
 		return hostToolGroupDecision{}, err
 	}
-	return hostToolGroupDecision{Intent: selectionIntent, Groups: groups, ToolNames: toolNames}, nil
+	return hostToolGroupDecision{Intent: hostResourceSelectionUse, Groups: groups, ToolNames: toolNames}, nil
 }
 
 func expandHostToolGroups(candidates []hostToolGroupCandidate, keys []string, validateKeys bool) ([]hostToolGroupCandidate, []string, error) {
@@ -512,16 +645,12 @@ func expandHostToolGroups(candidates []hostToolGroupCandidate, keys []string, va
 	return groups, expanded, nil
 }
 
-func localHostToolGroupSelection(intent string, candidates []hostToolGroupCandidate, allowInspect bool) (hostToolGroupDecision, error) {
-	if allowInspect && isToolInventoryIntent(intent) {
-		groups, toolNames, err := expandHostToolGroups(candidates, nil, false)
-		return hostToolGroupDecision{Intent: hostToolSelectionInspect, Groups: groups, ToolNames: toolNames}, err
-	}
+func localHostToolGroupSelection(intent string, candidates []hostToolGroupCandidate) (hostToolGroupDecision, error) {
 	entries := make([]domain.ToolCatalogEntry, 0, len(candidates))
 	for _, candidate := range candidates {
 		entries = append(entries, domain.ToolCatalogEntry{Name: candidate.Kind + ":" + candidate.ID, Description: candidate.Name + " " + candidate.Description})
 	}
-	matches := searchToolCatalog(entries, intent, hostToolSelectionLimit)
+	matches := searchToolCatalog(entries, intent, 0)
 	selectedGroups := make([]string, 0, len(matches))
 	for _, match := range matches {
 		kind, id, ok := strings.Cut(match.Name, ":")
@@ -530,7 +659,7 @@ func localHostToolGroupSelection(intent string, candidates []hostToolGroupCandid
 		}
 	}
 	groups, expanded, err := expandHostToolGroups(candidates, selectedGroups, true)
-	return hostToolGroupDecision{Intent: hostToolSelectionUse, Groups: groups, ToolNames: expanded}, err
+	return hostToolGroupDecision{Intent: hostResourceSelectionUse, Groups: groups, ToolNames: expanded}, err
 }
 
 func isToolInventoryIntent(intent string) bool {
@@ -541,33 +670,9 @@ func isToolInventoryIntent(intent string) bool {
 	return hasTool && hasInventory
 }
 
-func (s *Service) preCallInstructionContext(ctx context.Context, sessionID, intent, agentMode, workspaceRoot string) string {
-	skillCandidates, candidates := s.hostInstructionCandidates(ctx, workspaceRoot)
-	if isSkillInventoryIntent(intent) {
-		return renderHostSkillInventory(skillCandidates)
-	}
-	if strings.TrimSpace(intent) == "" || len(candidates) == 0 {
-		return ""
-	}
-	decision := s.resolveHostInstructionsWithAuxiliaryModel(ctx, intent, agentMode, candidates)
-	selected := validateHostInstructionSelection(candidates, decision.Keys, hostInstructionSelectionLimit)
-	if len(selected) == 0 {
-		return ""
-	}
-	skillInstructionKeys := validateHostSkillInstructionSelection(selected, decision.SkillInstructionKeys)
-	return s.renderSelectedHostInstructions(ctx, sessionID, workspaceRoot, selected, skillInstructionKeys)
-}
-
 func (s *Service) hostInstructionCandidates(ctx context.Context, workspaceRoot string) ([]SkillResolveCandidate, []hostInstructionCandidate) {
 	skillCandidates, _ := s.hostSkillCandidates(ctx, workspaceRoot)
-	candidates := make([]hostInstructionCandidate, 0, len(skillCandidates))
-	for index := range skillCandidates {
-		skill := skillCandidates[index]
-		candidates = append(candidates, hostInstructionCandidate{
-			Key: "skill:" + skill.Name, Kind: "skill", Name: skill.Name,
-			Description: skill.Description, Source: skill.Source, Skill: &skill,
-		})
-	}
+	candidates := hostSkillInstructionCandidates(skillCandidates)
 	if s.extensionSupervisor != nil {
 		for _, resource := range s.extensionSupervisor.ContextCatalog() {
 			resource := resource
@@ -580,6 +685,47 @@ func (s *Service) hostInstructionCandidates(ctx context.Context, workspaceRoot s
 	return skillCandidates, candidates
 }
 
+const skillGroupResourceKeyPrefix = "skill-group:"
+
+func hostSkillInstructionCandidates(skillCandidates []SkillResolveCandidate) []hostInstructionCandidate {
+	type groupState struct {
+		index   int
+		group   domain.ToolSelectionGroup
+		members []SkillResolveCandidate
+	}
+	groups := map[string]*groupState{}
+	candidates := make([]hostInstructionCandidate, 0, len(skillCandidates))
+	for index := range skillCandidates {
+		skill := skillCandidates[index]
+		if skill.SelectionGroup == nil {
+			skill := skill
+			candidates = append(candidates, hostInstructionCandidate{
+				Key: "skill:" + skill.Name, Kind: "skill", Name: skill.Name,
+				Description: skill.Description, Source: skill.Source, Skill: &skill,
+			})
+			continue
+		}
+		group := *skill.SelectionGroup
+		state := groups[group.ID]
+		if state == nil {
+			state = &groupState{index: len(candidates), group: group}
+			groups[group.ID] = state
+			candidates = append(candidates, hostInstructionCandidate{
+				Key: skillGroupResourceKeyPrefix + group.ID, Kind: "skill", Name: group.Name,
+				Description: group.Description, Source: "skill-group",
+			})
+		}
+		state.members = append(state.members, skill)
+	}
+	for _, state := range groups {
+		sort.Slice(state.members, func(i, j int) bool { return state.members[i].Name < state.members[j].Name })
+		candidate := candidates[state.index]
+		candidate.SkillGroup = state.members
+		candidates[state.index] = candidate
+	}
+	return candidates
+}
+
 func (s *Service) hostSkillCandidates(ctx context.Context, workspaceRoot string) ([]SkillResolveCandidate, error) {
 	result, err := s.ListSkills(ctx, domain.SkillListInput{WorkspaceRoot: strings.TrimSpace(workspaceRoot)})
 	if err != nil {
@@ -587,10 +733,10 @@ func (s *Service) hostSkillCandidates(ctx context.Context, workspaceRoot string)
 	}
 	byName := map[string]SkillResolveCandidate{}
 	for _, skill := range result.Entries {
-		if !skill.Enabled || strings.TrimSpace(skill.Description) == "" {
+		if !isModelResolvableSkillEntry(skill) {
 			continue
 		}
-		byName[skill.Name] = SkillResolveCandidate{Name: skill.Name, Description: skill.Description, Scope: skill.Scope, Source: skill.Source, Status: "imported"}
+		byName[skill.Name] = SkillResolveCandidate{Name: skill.Name, Description: skill.Description, Scope: skill.Scope, Source: skill.Source, Status: "imported", SelectionGroup: skill.SelectionGroup}
 	}
 	out := make([]SkillResolveCandidate, 0, len(byName))
 	for _, candidate := range byName {
@@ -602,7 +748,7 @@ func (s *Service) hostSkillCandidates(ctx context.Context, workspaceRoot string)
 
 func (s *Service) resolveHostInstructionsWithAuxiliaryModel(ctx context.Context, intent, agentMode string, candidates []hostInstructionCandidate) hostInstructionDecision {
 	decision := s.resolveHostResourcesWithAuxiliaryModel(ctx, intent, agentMode, nil, candidates)
-	return hostInstructionDecision{Keys: decision.ResourceKeys, SkillInstructionKeys: decision.SkillInstructionKeys, Reason: decision.Reason}
+	return hostInstructionDecision{Keys: decision.ResourceKeys, Reason: decision.Reason}
 }
 
 func (s *Service) resolveHostResourcesWithAuxiliaryModel(ctx context.Context, intent, agentMode string, toolCandidates []domain.ToolCatalogEntry, instructionCandidates []hostInstructionCandidate) hostResourceDecision {
@@ -622,8 +768,7 @@ func (s *Service) resolveHostResourcesWithAuxiliaryModel(ctx context.Context, in
 		})
 	}
 	payload, _ := json.MarshalIndent(map[string]any{
-		"intent": intent, "agentMode": agentMode, "maxTools": hostToolSelectionLimit, "maxResources": hostInstructionSelectionLimit,
-		"tools": toolCatalog, "resources": resourceCatalog,
+		"intent": intent, "agentMode": agentMode, "tools": toolCatalog, "resources": resourceCatalog,
 	}, "", "  ")
 	systemPrompt, promptErr := s.renderManagedPrompt("auxiliary.host_resources.system", nil)
 	if promptErr != nil {
@@ -640,13 +785,12 @@ func (s *Service) resolveHostResourcesWithAuxiliaryModel(ctx context.Context, in
 			return decision
 		}
 	}
-	toolDecision, _ := localToolResolve(ctx, ToolResolveRequest{Intent: intent, MaxTools: hostToolSelectionLimit, AgentMode: agentMode, Candidates: toolCandidates})
-	resourceDecision := localHostInstructionResolve(intent, instructionCandidates, hostInstructionSelectionLimit)
+	toolDecision, _ := localResourceResolve(ctx, ResourceResolveRequest{Intent: intent, AgentMode: agentMode, Candidates: toolCandidates})
+	resourceDecision := localHostInstructionResolve(intent, instructionCandidates)
 	return hostResourceDecision{
-		ToolNames:            toolDecision.Names,
-		ResourceKeys:         resourceDecision.Keys,
-		SkillInstructionKeys: skillInstructionKeysForSelection(instructionCandidates, resourceDecision.Keys),
-		Reason:               "matched by bounded local Host resource catalog search",
+		ToolNames:    toolDecision.Names,
+		ResourceKeys: resourceDecision.Keys,
+		Reason:       "matched by local Host resource catalog search",
 	}
 }
 
@@ -659,23 +803,21 @@ func parseHostResourceDecision(raw string) (hostResourceDecision, error) {
 		text = text[start : end+1]
 	}
 	var decoded struct {
-		Tools             []string `json:"tools"`
-		Resources         []string `json:"resources"`
-		SkillInstructions []string `json:"skillInstructions"`
-		Reason            string   `json:"reason"`
+		Tools     []string `json:"tools"`
+		Resources []string `json:"resources"`
+		Reason    string   `json:"reason"`
 	}
 	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
 		return hostResourceDecision{}, err
 	}
 	return hostResourceDecision{
-		ToolNames:            normalizeHostResourceKeys(decoded.Tools),
-		ResourceKeys:         normalizeHostResourceKeys(decoded.Resources),
-		SkillInstructionKeys: normalizeHostResourceKeys(decoded.SkillInstructions),
-		Reason:               strings.TrimSpace(decoded.Reason),
+		ToolNames:    normalizeHostResourceKeys(decoded.Tools),
+		ResourceKeys: normalizeHostResourceKeys(decoded.Resources),
+		Reason:       strings.TrimSpace(decoded.Reason),
 	}, nil
 }
 
-func localHostInstructionResolve(intent string, candidates []hostInstructionCandidate, limit int) hostInstructionDecision {
+func localHostInstructionResolve(intent string, candidates []hostInstructionCandidate) hostInstructionDecision {
 	intentText := strings.ToLower(strings.TrimSpace(intent))
 	intentTokens := tokenizeHostResourceText(intentText)
 	type scoredCandidate struct {
@@ -690,13 +832,19 @@ func localHostInstructionResolve(intent string, candidates []hostInstructionCand
 		if len([]rune(name)) > 1 && strings.Contains(intentText, name) {
 			score += 4
 		}
+		candidateTokens := map[string]bool{}
+		for _, token := range tokenizeHostResourceText(candidateText) {
+			candidateTokens[token] = true
+		}
+		intentTokenSet := map[string]bool{}
 		for _, token := range intentTokens {
-			if len([]rune(token)) > 1 && strings.Contains(candidateText, token) {
+			intentTokenSet[token] = true
+			if candidateTokens[token] {
 				score++
 			}
 		}
-		for _, token := range tokenizeHostResourceText(candidateText) {
-			if len([]rune(token)) > 1 && strings.Contains(intentText, token) {
+		for token := range candidateTokens {
+			if intentTokenSet[token] {
 				score++
 			}
 		}
@@ -710,23 +858,28 @@ func localHostInstructionResolve(intent string, candidates []hostInstructionCand
 		}
 		return scored[i].score > scored[j].score
 	})
-	keys := make([]string, 0, limit)
+	keys := make([]string, 0, len(scored))
 	for _, candidate := range scored {
 		keys = append(keys, candidate.key)
-		if len(keys) >= limit {
-			break
+	}
+	if len(keys) == 0 && isSkillInventoryIntent(intent) {
+		for _, candidate := range candidates {
+			if candidate.Skill == nil && len(candidate.SkillGroup) == 0 {
+				continue
+			}
+			keys = append(keys, candidate.Key)
 		}
 	}
-	return hostInstructionDecision{Keys: keys, Reason: "matched by bounded local resource catalog search"}
+	return hostInstructionDecision{Keys: keys, Reason: "matched by local resource catalog search"}
 }
 
-func validateHostInstructionSelection(candidates []hostInstructionCandidate, keys []string, limit int) []hostInstructionCandidate {
+func validateHostInstructionSelection(candidates []hostInstructionCandidate, keys []string) []hostInstructionCandidate {
 	byKey := make(map[string]hostInstructionCandidate, len(candidates))
 	for _, candidate := range candidates {
 		byKey[candidate.Key] = candidate
 	}
 	seen := map[string]bool{}
-	selected := make([]hostInstructionCandidate, 0, limit)
+	selected := make([]hostInstructionCandidate, 0, len(keys))
 	for _, key := range normalizeHostResourceKeys(keys) {
 		candidate, ok := byKey[key]
 		if !ok || seen[key] {
@@ -734,105 +887,93 @@ func validateHostInstructionSelection(candidates []hostInstructionCandidate, key
 		}
 		seen[key] = true
 		selected = append(selected, candidate)
-		if len(selected) >= limit {
-			break
-		}
 	}
 	return selected
 }
 
-func skillInstructionKeysForSelection(candidates []hostInstructionCandidate, selectedKeys []string) []string {
-	byKey := make(map[string]hostInstructionCandidate, len(candidates))
-	for _, candidate := range candidates {
-		byKey[candidate.Key] = candidate
+func (s *Service) applySessionInstructionResources(ctx context.Context, sessionID string, workspaceRoot string, keys []string) (string, []hostResourceSelectionResource, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return "", nil, errors.New("sessionId is required")
 	}
-	keys := make([]string, 0, len(selectedKeys))
-	for _, key := range normalizeHostResourceKeys(selectedKeys) {
-		if candidate, ok := byKey[key]; ok && candidate.Skill != nil {
-			keys = append(keys, key)
-		}
-	}
-	return keys
-}
-
-func validateHostSkillInstructionSelection(selected []hostInstructionCandidate, keys []string) map[string]bool {
-	selectedSkills := make(map[string]bool, len(selected))
-	for _, candidate := range selected {
-		if candidate.Skill != nil {
-			selectedSkills[candidate.Key] = true
-		}
-	}
-	validated := map[string]bool{}
-	for _, key := range normalizeHostResourceKeys(keys) {
-		if selectedSkills[key] {
-			validated[key] = true
-		}
-	}
-	return validated
-}
-
-func (s *Service) renderSelectedHostInstructions(ctx context.Context, sessionID, workspaceRoot string, selected []hostInstructionCandidate, skillInstructionKeys map[string]bool) string {
-	activeNames := map[string]bool{}
-	if strings.TrimSpace(sessionID) != "" {
-		_, activeSkills := s.activeSkills(ctx, sessionID)
-		for _, skill := range activeSkills {
-			activeNames[skill.Name] = true
-		}
+	_, candidates := s.hostInstructionCandidates(ctx, workspaceRoot)
+	selected := validateHostInstructionSelection(candidates, keys)
+	if len(selected) == 0 {
+		return "", nil, nil
 	}
 	blocks := make([]string, 0, len(selected))
-	selectedContexts := map[string]map[string]bool{}
+	summaries := make([]hostResourceSelectionResource, 0, len(selected))
 	manager := s.ensureSkillManager()
+	visibleSkills := make([]domain.SkillEntry, 0, len(selected))
+	contextKeys := make([]string, 0, len(selected))
 	for _, candidate := range selected {
 		if candidate.Skill != nil {
-			if activeNames[candidate.Skill.Name] {
+			skill, err := manager.Resolve(ctx, "", candidate.Skill.Name, candidate.Skill.Scope)
+			if err != nil || !skill.Enabled || !s.skillAvailableForUse(ctx, skill) {
 				continue
 			}
-			skill, err := manager.Resolve(ctx, "", candidate.Skill.Name, workspaceRoot)
-			if err != nil || !skill.Enabled {
-				continue
+			visibleSkills = append(visibleSkills, s.decorateSkillEntry(ctx, skill))
+			summaries = append(summaries, hostResourceSelectionResource{Kind: domain.SessionResourceSkill, ID: skill.Name, Name: skill.Name, ToolCount: 0})
+			continue
+		}
+		if len(candidate.SkillGroup) > 0 {
+			count := 0
+			for _, member := range candidate.SkillGroup {
+				skill, err := manager.Resolve(ctx, "", member.Name, member.Scope)
+				if err != nil || !skill.Enabled || !s.skillAvailableForUse(ctx, skill) {
+					continue
+				}
+				visibleSkills = append(visibleSkills, s.decorateSkillEntry(ctx, skill))
+				count++
 			}
-			blocks = append(blocks, renderHostSkillSummary(skill))
-			if !skillInstructionKeys[candidate.Key] {
-				continue
+			if count > 0 {
+				summaries = append(summaries, hostResourceSelectionResource{
+					Kind: domain.SessionResourceSkill, ID: strings.TrimPrefix(candidate.Key, skillGroupResourceKeyPrefix),
+					Name: candidate.Name, ToolCount: 0,
+				})
 			}
-			content, err := manager.ReadContent(skill)
-			if err != nil {
-				continue
-			}
-			files, _ := manager.SupportingFiles(skill, skillSupportingFileLimit)
-			blocks = append(blocks, renderSkillModelOutputWithSnapshot(s.currentPromptSnapshot(), skill, content, files))
 			continue
 		}
 		if candidate.Context != nil {
-			if selectedContexts[candidate.Context.ExtensionID] == nil {
-				selectedContexts[candidate.Context.ExtensionID] = map[string]bool{}
-			}
-			selectedContexts[candidate.Context.ExtensionID][candidate.Context.ContextID] = true
-		}
-	}
-	extensionIDs := make([]string, 0, len(selectedContexts))
-	for extensionID := range selectedContexts {
-		extensionIDs = append(extensionIDs, extensionID)
-	}
-	sort.Strings(extensionIDs)
-	for _, extensionID := range extensionIDs {
-		resources, err := s.extensionSupervisor.ContextResources(extensionID)
-		if err != nil {
-			continue
-		}
-		for _, resource := range resources {
-			if !selectedContexts[extensionID][resource.ID] {
+			resource, ok := s.extensionContextResource(ctx, candidate.Context.ExtensionID, candidate.Context.ContextID)
+			if !ok {
 				continue
 			}
+			contextKeys = append(contextKeys, candidate.Context.Key)
 			blocks = append(blocks, renderExtensionContextResource(resource))
+			summaries = append(summaries, hostResourceSelectionResource{Kind: domain.SessionResourceExtension, ID: candidate.Context.Key, Name: candidate.Context.Name, ToolCount: 0})
 		}
 	}
-	return bounded(strings.Join(blocks, "\n\n"), hostPreCallContextLimit)
+	if len(visibleSkills) > 0 {
+		sort.Slice(visibleSkills, func(i, j int) bool { return visibleSkills[i].Name < visibleSkills[j].Name })
+		if _, err := s.rememberVisibleSkills(ctx, sessionID, visibleSkills); err != nil {
+			return "", nil, err
+		}
+		blocks = append([]string{renderAvailableSkills(visibleSkills, nil)}, blocks...)
+	}
+	if len(contextKeys) > 0 {
+		if _, err := s.rememberActiveExtensionContexts(ctx, sessionID, contextKeys); err != nil {
+			return "", nil, err
+		}
+	}
+	return strings.Join(blocks, "\n\n"), normalizeHostResourceSelectionResources(summaries), nil
 }
 
-func renderHostSkillSummary(skill domain.SkillEntry) string {
-	return `<skill_summary name="` + xmlEscape(skill.Name) + `" scope="` + xmlEscape(skill.Scope) + `" source="` + xmlEscape(skill.Source) + `">` +
-		"\n" + xmlEscape(strings.TrimSpace(skill.Description)) + "\n</skill_summary>"
+func (s *Service) extensionContextResource(ctx context.Context, extensionID string, contextID string) (domain.ExtensionContextResource, bool) {
+	_ = ctx
+	if s == nil || s.extensionSupervisor == nil {
+		return domain.ExtensionContextResource{}, false
+	}
+	resources, err := s.extensionSupervisor.ContextResources(extensionID)
+	if err != nil {
+		return domain.ExtensionContextResource{}, false
+	}
+	for _, resource := range resources {
+		if resource.ID == contextID {
+			return resource, true
+		}
+	}
+	return domain.ExtensionContextResource{}, false
 }
 
 func renderExtensionContextResource(resource domain.ExtensionContextResource) string {
@@ -840,29 +981,12 @@ func renderExtensionContextResource(resource domain.ExtensionContextResource) st
 		"\n" + strings.TrimSpace(resource.Content) + "\n</extension_context>"
 }
 
-func renderHostSkillInventory(skills []SkillResolveCandidate) string {
-	if len(skills) == 0 {
-		return "<available_skills>\n</available_skills>"
-	}
-	lines := []string{"The Host found these imported and enabled Skills. Pending imports and disabled Skills are excluded.", "<available_skills>"}
-	for _, skill := range skills {
-		lines = append(lines,
-			"  <skill>",
-			"    <name>"+xmlEscape(skill.Name)+"</name>",
-			"    <description>"+xmlEscape(skill.Description)+"</description>",
-			"  </skill>",
-		)
-	}
-	lines = append(lines, "</available_skills>")
-	return bounded(strings.Join(lines, "\n"), hostPreCallContextLimit)
-}
-
-func appendHostPreCallContext(messages []domain.ChatMessage, content string) []domain.ChatMessage {
+func appendHostPreSnapshotContext(messages []domain.ChatMessage, content string) []domain.ChatMessage {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return append([]domain.ChatMessage(nil), messages...)
 	}
-	message := domain.ChatMessage{Role: domain.EventRoleSystem, Text: "<host_preactivated_resources>\n" + content + "\n</host_preactivated_resources>"}
+	message := domain.ChatMessage{Role: domain.EventRoleSystem, Text: "<host_selected_resources>\n" + content + "\n</host_selected_resources>"}
 	out := make([]domain.ChatMessage, 0, len(messages)+1)
 	if len(messages) > 0 && messages[0].Role == domain.EventRoleSystem {
 		out = append(out, messages[0], message)
@@ -882,9 +1006,41 @@ func isSkillInventoryIntent(intent string) bool {
 }
 
 func tokenizeHostResourceText(value string) []string {
-	return strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+	fields := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 	})
+	seen := map[string]bool{}
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" || seen[field] || isHostResourceStopword(field) {
+			continue
+		}
+		if len([]rune(field)) <= 2 && !isShortHostResourceToken(field) {
+			continue
+		}
+		seen[field] = true
+		out = append(out, field)
+	}
+	return out
+}
+
+func isShortHostResourceToken(token string) bool {
+	switch token {
+	case "ai", "go", "js", "ts", "ui", "ux":
+		return true
+	default:
+		return false
+	}
+}
+
+func isHostResourceStopword(token string) bool {
+	switch token {
+	case "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "in", "into", "is", "it", "of", "on", "or", "the", "this", "to", "use", "what", "when", "which", "with", "当前", "哪些", "有什么", "列出", "列表", "技能":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeHostResourceKeys(keys []string) []string {

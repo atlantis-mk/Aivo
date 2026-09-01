@@ -7,6 +7,11 @@ import {
 import { useExtensionSettingsCatalogState } from "@/features/projects/extension-settings-catalog-state";
 import { useExtensionSettingsDerivedState } from "@/features/projects/extension-settings-derived-state";
 import {
+  SKILL_ACTION_DELETE,
+  SKILL_ACTION_SET_ENABLED,
+  skillSupportsAction,
+} from "@/features/projects/skill-action-model";
+import {
   deleteAgentMode,
   deleteManagedSkill,
   ignoreSkillCandidatesByName,
@@ -146,6 +151,7 @@ export function useExtensionSettingsState({
   }
 
   async function toggleSkillEnabled(skill: SkillEntry, enabled: boolean) {
+    if (!skillSupportsAction(skill, SKILL_ACTION_SET_ENABLED)) return;
     catalog.setLoading(true);
     catalog.setError("");
     try {
@@ -159,6 +165,7 @@ export function useExtensionSettingsState({
   }
 
   async function deleteSkill(skill: SkillEntry) {
+    if (!skillSupportsAction(skill, SKILL_ACTION_DELETE)) return;
     catalog.setLoading(true);
     catalog.setError("");
     try {

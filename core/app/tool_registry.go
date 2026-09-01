@@ -320,7 +320,7 @@ func (r *Registry) CatalogEntries() []domain.ToolCatalogEntry {
 }
 
 func (r *Registry) orderedNamesLocked() []string {
-	preferred := []string{"read", "bash", "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"}
+	preferred := []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", "grep", "find", "ls"}
 	seen := map[string]bool{}
 	names := make([]string, 0, len(r.tools))
 	for _, name := range preferred {
@@ -347,7 +347,7 @@ func (r *Registry) orderedNamesLocked() []string {
 
 func isReservedCoreToolName(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "read", "bash", "edit", "write", "update_plan", "ask_user":
+	case "read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", SkillsReadToolName, SkillsListToolName:
 		return true
 	default:
 		return false
@@ -415,16 +415,24 @@ func NewCodingToolRegistry(workspaceRoot string) (*Registry, error) {
 }
 
 func NewCodingToolRegistryWithShellOutputSink(workspaceRoot string, outputSink ShellOutputSink) (*Registry, error) {
-	return NewCodingToolRegistryWithExecutionEnvironment(workspaceRoot, outputSink, nil)
+	return newCodingToolRegistry(workspaceRoot, outputSink, nil, nil)
 }
 
 func NewCodingToolRegistryWithExecutionEnvironment(workspaceRoot string, outputSink ShellOutputSink, environment ExecutionEnvironment) (*Registry, error) {
+	return newCodingToolRegistry(workspaceRoot, outputSink, environment, nil)
+}
+
+func newCodingToolRegistry(workspaceRoot string, outputSink ShellOutputSink, environment ExecutionEnvironment, ptyRegistry *AgentPTYRegistry) (*Registry, error) {
+	if ptyRegistry == nil {
+		ptyRegistry = NewAgentPTYRegistry()
+	}
 	registry := NewRegistry()
-	runner := NewLocalSandboxRunner()
 	read := NewReadTool(workspaceRoot)
 	read.environment = environment
-	bash := NewBashTool(workspaceRoot, runner, outputSink)
-	bash.environment = environment
+	execCommand := NewExecCommandTool(workspaceRoot, ptyRegistry, outputSink)
+	execCommand.environment = environment
+	writeStdin := NewWriteStdinTool(workspaceRoot, ptyRegistry)
+	writeStdin.environment = environment
 	edit := NewEditTool(workspaceRoot)
 	edit.environment = environment
 	write := NewWriteTool(workspaceRoot)
@@ -436,7 +444,7 @@ func NewCodingToolRegistryWithExecutionEnvironment(workspaceRoot string, outputS
 	ls := NewListFilesTool(workspaceRoot)
 	ls.environment = environment
 	for _, tool := range []domain.Tool{
-		read, bash, edit, write, grep, find, ls,
+		read, execCommand, writeStdin, edit, write, grep, find, ls,
 	} {
 		if err := registry.Register(tool); err != nil {
 			return nil, err

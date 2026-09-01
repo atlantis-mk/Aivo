@@ -3,6 +3,7 @@ import type { ExtensionSettingsSection } from "@/features/projects/extension-set
 import type {
   ExtensionInstall,
   MCPServerListItem,
+  SkillEntry,
   ToolCatalogEntry,
 } from "@/services/aivo";
 import {
@@ -24,6 +25,14 @@ export type ToolCatalogGroup = {
   label: string;
   section: Exclude<ExtensionSettingsSection, "skills">;
   tools: ToolCatalogEntry[];
+};
+
+export type SkillCatalogGroup = {
+  description?: string;
+  grouped: boolean;
+  id: string;
+  label: string;
+  skills: SkillEntry[];
 };
 
 export function normalizeToolNames(names: string[]) {
@@ -85,6 +94,34 @@ export function groupToolCatalogEntries(
   return [...groups.values()];
 }
 
+export function groupSkillCatalogEntries(skills: SkillEntry[]) {
+  const groups = new Map<string, SkillCatalogGroup>();
+  for (const skill of skills) {
+    const selectionGroup = skill.selectionGroup;
+    const grouped = Boolean(selectionGroup);
+    const id = grouped
+      ? `skill:group:${selectionGroup!.id}`
+      : `skill:item:${skill.id}`;
+    const group = groups.get(id) ?? {
+      description: grouped
+        ? selectionGroup?.description || skill.description
+        : skill.description,
+      grouped,
+      id,
+      label: grouped ? selectionGroup!.name || selectionGroup!.id : skill.name,
+      skills: [],
+    };
+    group.skills.push(skill);
+    groups.set(id, group);
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    skills: group.skills.toSorted((left, right) =>
+      left.name.localeCompare(right.name),
+    ),
+  }));
+}
+
 export function toolActivationSourceMetadata(
   extensions: ExtensionInstall[],
   servers: MCPServerListItem[],
@@ -142,6 +179,23 @@ export function isToolCatalogGroupUsed(
   return group.tools.some((tool) => usedToolSet.has(tool.name));
 }
 
+export function isSkillCatalogGroupActive(
+  group: SkillCatalogGroup,
+  activeSkillSet: Set<string>,
+) {
+  return group.skills.every((skill) => activeSkillSet.has(skill.id));
+}
+
+export function isSkillCatalogGroupPartiallyActive(
+  group: SkillCatalogGroup,
+  activeSkillSet: Set<string>,
+) {
+  return (
+    !isSkillCatalogGroupActive(group, activeSkillSet) &&
+    group.skills.some((skill) => activeSkillSet.has(skill.id))
+  );
+}
+
 export function toolActivationSwitchId(groupId: string) {
   return `tool-activation-${encodeURIComponent(groupId)}`;
 }
@@ -157,7 +211,7 @@ export function toolNameListsEqual(left: string[], right: string[]) {
 
 function isBridgeCatalogTool(tool: ToolCatalogEntry) {
   return [
-    "tool_resolve",
+    "resource_resolve",
     "tool_search",
     "tool_list",
     "tool_detail",
