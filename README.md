@@ -29,6 +29,19 @@ For toolchain requirements, formatting, and tests, see
 remain `codex` / `codex-*` for now so upstream synchronization stays
 reviewable.
 
+## Run the desktop shell
+
+The Electron desktop shell uses the locally built runtime in development:
+
+```shell
+cargo build --manifest-path codex-rs/Cargo.toml --bin codex
+pnpm install --frozen-lockfile
+pnpm --filter @aivo/desktop dev
+```
+
+The shell runs with a sandboxed renderer and exposes only its typed runtime
+status controls through preload IPC. It is not yet a distributable installer.
+
 ## Development direction
 
 1. Add a maintainable multi-provider abstraction on top of the runtime.
