@@ -6,7 +6,11 @@
   "description": "Aivo desktop client for the local Codex app-server runtime.",
   "main": "dist/main/main.cjs",
   "scripts": {
-    "dev": "pnpm build && electron .",
+    "dev": "concurrently -k \"pnpm dev:main\" \"pnpm dev:preload\" \"pnpm dev:renderer\" \"pnpm dev:electron\"",
+    "dev:main": "vite build --watch --config vite.main.config.ts",
+    "dev:preload": "vite build --watch --config vite.preload.config.ts",
+    "dev:renderer": "vite --host 127.0.0.1 --config vite.renderer.config.ts",
+    "dev:electron": "wait-on tcp:5173 file:dist/main/main.cjs file:dist/preload/preload.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "build": "vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.renderer.config.ts",
     "lint": "tsc --noEmit"
   },
@@ -17,9 +21,12 @@
     "@types/react": "^19.2.3",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
     "electron": "^41.10.7",
     "typescript": "^5.9.3",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "wait-on": "^9.1.0"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

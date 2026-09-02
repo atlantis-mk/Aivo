@@ -311,6 +311,7 @@ const stringOrNull = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
 
 const runtime = new AppServerRuntime();
+const devServerURL = process.env.VITE_DEV_SERVER_URL;
 
 const createWindow = async (): Promise<void> => {
   const window = new BrowserWindow({
@@ -325,6 +326,11 @@ const createWindow = async (): Promise<void> => {
       sandbox: true,
     },
   });
+
+  if (devServerURL) {
+    await window.loadURL(devServerURL);
+    return;
+  }
 
   await window.loadFile(path.join(__dirname, "../renderer/index.html"));
 };
