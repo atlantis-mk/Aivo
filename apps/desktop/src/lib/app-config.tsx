@@ -78,7 +78,9 @@ export const useAppConfig = create<AppConfigState>((set) => ({
   loading: true,
   error: "",
   bridgeReady: hasAppBridge(),
-  bridgeResolved: hasAppBridge(),
+  // The migrated frontend runs with local preview state in the Electron/Codex
+  // shell. Do not spend three seconds waiting for the retired Go bridge there.
+  bridgeResolved: hasAppBridge() || hasCodexDesktopBridge(),
   setConfig: (config) => set({ config }),
   setCatalog: (catalog) => set({ catalog }),
   setError: (error) => set({ error }),
@@ -119,7 +121,10 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
   }, [config]);
 
   useEffect(() => {
-    if (bridgeReady) return;
+    if (bridgeReady || hasCodexDesktopBridge()) {
+      setBridgeResolved(true);
+      return;
+    }
 
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
