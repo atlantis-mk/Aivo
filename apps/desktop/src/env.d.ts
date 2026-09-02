@@ -19,7 +19,28 @@ interface CodexLoginCompletion {
   success: boolean;
 }
 
+type DesktopUpdatePhase =
+  | "idle"
+  | "checking"
+  | "up-to-date"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "unsupported"
+  | "error";
+
+interface DesktopUpdateState {
+  phase: DesktopUpdatePhase;
+  currentVersion: string;
+  availableVersion: string;
+  progress: number;
+  message: string;
+  errorCode: string;
+  automaticChecksEnabled: boolean;
+}
+
 interface AivoDesktopApi {
+  platform: NodeJS.Platform;
   runtime: {
     getStatus(): Promise<RuntimeStatus>;
     start(): Promise<RuntimeStatus>;
@@ -38,6 +59,17 @@ interface AivoDesktopApi {
   };
   workspace: {
     choose(): Promise<string | null>;
+  };
+  updates: {
+    cancel(): Promise<DesktopUpdateState | undefined>;
+    check(): Promise<DesktopUpdateState | undefined>;
+    download(): Promise<DesktopUpdateState | undefined>;
+    getState(): Promise<DesktopUpdateState | undefined>;
+    install(): Promise<DesktopUpdateState | undefined>;
+    onState(listener: (state: DesktopUpdateState) => void): () => void;
+  };
+  window: {
+    toggleMaximize(): Promise<void>;
   };
 }
 

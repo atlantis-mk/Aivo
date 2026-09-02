@@ -26,23 +26,25 @@ export function DesktopUpdateSettings() {
   const [bridgeError, setBridgeError] = useState("");
 
   useEffect(() => {
-    const unsubscribe = window.aivo.updates.onState(setState);
-    void window.aivo.updates.getState().then(setState).catch(() => {
+    const unsubscribe = window.aivoDesktop.updates.onState(setState);
+    void window.aivoDesktop.updates.getState().then((nextState) => {
+      if (nextState) setState(nextState);
+    }).catch(() => {
       setBridgeError("无法读取桌面更新服务。请重新启动 Aivo 后再试。");
     });
     return unsubscribe;
   }, []);
 
   const primary = useMemo(
-    () => desktopUpdateAction(state, window.aivo.platform),
+    () => desktopUpdateAction(state, window.aivoDesktop.platform),
     [state],
   );
 
   async function runAction(action: DesktopUpdateAction) {
     setBridgeError("");
     try {
-      const next = await window.aivo.updates[action]();
-      setState(next);
+      const next = await window.aivoDesktop.updates[action]();
+      if (next) setState(next);
     } catch {
       setBridgeError("更新操作没有完成，请稍后重试。");
     }

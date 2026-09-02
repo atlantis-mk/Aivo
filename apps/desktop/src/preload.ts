@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("aivoDesktop", {
+  platform: process.platform,
   runtime: {
     getStatus: (): Promise<RuntimeStatus> =>
       ipcRenderer.invoke("runtime:get-status"),
@@ -48,5 +49,30 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
   },
   workspace: {
     choose: (): Promise<string | null> => ipcRenderer.invoke("workspace:choose"),
+  },
+  updates: {
+    cancel: (): Promise<DesktopUpdateState | undefined> =>
+      ipcRenderer.invoke("update:cancel"),
+    check: (): Promise<DesktopUpdateState | undefined> =>
+      ipcRenderer.invoke("update:check"),
+    download: (): Promise<DesktopUpdateState | undefined> =>
+      ipcRenderer.invoke("update:download"),
+    getState: (): Promise<DesktopUpdateState | undefined> =>
+      ipcRenderer.invoke("update:get-state"),
+    install: (): Promise<DesktopUpdateState | undefined> =>
+      ipcRenderer.invoke("update:install"),
+    onState: (listener: (state: DesktopUpdateState) => void): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        state: DesktopUpdateState,
+      ): void => listener(state);
+      ipcRenderer.on("update:state", handler);
+      return (): void => {
+        ipcRenderer.removeListener("update:state", handler);
+      };
+    },
+  },
+  window: {
+    toggleMaximize: (): Promise<void> => ipcRenderer.invoke("window:toggle-maximize"),
   },
 });

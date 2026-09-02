@@ -1,7 +1,20 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+  Menu,
+  shell,
+} from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import {
+  createDesktopUpdater,
+  type DesktopUpdateState,
+  type DesktopUpdater,
+} from "./desktop-updater.cjs";
 
 type RuntimeState = "stopped" | "starting" | "ready" | "error";
 
@@ -312,13 +325,166 @@ const stringOrNull = (value: unknown): string | null =>
 
 const runtime = new AppServerRuntime();
 const devServerURL = process.env.VITE_DEV_SERVER_URL;
+const isMac = process.platform === "darwin";
+let desktopUpdater: DesktopUpdater | undefined;
 
-const createWindow = async (): Promise<void> => {
+app.setName("Aivo");
+
+function mainWindowForMenu(): BrowserWindow | undefined {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+}
+
+function requireMainRenderer(event: IpcMainInvokeEvent): void {
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Desktop capability is available only to the main renderer.");
+  }
+}
+
+function configureApplicationMenu(): void {
+  if (!isMac) {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Aivo",
+        submenu: [
+          { role: "about", label: "关于 Aivo" },
+          { type: "separator" },
+          {
+            label: "检查更新…",
+            click: () => {
+              const window = mainWindowForMenu();
+              if (window && desktopUpdater) {
+                void checkAndOfferUpdate(window, true);
+              }
+            },
+          },
+          { type: "separator" },
+          { role: "services", label: "服务" },
+          { type: "separator" },
+          { role: "hide", label: "隐藏 Aivo" },
+          { role: "hideOthers", label: "隐藏其他" },
+          { role: "unhide", label: "全部显示" },
+          { type: "separator" },
+          { role: "quit", label: "退出 Aivo" },
+        ],
+      },
+      { label: "文件", submenu: [{ role: "close", label: "关闭窗口" }] },
+      {
+        label: "编辑",
+        submenu: [
+          { role: "undo", label: "撤销" },
+          { role: "redo", label: "重做" },
+          { type: "separator" },
+          { role: "cut", label: "剪切" },
+          { role: "copy", label: "复制" },
+          { role: "paste", label: "粘贴" },
+          { role: "delete", label: "删除" },
+          { role: "selectAll", label: "全选" },
+        ],
+      },
+      {
+        label: "视图",
+        submenu: [
+          { role: "reload", label: "重新加载" },
+          { role: "forceReload", label: "强制重新加载" },
+          { role: "toggleDevTools", label: "切换开发者工具" },
+          { type: "separator" },
+          { role: "resetZoom", label: "实际大小" },
+          { role: "zoomIn", label: "放大" },
+          { role: "zoomOut", label: "缩小" },
+          { type: "separator" },
+          { role: "togglefullscreen", label: "切换全屏" },
+        ],
+      },
+      {
+        label: "窗口",
+        submenu: [
+          { role: "minimize", label: "最小化" },
+          { role: "zoom", label: "缩放" },
+          { type: "separator" },
+          { role: "front", label: "全部置于最前面" },
+        ],
+      },
+    ]),
+  );
+}
+
+function publishUpdateState(state: DesktopUpdateState): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send("update:state", state);
+  }
+}
+
+async function checkAndOfferUpdate(
+  window: BrowserWindow,
+  reportCurrent = false,
+): Promise<void> {
+  if (!desktopUpdater) return;
+  const state = await desktopUpdater.check();
+  if (window.isDestroyed()) return;
+
+  if (state.phase !== "available") {
+    if (!reportCurrent) return;
+    await dialog.showMessageBox(window, {
+      type: state.phase === "error" ? "error" : "info",
+      title: state.phase === "error" ? "无法检查 Aivo 更新" : "Aivo 软件更新",
+      message:
+        state.phase === "up-to-date"
+          ? `Aivo v${state.currentVersion} 已是最新版本`
+          : state.message,
+      buttons: ["好"],
+      defaultId: 0,
+      noLink: true,
+    });
+    return;
+  }
+
+  const offer = await dialog.showMessageBox(window, {
+    type: "info",
+    title: "Aivo 更新可用",
+    message: `发现 Aivo v${state.availableVersion}`,
+    detail: "下载后会校验发布记录和 SHA-256，安装仍会显示 macOS 安全提示。",
+    buttons: ["下载更新", "稍后"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (offer.response !== 0) return;
+
+  const downloaded = await desktopUpdater.download();
+  if (downloaded.phase !== "ready" || window.isDestroyed()) return;
+  const ready = await dialog.showMessageBox(window, {
+    type: "info",
+    title: "Aivo 更新已验证",
+    message: `Aivo v${downloaded.availableVersion} 已准备好`,
+    detail: "将打开已验证的更新包；请按 macOS 提示完成安装。",
+    buttons: ["打开安装包", "稍后"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (ready.response === 0) await desktopUpdater.install();
+}
+
+const createWindow = async (): Promise<BrowserWindow> => {
   const window = new BrowserWindow({
     width: 1180,
     height: 760,
     minWidth: 900,
     minHeight: 600,
+    backgroundColor: "#ffffff",
+    title: "Aivo",
+    frame: true,
+    ...(isMac
+      ? {
+          titleBarStyle: "hidden" as const,
+          trafficLightPosition: { x: 10, y: 10 },
+        }
+      : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -329,10 +495,11 @@ const createWindow = async (): Promise<void> => {
 
   if (devServerURL) {
     await window.loadURL(devServerURL);
-    return;
+    return window;
   }
 
   await window.loadFile(path.join(__dirname, "../renderer/index.html"));
+  return window;
 };
 
 app.whenReady().then(async () => {
@@ -352,8 +519,54 @@ app.whenReady().then(async () => {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
+  ipcMain.handle("window:toggle-maximize", (event) => {
+    requireMainRenderer(event);
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return;
+    if (window.isMaximized()) {
+      window.unmaximize();
+    } else {
+      window.maximize();
+    }
+  });
+  ipcMain.handle("update:get-state", (event) => {
+    requireMainRenderer(event);
+    return desktopUpdater?.getState();
+  });
+  ipcMain.handle("update:check", (event) => {
+    requireMainRenderer(event);
+    return desktopUpdater?.check();
+  });
+  ipcMain.handle("update:download", (event) => {
+    requireMainRenderer(event);
+    return desktopUpdater?.download();
+  });
+  ipcMain.handle("update:install", (event) => {
+    requireMainRenderer(event);
+    return desktopUpdater?.install();
+  });
+  ipcMain.handle("update:cancel", (event) => {
+    requireMainRenderer(event);
+    return desktopUpdater?.cancel();
+  });
 
-  await createWindow();
+  desktopUpdater = createDesktopUpdater({
+    appVersion: app.getVersion(),
+    arch: process.arch,
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    shell,
+    tempRoot: app.getPath("temp"),
+    onState: publishUpdateState,
+  });
+  configureApplicationMenu();
+
+  const window = await createWindow();
+  if (app.isPackaged) {
+    window.webContents.once("did-finish-load", () => {
+      setTimeout(() => void checkAndOfferUpdate(window), 3000);
+    });
+  }
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -370,5 +583,6 @@ app.on("window-all-closed", async () => {
 });
 
 app.on("before-quit", () => {
+  desktopUpdater?.dispose();
   void runtime.stop();
 });

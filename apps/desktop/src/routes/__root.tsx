@@ -11,7 +11,7 @@ export const Route = createRootRoute({
         className="window-title-drag-region"
         data-app-drag
         onDoubleClick={() => {
-          void window.aivo?.toggleMaximize()
+          void window.aivoDesktop?.window.toggleMaximize()
         }}
         aria-hidden="true"
       />
@@ -22,7 +22,7 @@ export const Route = createRootRoute({
 })
 
 function MacWindowControlPlaceholders() {
-  const isMac = window.aivo?.platform === 'darwin'
+  const isMac = window.aivoDesktop?.platform === 'darwin'
   const [isFocused, setIsFocused] = useState(() => document.hasFocus())
 
   useEffect(() => {

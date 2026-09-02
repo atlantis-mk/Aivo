@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function WindowControls() {
-  const isMac = window.aivo?.platform === "darwin";
+  const isMac = window.aivoDesktop?.platform === "darwin";
 
   return (
     <div
