@@ -15,6 +15,7 @@ import {
   catalogDefaultModelForProvider,
   type AppConfigWithAuxiliary,
 } from "@/features/setup/setup-provider-models";
+import { catalogWithCodexModels } from "@/lib/codex-model-catalog";
 import { modelSelectionAfterCatalogRefresh } from "@/features/setup/setup-model-refresh-selection";
 import {
   auxiliaryModelPreference,
@@ -108,6 +109,17 @@ export function useSetupProviderActions({
         }
       } else {
         const next = connectPreviewProvider(input);
+        let nextCatalog = next.catalog;
+        if (hasCodexDesktopBridge() && input.providerId === "openai") {
+          try {
+            nextCatalog = catalogWithCodexModels(
+              next.catalog,
+              await window.aivoDesktop.codex.listModels(),
+            );
+          } catch {
+            // The selected model remains valid even if a catalog refresh fails.
+          }
+        }
         const nextConfig =
           !configAuxiliaryModel(config) && input.modelId
             ? previewConfigForAuxiliaryModel(
@@ -116,7 +128,7 @@ export function useSetupProviderActions({
               )
             : next.config;
         setPreviewInitialized(nextConfig);
-        setCatalog(next.catalog);
+        setCatalog(nextCatalog);
         setConfig(nextConfig);
       }
       return true;
@@ -242,6 +254,23 @@ export function useSetupProviderActions({
   }
 
   async function refreshProviderCatalog(input: ProviderConnectInput) {
+    if (hasCodexDesktopBridge() && input.providerId === "openai") {
+      try {
+        const codexModels = await window.aivoDesktop.codex.listModels();
+        if (!catalog || codexModels.length === 0) return catalog;
+
+        const nextCatalog = catalogWithCodexModels(catalog, codexModels);
+        setCatalog(nextCatalog);
+        setError("");
+        return nextCatalog;
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : "无法读取 Codex 模型列表。",
+        );
+        return catalog;
+      }
+    }
+
     if (!hasAppBridge()) return catalog;
     try {
       const nextCatalog = await refreshProviderModels(

@@ -13,6 +13,12 @@ interface CodexLoginStart {
   loginId: string;
 }
 
+interface CodexModel {
+  id: string;
+  name: string;
+  description: string;
+}
+
 interface CodexLoginCompletion {
   error: string | null;
   loginId: string | null;
@@ -50,6 +56,7 @@ interface AivoDesktopApi {
   codex: {
     cancelLogin(loginId: string): Promise<void>;
     getAccount(): Promise<CodexAccount>;
+    listModels(): Promise<CodexModel[]>;
     login(): Promise<CodexLoginStart>;
     logout(): Promise<void>;
     onAccount(listener: (account: CodexAccount) => void): () => void;

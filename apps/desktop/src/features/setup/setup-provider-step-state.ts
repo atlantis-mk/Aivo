@@ -124,7 +124,10 @@ export function useSetupProviderStepState({
       key: string,
       force = false,
     ) => {
-      if (!hasAppBridge()) return;
+      if (!hasAppBridge() && !hasCodexDesktopBridge()) return;
+      if (hasCodexDesktopBridge() && (!force || provider.id !== "openai")) {
+        return;
+      }
       if (!force && !canRefreshProviderModels(provider, form, mode, key, catalog)) {
         return;
       }
@@ -136,7 +139,9 @@ export function useSetupProviderStepState({
       );
       if (refreshedDefault) {
         setSelectedModelId((current) =>
-          modelSelectionAfterCatalogRefresh(current, refreshedDefault),
+          hasCodexDesktopBridge() && provider.id === "openai"
+            ? refreshedDefault
+            : modelSelectionAfterCatalogRefresh(current, refreshedDefault),
         );
       }
     },
@@ -279,7 +284,12 @@ export function useSetupProviderStepState({
       return !customProviderFormIsValid(customProviderForm);
     }
     if (authMode === "api-key") return !apiKey.trim();
-    if (authMode === "oauth-browser" && oauthStarted && !hasAppBridge()) {
+    if (
+      authMode === "oauth-browser" &&
+      oauthStarted &&
+      !hasAppBridge() &&
+      !hasCodexDesktopBridge()
+    ) {
       return !callbackInput.trim();
     }
     return false;

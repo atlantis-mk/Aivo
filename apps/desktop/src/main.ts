@@ -38,6 +38,12 @@ interface CodexLoginStart {
   loginId: string;
 }
 
+interface CodexModel {
+  id: string;
+  name: string;
+  description: string;
+}
+
 class AppServerRuntime {
   private child?: ChildProcessWithoutNullStreams;
   private nextRequestId = 1;
@@ -143,6 +149,38 @@ class AppServerRuntime {
       email: accountType === "chatgpt" ? stringOrNull(account?.email) : null,
       planType: accountType === "chatgpt" ? stringOrNull(account?.planType) : null,
     };
+  }
+
+  async listModels(): Promise<CodexModel[]> {
+    await this.start();
+    const models: CodexModel[] = [];
+    let cursor: string | null = null;
+
+    do {
+      const result = await this.request("model/list", {
+        cursor,
+        includeHidden: false,
+        limit: 100,
+      });
+      if (!isRecord(result)) {
+        throw new Error("The local Codex runtime returned an unexpected model list.");
+      }
+
+      const data = Array.isArray(result.data) ? result.data : [];
+      for (const item of data) {
+        if (!isRecord(item)) continue;
+        const id = stringOrNull(item.model);
+        if (!id) continue;
+        models.push({
+          id,
+          name: stringOrNull(item.displayName) ?? id,
+          description: stringOrNull(item.description) ?? "",
+        });
+      }
+      cursor = stringOrNull(result.nextCursor);
+    } while (cursor);
+
+    return models;
   }
 
   async loginWithChatGpt(): Promise<CodexLoginStart> {
@@ -507,6 +545,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("runtime:start", () => runtime.start());
   ipcMain.handle("runtime:stop", () => runtime.stop());
   ipcMain.handle("account:read", () => runtime.readAccount());
+  ipcMain.handle("models:list", () => runtime.listModels());
   ipcMain.handle("account:login", () => runtime.loginWithChatGpt());
   ipcMain.handle("account:cancel-login", (_event, loginId: string) =>
     runtime.cancelLogin(loginId),

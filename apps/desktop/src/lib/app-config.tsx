@@ -8,6 +8,7 @@ import type { domain } from "../../bridge/go/models";
 import type { CatalogState } from "@/lib/provider-catalog";
 import { getPreviewAppConfig, getPreviewCatalog } from "@/lib/preview-state";
 import { appNameFromConfig } from "@/lib/app-identity";
+import { catalogWithCodexModels } from "@/lib/codex-model-catalog";
 import { getAppConfig as loadAppConfig, getProviderCatalog as loadProviderCatalog } from "@/services/aivo";
 
 type AppConfigState = {
@@ -67,7 +68,19 @@ async function getAppConfig() {
 
 async function getProviderCatalog() {
   if (!hasAppBridge()) {
-    return getPreviewCatalog();
+    const catalog = getPreviewCatalog();
+    if (!hasCodexDesktopBridge()) return catalog;
+
+    try {
+      const account = await window.aivoDesktop.codex.getAccount();
+      if (account.authMode !== "chatgpt") return catalog;
+      return catalogWithCodexModels(
+        catalog,
+        await window.aivoDesktop.codex.listModels(),
+      );
+    } catch {
+      return catalog;
+    }
   }
   return loadProviderCatalog();
 }

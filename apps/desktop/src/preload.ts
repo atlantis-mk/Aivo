@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
     cancelLogin: (loginId: string): Promise<void> =>
       ipcRenderer.invoke("account:cancel-login", loginId),
     getAccount: (): Promise<CodexAccount> => ipcRenderer.invoke("account:read"),
+    listModels: (): Promise<CodexModel[]> => ipcRenderer.invoke("models:list"),
     login: (): Promise<CodexLoginStart> => ipcRenderer.invoke("account:login"),
     logout: (): Promise<void> => ipcRenderer.invoke("account:logout"),
     onAccount: (listener: (account: CodexAccount) => void): (() => void) => {
