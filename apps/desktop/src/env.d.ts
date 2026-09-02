@@ -36,6 +36,9 @@ interface AivoDesktopApi {
       listener: (completion: CodexLoginCompletion) => void,
     ): () => void;
   };
+  workspace: {
+    choose(): Promise<string | null>;
+  };
 }
 
 interface Window {

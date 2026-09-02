@@ -46,4 +46,7 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
       };
     },
   },
+  workspace: {
+    choose: (): Promise<string | null> => ipcRenderer.invoke("workspace:choose"),
+  },
 });

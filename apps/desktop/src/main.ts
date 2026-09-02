@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -339,6 +339,13 @@ app.whenReady().then(async () => {
     runtime.cancelLogin(loginId),
   );
   ipcMain.handle("account:logout", () => runtime.logout());
+  ipcMain.handle("workspace:choose", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "选择 Aivo 工作目录",
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
 
   await createWindow();
 
