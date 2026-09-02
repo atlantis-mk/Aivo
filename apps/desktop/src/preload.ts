@@ -17,4 +17,33 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
       };
     },
   },
+  codex: {
+    cancelLogin: (loginId: string): Promise<void> =>
+      ipcRenderer.invoke("account:cancel-login", loginId),
+    getAccount: (): Promise<CodexAccount> => ipcRenderer.invoke("account:read"),
+    login: (): Promise<CodexLoginStart> => ipcRenderer.invoke("account:login"),
+    logout: (): Promise<void> => ipcRenderer.invoke("account:logout"),
+    onAccount: (listener: (account: CodexAccount) => void): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        account: CodexAccount,
+      ): void => listener(account);
+      ipcRenderer.on("account:updated", handler);
+      return (): void => {
+        ipcRenderer.removeListener("account:updated", handler);
+      };
+    },
+    onLoginCompleted: (
+      listener: (completion: CodexLoginCompletion) => void,
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        completion: CodexLoginCompletion,
+      ): void => listener(completion);
+      ipcRenderer.on("account:login-completed", handler);
+      return (): void => {
+        ipcRenderer.removeListener("account:login-completed", handler);
+      };
+    },
+  },
 });

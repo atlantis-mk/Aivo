@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -13,6 +13,16 @@ interface RuntimeStatus {
 interface PendingRequest {
   reject(error: Error): void;
   resolve(result: unknown): void;
+}
+
+interface CodexAccount {
+  authMode: string | null;
+  email: string | null;
+  planType: string | null;
+}
+
+interface CodexLoginStart {
+  loginId: string;
 }
 
 class AppServerRuntime {
@@ -109,6 +119,48 @@ class AppServerRuntime {
     return this.runtimeStatus;
   }
 
+  async readAccount(): Promise<CodexAccount> {
+    await this.start();
+    const result = await this.request("account/read", { refreshToken: false });
+    const account = isRecord(result) && isRecord(result.account) ? result.account : null;
+    const accountType = stringOrNull(account?.type);
+
+    return {
+      authMode: accountType,
+      email: accountType === "chatgpt" ? stringOrNull(account?.email) : null,
+      planType: accountType === "chatgpt" ? stringOrNull(account?.planType) : null,
+    };
+  }
+
+  async loginWithChatGpt(): Promise<CodexLoginStart> {
+    await this.start();
+    const result = await this.request("account/login/start", {
+      type: "chatgpt",
+      useHostedLoginSuccessPage: true,
+      appBrand: "codex",
+    });
+    if (!isRecord(result) || result.type !== "chatgpt") {
+      throw new Error("The local Codex runtime returned an unexpected login response.");
+    }
+
+    const loginId = stringOrNull(result.loginId);
+    const authUrl = stringOrNull(result.authUrl);
+    if (!loginId || !authUrl) {
+      throw new Error("The local Codex runtime did not return a login URL.");
+    }
+
+    await shell.openExternal(authUrl);
+    return { loginId };
+  }
+
+  async cancelLogin(loginId: string): Promise<void> {
+    await this.request("account/login/cancel", { loginId });
+  }
+
+  async logout(): Promise<void> {
+    await this.request("account/logout", {});
+  }
+
   private resolveExecutable(): string {
     if (process.env.AIVO_CODEX_BIN) {
       return process.env.AIVO_CODEX_BIN;
@@ -135,12 +187,10 @@ class AppServerRuntime {
       return Promise.reject(new Error("Local runtime is not available."));
     }
 
-    const id = this.nextRequestId++;
-    const message = JSON.stringify({ id, method, params });
-    child.stdin.write(`${message}\n`);
-
     return new Promise((resolve, reject) => {
+      const id = this.nextRequestId++;
       this.pendingRequests.set(id, { resolve, reject });
+      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
     });
   }
 
@@ -164,6 +214,8 @@ class AppServerRuntime {
         const message = JSON.parse(line) as {
           id?: number;
           error?: { message?: string };
+          method?: string;
+          params?: unknown;
           result?: unknown;
         };
         if (typeof message.id === "number") {
@@ -179,7 +231,10 @@ class AppServerRuntime {
           } else {
             pending.resolve(message.result);
           }
+          continue;
         }
+
+        this.handleNotification(message.method, message.params);
       } catch {
         console.warn("Ignoring malformed app-server output.");
       }
@@ -194,6 +249,42 @@ class AppServerRuntime {
     }
   }
 
+  private handleNotification(method: string | undefined, params: unknown): void {
+    if (method === "account/updated") {
+      const payload = isRecord(params) ? params : {};
+      this.sendToWindows("account:updated", {
+        authMode: stringOrNull(payload.authMode),
+        email: null,
+        planType: stringOrNull(payload.planType),
+      } satisfies CodexAccount);
+      return;
+    }
+
+    if (method === "account/login/completed") {
+      const payload = isRecord(params) ? params : {};
+      const completion = {
+        error: stringOrNull(payload.error),
+        loginId: stringOrNull(payload.loginId),
+        success: payload.success === true,
+      };
+      this.sendToWindows("account:login-completed", completion);
+      if (completion.success) {
+        void this.publishCurrentAccount();
+      }
+    }
+  }
+
+  private async publishCurrentAccount(): Promise<void> {
+    try {
+      this.sendToWindows("account:updated", await this.readAccount());
+    } catch (error) {
+      console.warn(
+        "Could not refresh the local Codex account after login:",
+        error instanceof Error ? error.message : "unknown error",
+      );
+    }
+  }
+
   private rejectPending(error: Error): void {
     for (const pending of this.pendingRequests.values()) {
       pending.reject(error);
@@ -203,11 +294,21 @@ class AppServerRuntime {
 
   private setStatus(status: RuntimeStatus): void {
     this.runtimeStatus = status;
+    this.sendToWindows("runtime:status", status);
+  }
+
+  private sendToWindows(channel: string, payload: unknown): void {
     for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send("runtime:status", status);
+      window.webContents.send(channel, payload);
     }
   }
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const stringOrNull = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
 
 const runtime = new AppServerRuntime();
 
@@ -232,6 +333,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("runtime:get-status", () => runtime.status());
   ipcMain.handle("runtime:start", () => runtime.start());
   ipcMain.handle("runtime:stop", () => runtime.stop());
+  ipcMain.handle("account:read", () => runtime.readAccount());
+  ipcMain.handle("account:login", () => runtime.loginWithChatGpt());
+  ipcMain.handle("account:cancel-login", (_event, loginId: string) =>
+    runtime.cancelLogin(loginId),
+  );
+  ipcMain.handle("account:logout", () => runtime.logout());
 
   await createWindow();
 
