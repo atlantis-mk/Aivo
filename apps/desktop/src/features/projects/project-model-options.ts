@@ -2,6 +2,35 @@ import type { ModelInfo, ProviderInfo } from "@/lib/provider-catalog";
 import type { PermissionMode } from "@/services/aivo";
 import type { domain } from "../../../bridge/go/models";
 
+export type WebSearchMode = "disabled" | "cached" | "indexed" | "live";
+
+export const webSearchModeOptions: Array<{
+  mode: WebSearchMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    mode: "live",
+    label: "实时搜索",
+    description: "允许 provider 使用实时互联网搜索",
+  },
+  {
+    mode: "indexed",
+    label: "索引搜索",
+    description: "仅允许 provider 使用索引网络访问",
+  },
+  {
+    mode: "cached",
+    label: "缓存搜索",
+    description: "禁用实时外网访问，仅保留缓存搜索能力",
+  },
+  {
+    mode: "disabled",
+    label: "关闭搜索",
+    description: "不向 provider 暴露 Web Search",
+  },
+];
+
 export type ModelOption = ModelInfo & {
   providerName: string;
 };
@@ -192,13 +221,37 @@ export function serviceTierLabel(serviceTier: string) {
 export function normalizePermissionMode(
   mode: string | undefined,
 ): PermissionMode {
-  if (
-    mode === "request_approval" ||
-    mode === "full_access"
-  ) {
+  if (mode === "request_approval" || mode === "full_access") {
     return mode;
   }
   return "request_approval";
+}
+
+export function normalizeWebSearchMode(
+  mode: string | undefined,
+): WebSearchMode {
+  if (
+    mode === "disabled" ||
+    mode === "cached" ||
+    mode === "indexed" ||
+    mode === "live"
+  ) {
+    return mode;
+  }
+  return "live";
+}
+
+export function webSearchModeLabel(mode: string | undefined) {
+  switch (normalizeWebSearchMode(mode)) {
+    case "disabled":
+      return "关闭";
+    case "cached":
+      return "缓存";
+    case "indexed":
+      return "索引";
+    default:
+      return "实时";
+  }
 }
 
 export function providerSupportsServiceTier(providerId: string | undefined) {

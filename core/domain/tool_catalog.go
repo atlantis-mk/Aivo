@@ -53,9 +53,10 @@ type SessionActiveToolsInput struct {
 }
 
 type SessionActiveToolsResult struct {
-	SessionID     string   `json:"sessionId"`
-	ToolNames     []string `json:"toolNames"`
-	CoreToolNames []string `json:"coreToolNames"`
+	SessionID          string   `json:"sessionId"`
+	ToolNames          []string `json:"toolNames"`
+	CoreToolNames      []string `json:"coreToolNames"`
+	AutomaticToolNames []string `json:"automaticToolNames"`
 }
 
 type ToolRegistrationIdentity struct {

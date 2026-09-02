@@ -49,6 +49,9 @@ func (s *Service) UpdateModelPreferences(ctx context.Context, input domain.Model
 		}
 		cfg.DefaultPermissionMode = mode
 	}
+	if input.WebSearch != nil {
+		cfg.WebSearch = normalizeWebSearchRuntimeConfig(*input.WebSearch)
+	}
 	if input.NativeTools != nil {
 		cfg.NativeTools = normalizeNativeToolsRuntimeConfig(*input.NativeTools)
 	}

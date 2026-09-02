@@ -117,8 +117,19 @@ func (s *Service) GetSessionActiveTools(ctx context.Context, sessionID string) (
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	automatic, _ := s.autoSelectedTools(ctx, sessionID)
+	automaticNames := make([]string, 0, len(automatic))
+	for name := range automatic {
+		automaticNames = append(automaticNames, name)
+	}
+	sort.Strings(automaticNames)
 	coreNames := coreToolNames()
-	return domain.SessionActiveToolsResult{SessionID: sessionID, ToolNames: names, CoreToolNames: coreNames}, nil
+	return domain.SessionActiveToolsResult{
+		SessionID:          sessionID,
+		ToolNames:          names,
+		CoreToolNames:      coreNames,
+		AutomaticToolNames: automaticNames,
+	}, nil
 }
 
 func (s *Service) SetSessionActiveTools(ctx context.Context, input domain.SessionActiveToolsInput) (domain.SessionActiveToolsResult, error) {

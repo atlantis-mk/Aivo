@@ -260,6 +260,20 @@
     text-decoration-color: var(--primary);
   }
 
+  .aivo-markdown [data-streamdown="link"][data-external-link="true"] {
+    color: var(--color-blue-600) !important;
+    text-decoration-color: color-mix(in oklch, var(--color-blue-600), transparent 45%);
+  }
+
+  .dark .aivo-markdown [data-streamdown="link"][data-external-link="true"] {
+    color: var(--color-blue-300) !important;
+    text-decoration-color: color-mix(in oklch, var(--color-blue-300), transparent 45%);
+  }
+
+  .aivo-markdown [data-streamdown="link"][data-external-link="true"]:hover {
+    text-decoration-color: currentColor;
+  }
+
   .aivo-markdown [data-streamdown="strong"] {
     color: var(--foreground);
     font-weight: 650;

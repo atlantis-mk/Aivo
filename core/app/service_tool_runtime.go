@@ -88,6 +88,9 @@ func (s *Service) toolsForWorkspace(workspaceRoot string) (*Registry, *ToolRunti
 	if err := registry.Register(NewCodexImageGenerationTool(s)); err != nil {
 		return nil, nil
 	}
+	if err := registry.Register(NewCodexViewImageTool(s)); err != nil {
+		return nil, nil
+	}
 	if s.extensionSupervisor != nil {
 		_ = s.extensionSupervisor.RegisterAllReadyTools(registry)
 	}

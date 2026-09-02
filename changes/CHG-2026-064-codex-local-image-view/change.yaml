@@ -1,0 +1,39 @@
+schema: "2"
+id: "CHG-2026-064-codex-local-image-view"
+title: "Add Codex OAuth local image inspection tool"
+type: "feature"
+status: "Active"
+spec_revision: "0.1.4-active"
+target_release: null
+goal: "Track the controlled local-filesystem and provider-route boundary for exposing visual inspection only to authenticated ChatGPT Codex sessions"
+requirements:
+  - "REQ-PROVIDER-001"
+  - "REQ-SESSION-001"
+  - "REQ-TOOL-001"
+  - "NFR-SECURITY-001"
+tests:
+  - "AT-PROVIDER-001"
+  - "AT-SESSION-001"
+  - "AT-TOOL-001"
+  - "CT-SECURITY-001"
+adrs: []
+context_refs:
+  - "docs/03-functional-requirements.md#REQ-PROVIDER-001"
+  - "docs/03-functional-requirements.md#REQ-SESSION-001"
+  - "docs/03-functional-requirements.md#REQ-TOOL-001"
+  - "docs/03-functional-requirements.md#NFR-SECURITY-001"
+  - "docs/04-architecture.md#Agent tools and extensions"
+  - "docs/06-security-privacy.md#Trust boundaries"
+  - "docs/07-test-release-plan.md#Test layers"
+  - "docs/provider-backend.md"
+related_changes:
+  - "CHG-2026-060-codex-account-native-runtime"
+boundaries:
+  - "The local image viewer is a dormant Provider-account tool: it is visible and executable only for the built-in OpenAI Responses route authenticated through ChatGPT Codex OAuth."
+  - "The tool reads only a regular, non-sensitive image file resolved beneath the active workspace root, applies existing byte/pixel/model-payload bounds, and returns an ephemeral model image attachment."
+  - "API-key, fallback, and every non-Codex Provider route must omit the tool and reject direct execution."
+risks:
+  - "A route-resolution or fallback regression could expose workspace image bytes to an ineligible Provider."
+  - "Malformed, oversized, symlinked, or non-image files could bypass bounded image preparation without strict path and decode validation."
+next:
+  - "Register and route-gate the canonical view_image tool, then cover route isolation and file-validation behavior."

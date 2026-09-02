@@ -232,6 +232,41 @@ func TestUpdateModelPreferencesPersistsNativeTools(t *testing.T) {
 	}
 }
 
+func TestUpdateModelPreferencesPersistsWebSearch(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	cfg, err := service.UpdateModelPreferences(context.Background(), domain.ModelPreferencesInput{
+		WebSearch: &domain.WebSearchConfig{
+			Mode:              domain.WebSearchModeIndexed,
+			Route:             domain.WebSearchRouteProvider,
+			SearchContextSize: "high",
+			AllowedDomains:    []string{"HTTPS://Example.com/", "example.com", "docs.example.com"},
+			UserLocation:      &domain.WebSearchUserLocation{Country: "US"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebSearch.Mode != domain.WebSearchModeIndexed || cfg.WebSearch.Route != domain.WebSearchRouteProvider || cfg.WebSearch.SearchContextSize != "high" {
+		t.Fatalf("WebSearch = %+v, want indexed provider high", cfg.WebSearch)
+	}
+	if len(cfg.WebSearch.AllowedDomains) != 2 || cfg.WebSearch.AllowedDomains[0] != "example.com" || cfg.WebSearch.AllowedDomains[1] != "docs.example.com" {
+		t.Fatalf("AllowedDomains = %#v, want normalized unique domains", cfg.WebSearch.AllowedDomains)
+	}
+	if cfg.WebSearch.UserLocation == nil || cfg.WebSearch.UserLocation.Type != "approximate" || cfg.WebSearch.UserLocation.Country != "US" {
+		t.Fatalf("UserLocation = %+v, want approximate US location", cfg.WebSearch.UserLocation)
+	}
+
+	cfg, err = service.UpdateModelPreferences(context.Background(), domain.ModelPreferencesInput{
+		WebSearch: &domain.WebSearchConfig{Mode: "unexpected", Route: "future", SearchContextSize: "verbose"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebSearch.Mode != domain.WebSearchModeLive || cfg.WebSearch.Route != domain.WebSearchRouteAuto || cfg.WebSearch.SearchContextSize != "" {
+		t.Fatalf("WebSearch = %+v, want safe defaults for invalid values", cfg.WebSearch)
+	}
+}
+
 func registerNoAuthProvider(t *testing.T, service *Service, id string, baseURL string, modelID string) {
 	t.Helper()
 	if err := service.RegisterProviderDefinition(ProviderDefinition{

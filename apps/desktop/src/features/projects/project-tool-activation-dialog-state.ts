@@ -55,8 +55,10 @@ export function useToolActivationDialogState({
 }: ToolActivationDialogProps) {
   const [activeToolNames, setActiveToolNames] = useState<string[]>([]);
   const [savedToolNames, setSavedToolNames] = useState<string[]>([]);
+  const [automaticToolNames, setAutomaticToolNames] = useState<string[]>([]);
   const [activeSkillIds, setActiveSkillIds] = useState<string[]>([]);
   const [savedSkillIds, setSavedSkillIds] = useState<string[]>([]);
+  const [visibleSkillIds, setVisibleSkillIds] = useState<string[]>([]);
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [skillCandidates, setSkillCandidates] = useState<
@@ -69,8 +71,8 @@ export function useToolActivationDialogState({
   const [saving, setSaving] = useState(false);
   const pendingActiveToolNamesRef = useRef(pendingActiveToolNames);
   const activeToolSet = useMemo(
-    () => new Set(activeToolNames),
-    [activeToolNames],
+    () => new Set([...activeToolNames, ...automaticToolNames]),
+    [activeToolNames, automaticToolNames],
   );
   const usedToolSet = useMemo(() => new Set(usedToolNames), [usedToolNames]);
   const toggleableTools = useMemo(
@@ -96,8 +98,8 @@ export function useToolActivationDialogState({
     groupedTools.length - activeGroupCount,
   );
   const activeSkillSet = useMemo(
-    () => new Set(activeSkillIds),
-    [activeSkillIds],
+    () => new Set([...activeSkillIds, ...visibleSkillIds]),
+    [activeSkillIds, visibleSkillIds],
   );
   const hasDraftChanges =
     !toolNameListsEqual(activeToolNames, savedToolNames) ||
@@ -123,19 +125,27 @@ export function useToolActivationDialogState({
             sessionId: activeSessionId,
             toolNames: [],
             coreToolNames: [],
+            automaticToolNames: [],
           }))
         : Promise.resolve({
             sessionId: "",
             toolNames: pendingActiveToolNamesRef.current,
             coreToolNames: [],
+            automaticToolNames: [],
           }),
       activeSessionId
         ? getSessionActiveSkills(activeSessionId).catch(() => ({
             sessionId: activeSessionId,
             skillIds: [],
             skills: [],
+            visibleSkillIds: [],
           }))
-        : Promise.resolve({ sessionId: "", skillIds: [], skills: [] }),
+        : Promise.resolve({
+            sessionId: "",
+            skillIds: [],
+            skills: [],
+            visibleSkillIds: [],
+          }),
       listExtensionInstalls().catch(() => []),
       listMCPServers(true, false).catch(() => [] as MCPServerListItem[]),
     ])
@@ -159,13 +169,21 @@ export function useToolActivationDialogState({
           const normalizedActiveSkills = normalizeToolNames(
             activeSkills.skillIds,
           );
+          const normalizedAutomaticTools = normalizeToolNames(
+            activeTools.automaticToolNames ?? [],
+          );
+          const normalizedVisibleSkills = normalizeToolNames(
+            activeSkills.visibleSkillIds ?? [],
+          );
           setTools(catalogTools);
           setSkills((skillList.entries ?? []).filter(skillCanActivate));
           setSkillCandidates(skillList.candidates ?? []);
           setActiveToolNames(normalizedActiveTools);
           setSavedToolNames(normalizedActiveTools);
+          setAutomaticToolNames(normalizedAutomaticTools);
           setActiveSkillIds(normalizedActiveSkills);
           setSavedSkillIds(normalizedActiveSkills);
+          setVisibleSkillIds(normalizedVisibleSkills);
           setSourceMetadata(toolActivationSourceMetadata(extensions, servers));
         },
       )
@@ -205,8 +223,12 @@ export function useToolActivationDialogState({
       const savedSkillNames = normalizeToolNames(savedSkills.skillIds);
       setActiveToolNames(savedNames);
       setSavedToolNames(savedNames);
+      setAutomaticToolNames(normalizeToolNames(saved.automaticToolNames ?? []));
       setActiveSkillIds(savedSkillNames);
       setSavedSkillIds(savedSkillNames);
+      setVisibleSkillIds(
+        normalizeToolNames(savedSkills.visibleSkillIds ?? []),
+      );
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "更新工具失败");
@@ -251,6 +273,7 @@ export function useToolActivationDialogState({
       const active = await getSessionActiveSkills(activeSessionId);
       setActiveSkillIds(normalizeToolNames(active.skillIds));
       setSavedSkillIds(normalizeToolNames(active.skillIds));
+      setVisibleSkillIds(normalizeToolNames(active.visibleSkillIds ?? []));
       toast.success(`已加载技能 ${skill.name}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载技能失败");

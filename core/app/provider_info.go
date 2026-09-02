@@ -82,27 +82,11 @@ func authMethodsForDefinition(def ProviderDefinition) []domain.ProviderAuthMetho
 	return methods
 }
 
-func defaultProviders() []domain.ProviderInfo {
-	defs := providerDefinitions()
-	out := make([]domain.ProviderInfo, 0, len(defs))
-	for _, def := range defs {
-		out = append(out, providerInfoFromDefinition(def))
-	}
-	return out
-}
-
 func defaultEnvFor(providerID string) string {
 	if def, ok := providerDefinition(providerID); ok && len(def.APIKeyEnvVars) > 0 {
 		return def.APIKeyEnvVars[0]
 	}
 	return ""
-}
-
-func defaultEnvCandidatesFor(providerID string) []string {
-	if def, ok := providerDefinition(providerID); ok {
-		return append([]string(nil), def.APIKeyEnvVars...)
-	}
-	return nil
 }
 
 func defaultModelFor(providerID string) string {
@@ -117,13 +101,6 @@ func defaultBaseURLFor(providerID string) string {
 		return def.DefaultBaseURL
 	}
 	return ""
-}
-
-func providerTypeFor(providerID string) string {
-	if def, ok := providerDefinition(providerID); ok {
-		return string(def.Transport)
-	}
-	return normalizeProviderID(providerID)
 }
 
 func providerModelRefreshable(def ProviderDefinition) bool {

@@ -192,6 +192,16 @@ func TestResourceResolveReplacesAutomaticSetWithoutChangingManualSet(t *testing.
 	if len(afterCandidates) != 0 || afterActivations["manual_tool"] != "manual" || afterActivations["new_auto"] != "automatic" || afterActivations["old_auto"] != "" {
 		t.Fatalf("after activations = %#v candidates = %#v", afterActivations, afterCandidates)
 	}
+	active, err := service.GetSessionActiveTools(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsToolNames(active.ToolNames, "manual_tool") || containsToolNames(active.ToolNames, "new_auto", "old_auto") {
+		t.Fatalf("manual active tools = %#v", active.ToolNames)
+	}
+	if !containsToolNames(active.AutomaticToolNames, "new_auto") || containsToolNames(active.AutomaticToolNames, "manual_tool", "old_auto") {
+		t.Fatalf("automatic active tools = %#v", active.AutomaticToolNames)
+	}
 	after := AssembleToolSpecsWithSources(registry, registry.Specs(), afterActivations)
 	names := toolSpecNames(after.Specs)
 	if !containsToolNames(names, "manual_tool", "new_auto", ResourceResolveName) || containsToolNames(names, "old_auto") {
@@ -199,7 +209,7 @@ func TestResourceResolveReplacesAutomaticSetWithoutChangingManualSet(t *testing.
 	}
 }
 
-func TestResourceResolveFailurePreservesAutomaticSet(t *testing.T) {
+func TestResourceResolveNoMatchPreservesAutomaticSet(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -218,11 +228,68 @@ func TestResourceResolveFailurePreservesAutomaticSet(t *testing.T) {
 	}
 	tool := NewResourceResolveTool(registry, service.resolveSessionResources)
 	result := tool.Execute(ctx, json.RawMessage(`{"mode":"use","intent":"missing capability"}`), domain.ToolExecutionContext{SessionID: session.ID, ToolCallID: "resolve"})
-	if result.OK || result.ToolError == nil || result.ToolError.Code != "no_available_resource" {
-		t.Fatalf("resolve result = %#v, want required no-match", result)
+	if !result.OK || result.ToolError != nil {
+		t.Fatalf("resolve result = %#v, want non-failing no-match", result)
+	}
+	if result.Structured["status"] != "no_available_resource" || result.Structured["appliesNextStep"] != false {
+		t.Fatalf("resolve structured result = %#v, want no-match without next-step changes", result.Structured)
 	}
 	automatic, initialized := service.autoSelectedTools(ctx, session.ID)
 	if !initialized || len(automatic) != 1 || !automatic["old_auto"] {
 		t.Fatalf("failed replacement changed automatic set: %#v initialized=%t", automatic, initialized)
+	}
+}
+
+func TestAgentContinuesAfterResourceResolveNoMatch(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	type capturedRequest struct {
+		Tools []capturedReplaceableTool `json:"tools"`
+	}
+	var mu sync.Mutex
+	requests := []capturedRequest{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body capturedRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		mu.Lock()
+		requests = append(requests, body)
+		index := len(requests)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch index {
+		case 1:
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"missing_resource","type":"function","function":{"name":"resource_resolve","arguments":"{\"mode\":\"use\",\"intent\":\"missing public search resource\"}"}}]}}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"continued without dynamic resources"}}]}`))
+		}
+	}))
+	defer server.Close()
+	if _, err := service.ConnectProvider(ctx, domain.ProviderConnectInput{ProviderID: "custom-api", Type: "openai-compatible", BaseURL: server.URL, ModelID: "test-model", APIKey: "test-key", Method: "api-key"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateModelPreferences(ctx, domain.ModelPreferencesInput{
+		Model: &domain.ModelRef{ProviderID: "custom-api", ModelID: "test-model"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{Type: domain.SessionTypeCoding, ProjectPath: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.SubmitSessionMessage(ctx, domain.SubmitSessionMessageRequest{SessionID: session.ID, Text: "continue after an unavailable resource"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AssistantEvent == nil || result.AssistantEvent.Content != "continued without dynamic resources" {
+		t.Fatalf("assistant result = %#v", result.AssistantEvent)
+	}
+	mu.Lock()
+	captured := append([]capturedRequest(nil), requests...)
+	mu.Unlock()
+	if len(captured) < 2 {
+		t.Fatalf("provider request count = %d, want primary and follow-up after empty resource_resolve", len(captured))
 	}
 }

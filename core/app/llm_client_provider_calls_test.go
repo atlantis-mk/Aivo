@@ -24,7 +24,7 @@ func TestCallOpenAICompatibleUsesChatCompletionsStream(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["model"] != "openai/gpt-5" {
+		if body["model"] != "mistral-medium-latest" {
 			t.Fatalf("model = %#v", body["model"])
 		}
 		if stream, _ := body["stream"].(bool); !stream {
@@ -41,8 +41,39 @@ func TestCallOpenAICompatibleUsesChatCompletionsStream(t *testing.T) {
 
 	got, err := callOpenAICompatible(
 		context.Background(),
-		domain.ProviderConfig{ID: "openrouter", Type: "openrouter", BaseURL: server.URL},
-		domain.ModelRef{ProviderID: "openrouter", ModelID: "openai/gpt-5"},
+		domain.ProviderConfig{ID: "mistral", Type: "mistral", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "mistral", ModelID: "mistral-medium-latest"},
+		llmCredential{APIKey: "test-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		nil,
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleKeepsExplicitChatCompletionsEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/llm/v1/chat/completions" {
+			t.Fatalf("path = %q, want explicit /chat/completions endpoint unchanged", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "bailing", Type: "bailing", BaseURL: server.URL + "/api/llm/v1/chat/completions"},
+		domain.ModelRef{ProviderID: "bailing", ModelID: "Ring-1T"},
 		llmCredential{APIKey: "test-key"},
 		domain.ProviderRequestProfile{},
 		[]llmChatMessage{{Role: "user", Text: "hello"}},
@@ -320,6 +351,371 @@ func TestCallOpenAICompatibleUsesResponsesForXAIHostedWebSearch(t *testing.T) {
 		domain.ProviderRequestProfile{},
 		[]llmChatMessage{{Role: "user", Text: "hello"}},
 		[]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search"}}},
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleUsesResponsesForPoeHostedWebSearchPreview(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		tools, _ := body["tools"].([]any)
+		if len(tools) != 1 {
+			t.Fatalf("tools = %#v, want one hosted tool", body["tools"])
+		}
+		tool, _ := tools[0].(map[string]any)
+		if tool["type"] != "web_search_preview" {
+			t.Fatalf("tool = %#v, want Poe web_search_preview", tool)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "poe", Type: "poe", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "poe", ModelID: "GPT-5.4"},
+		llmCredential{APIKey: "poe-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		[]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search_preview"}}},
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestProviderUsesDeclaredResponsesAPIByDefault(t *testing.T) {
+	tools := []domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search"}}}
+	for _, providerID := range []string{"xai", "xiaomi", "deepseek", "openrouter", "groq", "ovhcloud", "perplexity-agent"} {
+		t.Run(providerID, func(t *testing.T) {
+			if !providerUsesResponsesAPI(domain.ProviderConfig{ID: providerID, Type: providerID}, nil) {
+				t.Fatalf("%s should use the provider-declared Responses API by default", providerID)
+			}
+		})
+	}
+	if !providerUsesResponsesAPI(domain.ProviderConfig{ID: "deepseek", Type: "deepseek"}, tools) {
+		t.Fatal("DeepSeek hosted web_search should use the provider-declared Responses API")
+	}
+	if providerUsesResponsesAPI(domain.ProviderConfig{ID: "alibaba", Type: "alibaba"}, nil) {
+		t.Fatal("Alibaba should not use Responses API without hosted tools")
+	}
+	if !providerUsesResponsesAPI(domain.ProviderConfig{ID: "alibaba", Type: "alibaba"}, tools) {
+		t.Fatal("Alibaba hosted web_search should use the provider-declared Responses API")
+	}
+	if !providerUsesResponsesAPI(domain.ProviderConfig{ID: "poe", Type: "poe"}, []domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search_preview"}}}) {
+		t.Fatal("Poe hosted web_search_preview should use the provider-declared Responses API")
+	}
+	if !providerUsesResponsesAPI(domain.ProviderConfig{ID: "custom-perplexity-agent", Type: "perplexity-agent"}, nil) {
+		t.Fatal("custom provider config with Perplexity Agent type should use the provider-declared Responses API")
+	}
+	if got := providerResponsesBaseURL(domain.ProviderConfig{ID: "deepseek", Type: "deepseek"}, "https://api.deepseek.com/v1"); got != "https://api.deepseek.com" {
+		t.Fatalf("responses base URL = %q, want DeepSeek declared Responses base URL", got)
+	}
+	if got := providerResponsesBaseURL(domain.ProviderConfig{ID: "deepseek", Type: "deepseek", BaseURL: "http://127.0.0.1:11434/v1"}, "http://127.0.0.1:11434/v1"); got != "http://127.0.0.1:11434/v1" {
+		t.Fatalf("custom responses base URL = %q, want custom base preserved", got)
+	}
+}
+
+func TestCallOpenAICompatibleUsesResponsesByDefault(t *testing.T) {
+	for _, tt := range []struct {
+		providerID string
+		modelID    string
+	}{
+		{providerID: "deepseek", modelID: "deepseek-chat"},
+		{providerID: "openrouter", modelID: "openai/gpt-5-codex"},
+		{providerID: "groq", modelID: "openai/gpt-oss-120b"},
+		{providerID: "xiaomi", modelID: "mimo-v2.5-pro"},
+		{providerID: "ovhcloud", modelID: "gpt-oss-20b"},
+		{providerID: "perplexity-agent", modelID: "openai/gpt-5.6-terra"},
+	} {
+		t.Run(tt.providerID, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/responses" {
+					t.Fatalf("path = %q, want /responses", r.URL.Path)
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := body["input"]; !ok {
+					t.Fatalf("body = %#v, want responses input", body)
+				}
+				if store, _ := body["store"].(bool); store {
+					t.Fatalf("store = %#v, want false", body["store"])
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+			}))
+			defer server.Close()
+
+			got, err := callOpenAICompatible(
+				context.Background(),
+				domain.ProviderConfig{ID: tt.providerID, Type: tt.providerID, BaseURL: server.URL},
+				domain.ModelRef{ProviderID: tt.providerID, ModelID: tt.modelID},
+				llmCredential{APIKey: "test-key"},
+				domain.ProviderRequestProfile{},
+				[]llmChatMessage{{Role: "user", Text: "hello"}},
+				nil,
+				"",
+				"",
+				nil,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Text != "ok" {
+				t.Fatalf("reply = %q, want ok", got.Text)
+			}
+		})
+	}
+}
+
+func TestCallOpenAICompatibleSkipsOpenAISpecificResponsesDefaults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := body["include"]; ok {
+			t.Fatalf("include = %#v, want no OpenAI-specific encrypted reasoning include", body["include"])
+		}
+		reasoning, _ := body["reasoning"].(map[string]any)
+		if reasoning["effort"] != "high" {
+			t.Fatalf("reasoning = %#v, want requested effort preserved", reasoning)
+		}
+		if _, ok := reasoning["summary"]; ok {
+			t.Fatalf("reasoning = %#v, want no OpenAI-specific summary default", reasoning)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "xiaomi", Type: "xiaomi", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "xiaomi", ModelID: "mimo-v2.5-pro"},
+		llmCredential{APIKey: "test-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		nil,
+		"high",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleAppliesRequestyWebSearchTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q, want /chat/completions", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		tools, _ := body["tools"].([]any)
+		if len(tools) != 1 {
+			t.Fatalf("tools = %#v, want Requesty hosted web_search tool", body["tools"])
+		}
+		tool, _ := tools[0].(map[string]any)
+		if tool["type"] != "web_search" {
+			t.Fatalf("tool = %#v, want Requesty web_search", tool)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "requesty", Type: "requesty", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "requesty", ModelID: "anthropic/claude-sonnet-4-20250514"},
+		llmCredential{APIKey: "requesty-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		[]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search"}}},
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleAppliesVeniceSearchParameters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q, want /chat/completions", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := body["tools"]; ok {
+			t.Fatalf("body tools = %#v, did not expect standard tools for Venice search", body["tools"])
+		}
+		params, _ := body["venice_parameters"].(map[string]any)
+		if params["enable_web_search"] != "auto" {
+			t.Fatalf("venice_parameters = %#v, want enable_web_search auto", body["venice_parameters"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "venice", Type: "venice", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "venice", ModelID: "zai-org-glm-5"},
+		llmCredential{APIKey: "venice-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		[]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "venice_web_search"}}},
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleAppliesPerplexityAgentSearchFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		tools, _ := body["tools"].([]any)
+		if len(tools) != 1 {
+			t.Fatalf("tools = %#v, want one Perplexity Agent hosted web_search tool", body["tools"])
+		}
+		tool, _ := tools[0].(map[string]any)
+		if tool["type"] != "web_search" {
+			t.Fatalf("tool = %#v, want Perplexity Agent web_search", tool)
+		}
+		filters, _ := tool["filters"].(map[string]any)
+		domains, _ := filters["search_domain_filter"].([]any)
+		if len(domains) != 1 || domains[0] != "example.com" {
+			t.Fatalf("filters = %#v, want search_domain_filter example.com", filters)
+		}
+		if _, ok := filters["allowed_domains"]; ok {
+			t.Fatalf("filters = %#v, want provider-specific filters without allowed_domains", filters)
+		}
+		if _, ok := body["include"]; ok {
+			t.Fatalf("include = %#v, want no OpenAI-specific encrypted reasoning include", body["include"])
+		}
+		reasoning, _ := body["reasoning"].(map[string]any)
+		if _, ok := reasoning["summary"]; ok {
+			t.Fatalf("reasoning = %#v, want no OpenAI-specific summary default", reasoning)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "perplexity-agent", Type: "perplexity-agent", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "perplexity-agent", ModelID: "openai/gpt-5.6-terra"},
+		llmCredential{APIKey: "pplx-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		[]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search", AllowedDomains: []string{"example.com"}}}},
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "ok" {
+		t.Fatalf("reply = %q, want ok", got.Text)
+	}
+}
+
+func TestCallOpenAICompatibleUsesProviderTypeForNativeSearchAssembly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %q, want /responses", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		tools, _ := body["tools"].([]any)
+		if len(tools) != 1 {
+			t.Fatalf("tools = %#v, want one Perplexity Agent hosted web_search tool", body["tools"])
+		}
+		tool, _ := tools[0].(map[string]any)
+		filters, _ := tool["filters"].(map[string]any)
+		if _, ok := filters["search_domain_filter"]; !ok {
+			t.Fatalf("filters = %#v, want provider-specific search_domain_filter from provider type", filters)
+		}
+		if _, ok := filters["allowed_domains"]; ok {
+			t.Fatalf("filters = %#v, want no generic allowed_domains after provider-specific assembly", filters)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+	}))
+	defer server.Close()
+
+	got, err := callOpenAICompatible(
+		context.Background(),
+		domain.ProviderConfig{ID: "custom-perplexity-agent", Type: "perplexity-agent", BaseURL: server.URL},
+		domain.ModelRef{ProviderID: "custom-perplexity-agent", ModelID: "openai/gpt-5.6-terra"},
+		llmCredential{APIKey: "pplx-key"},
+		domain.ProviderRequestProfile{},
+		[]llmChatMessage{{Role: "user", Text: "hello"}},
+		[]domain.ToolSpec{{Name: "web_search", Hosted: &domain.HostedToolSpec{Type: "web_search", AllowedDomains: []string{"example.com"}}}},
 		"",
 		"",
 		nil,

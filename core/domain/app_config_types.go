@@ -43,5 +43,6 @@ type ModelPreferencesInput struct {
 	ReasoningEffort       string                 `json:"reasoningEffort,omitempty"`
 	ServiceTier           string                 `json:"serviceTier,omitempty"`
 	DefaultPermissionMode string                 `json:"defaultPermissionMode,omitempty"`
+	WebSearch             *WebSearchConfig       `json:"webSearch,omitempty"`
 	NativeTools           *NativeToolsConfig     `json:"nativeTools,omitempty"`
 }

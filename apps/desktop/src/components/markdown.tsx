@@ -2,7 +2,7 @@ import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { ChartLineData01Icon, FileLinkIcon } from "@hugeicons/core-free-icons";
+import { ChartLineData01Icon, FileLinkIcon, GlobeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
@@ -25,6 +25,7 @@ import {
  localPathFromText,
  markdownHrefForLocalPath,
 } from "@/components/markdown-local-path";
+import { isExternalMarkdownUrl } from "@/components/markdown-external-url";
 import { cn } from "@/lib/utils";
 
 type MarkdownStreamFactory = () => AsyncGenerator<string, void, unknown>;
@@ -94,17 +95,29 @@ function createStreamdownComponents(workspaceRoot: string): Components {
  );
  }
 
+ if (!href || !isExternalMarkdownUrl(href)) {
+ return <span className={className}>{children}</span>;
+ }
+
  return (
  <a
  {...props}
- className={cn("wrap-anywhere font-medium text-primary underline", className)}
+ className={cn(
+ "inline-flex max-w-full items-baseline gap-1 align-baseline font-medium text-primary underline",
+ className,
+ )}
+ data-external-link="true"
  data-streamdown="link"
  href={href}
+ onClick={(event) => {
+ event.preventDefault();
+ void openExternalLink(href);
+ }}
  rel="noopener noreferrer"
- target="_blank"
- title={title}
+ target={undefined}
+ title={title ?? `使用系统默认应用打开 ${href}`}
  >
- {children}
+ <ExternalLinkContent>{children}</ExternalLinkContent>
  </a>
  );
  },
@@ -158,6 +171,20 @@ function LocalPathLinkContent({ children }: { children: ReactNode }) {
  aria-hidden="true"
  className="relative top-[0.125em] size-[1.05em] shrink-0 self-baseline"
  icon={FileLinkIcon}
+ strokeWidth={2}
+ />
+ <span className="min-w-0 break-all text-left">{children}</span>
+ </>
+ );
+}
+
+function ExternalLinkContent({ children }: { children: ReactNode }) {
+ return (
+ <>
+ <HugeiconsIcon
+ aria-hidden="true"
+ className="relative top-[0.125em] size-[1.05em] shrink-0 self-baseline"
+ icon={GlobeIcon}
  strokeWidth={2}
  />
  <span className="min-w-0 break-all text-left">{children}</span>
@@ -418,7 +445,7 @@ function safeMarkdownUrl(value: string, key: string, workspaceRoot: string) {
  return ["http:", "https:"].includes(url.protocol) ? value : "";
  }
 
- return ["http:", "https:", "mailto:"].includes(url.protocol) ? value : "";
+ return isExternalMarkdownUrl(value) ? value : "";
  } catch {
  return "";
  }
@@ -430,5 +457,14 @@ async function openLocalPath(target: string) {
  } catch (error) {
  const detail = error instanceof Error ? error.message : String(error);
  toast.error("无法打开文件地址", { description: detail });
+ }
+}
+
+async function openExternalLink(target: string) {
+ try {
+ await window.aivo.openExternal(target);
+ } catch (error) {
+ const detail = error instanceof Error ? error.message : String(error);
+ toast.error("无法打开外部链接", { description: detail });
  }
 }

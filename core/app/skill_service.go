@@ -176,7 +176,8 @@ func (s *Service) GetSessionActiveSkills(ctx context.Context, sessionID string) 
 		return domain.SessionActiveSkillsResult{}, errors.New("sessionId is required")
 	}
 	ids, skills := s.activeSkills(ctx, sessionID)
-	return domain.SessionActiveSkillsResult{SessionID: sessionID, SkillIDs: ids, Skills: skills}, nil
+	visibleIDs, _ := s.visibleSkills(ctx, sessionID)
+	return domain.SessionActiveSkillsResult{SessionID: sessionID, SkillIDs: ids, Skills: skills, VisibleSkillIDs: visibleIDs}, nil
 }
 
 func (s *Service) SetSessionActiveSkills(ctx context.Context, input domain.SessionActiveSkillsInput) (domain.SessionActiveSkillsResult, error) {

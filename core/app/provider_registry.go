@@ -47,26 +47,46 @@ const (
 	ModelFetchDisabled           ModelFetchStrategy = "disabled"
 )
 
+type ProviderNativeHostedTools struct {
+	WebSearch ProviderNativeHostedTool
+}
+
+type ProviderNativeHostedTool struct {
+	Type              string
+	Capabilities      []string
+	MaxAllowedDomains int
+}
+
+type ProviderResponsesDefaults struct {
+	DisableEncryptedReasoningInclude bool
+	DisableReasoningSummary          bool
+}
+
 type ProviderDefinition struct {
-	ID              string
-	DisplayName     string
-	Description     string
-	Aliases         []string
-	Transport       TransportType
-	AuthTypes       []AuthType
-	DefaultAuthType AuthType
-	DefaultBaseURL  string
-	BaseURLEnvVar   string
-	APIKeyEnvVars   []string
-	ModelFetch      ModelFetchStrategy
-	DefaultModelID  string
-	Models          []domain.ModelInfo
-	RequestProfile  domain.ProviderRequestProfile
-	BuiltIn         bool
-	Experimental    bool
-	Deprecated      bool
-	Command         string
-	Args            []string
+	ID                         string
+	DisplayName                string
+	Description                string
+	Aliases                    []string
+	Transport                  TransportType
+	AuthTypes                  []AuthType
+	DefaultAuthType            AuthType
+	DefaultBaseURL             string
+	ResponsesBaseURL           string
+	BaseURLEnvVar              string
+	APIKeyEnvVars              []string
+	ModelFetch                 ModelFetchStrategy
+	DefaultModelID             string
+	Models                     []domain.ModelInfo
+	RequestProfile             domain.ProviderRequestProfile
+	NativeHostedTools          ProviderNativeHostedTools
+	ResponsesDefaults          ProviderResponsesDefaults
+	DefaultResponsesAPI        bool
+	ResponsesAPIForHostedTools bool
+	BuiltIn                    bool
+	Experimental               bool
+	Deprecated                 bool
+	Command                    string
+	Args                       []string
 }
 
 type ProviderRegistry struct {
@@ -106,6 +126,8 @@ var builtInProviderAliases = map[string]string{
 	"grok":               "xai",
 	"x-ai":               "xai",
 	"x.ai":               "xai",
+	"mimo":               "xiaomi",
+	"xiaomi-mimo":        "xiaomi",
 	"mistral-ai":         "mistral",
 	"la-plateforme":      "mistral",
 	"groqcloud":          "groq",
@@ -268,6 +290,7 @@ func cloneProviderDefinition(def ProviderDefinition) ProviderDefinition {
 	def.Models = append([]domain.ModelInfo(nil), def.Models...)
 	def.Args = append([]string(nil), def.Args...)
 	def.RequestProfile = cloneRequestProfile(def.RequestProfile)
+	def.NativeHostedTools.WebSearch.Capabilities = append([]string(nil), def.NativeHostedTools.WebSearch.Capabilities...)
 	return def
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"unicode"
@@ -197,9 +198,27 @@ func resourceResolveNoAvailable(callID string, intent string, required bool, rea
 	if strings.TrimSpace(reason) != "" {
 		message += " (" + strings.TrimSpace(reason) + ")"
 	}
-	result := toolFailure(callID, ResourceResolveName, code, message)
-	result.Structured = map[string]any{"status": code, "intent": intent, "required": required, "reason": reason}
-	return result
+	structured := map[string]any{
+		"status":          code,
+		"message":         message,
+		"intent":          intent,
+		"required":        required,
+		"reason":          strings.TrimSpace(reason),
+		"tools":           []map[string]any{},
+		"count":           0,
+		"resources":       []map[string]any{},
+		"resourceCount":   0,
+		"appliesNextStep": false,
+	}
+	raw, _ := json.MarshalIndent(structured, "", "  ")
+	return domain.ToolResult{
+		Name:         ResourceResolveName,
+		CallID:       callID,
+		OK:           true,
+		Content:      string(raw),
+		ModelContent: string(raw),
+		Structured:   structured,
+	}
 }
 
 func deferrableCatalogEntries(registry *Registry) []domain.ToolCatalogEntry {

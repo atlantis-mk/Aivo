@@ -12,6 +12,14 @@ const (
 )
 
 func responsesRequestBody(model string, messages []llmChatMessage, tools []domain.ToolSpec, reasoningEffort string, serviceTier string) map[string]any {
+	return responsesRequestBodyWithDefaults(model, messages, tools, reasoningEffort, serviceTier, true)
+}
+
+func responsesRequestBodyWithoutDefaults(model string, messages []llmChatMessage, tools []domain.ToolSpec, reasoningEffort string, serviceTier string) map[string]any {
+	return responsesRequestBodyWithDefaults(model, messages, tools, reasoningEffort, serviceTier, false)
+}
+
+func responsesRequestBodyWithDefaults(model string, messages []llmChatMessage, tools []domain.ToolSpec, reasoningEffort string, serviceTier string, withDefaults bool) map[string]any {
 	input := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
 		if message.Role == "tool" {
@@ -63,7 +71,9 @@ func responsesRequestBody(model string, messages []llmChatMessage, tools []domai
 	if tier := responsesServiceTier(serviceTier); tier != "" {
 		body["service_tier"] = tier
 	}
-	applyOpenAIResponsesRequestDefaults(body)
+	if withDefaults {
+		applyOpenAIResponsesRequestDefaults(body)
+	}
 	return body
 }
 
@@ -163,12 +173,60 @@ func applyOpenAIResponsesRequestDefaults(body map[string]any) {
 	if body == nil {
 		return
 	}
-	applyOpenAIResponsesOptionAliases(body)
-	ensureResponsesEncryptedReasoningInclude(body)
-	reasoning := ensureResponsesReasoningMap(body)
-	if _, ok := reasoning["summary"]; !ok {
-		reasoning["summary"] = responsesDefaultReasoningSummary
+	applyOpenAIResponsesRequestDefaultsWithOptions(body, ProviderResponsesDefaults{})
+}
+
+func applyOpenAIResponsesRequestDefaultsWithOptions(body map[string]any, defaults ProviderResponsesDefaults) {
+	if body == nil {
+		return
 	}
+	applyOpenAIResponsesOptionAliases(body)
+	if !defaults.DisableEncryptedReasoningInclude {
+		ensureResponsesEncryptedReasoningInclude(body)
+	} else {
+		removeResponsesEncryptedReasoningInclude(body)
+	}
+	reasoning := ensureResponsesReasoningMap(body)
+	if !defaults.DisableReasoningSummary {
+		if _, ok := reasoning["summary"]; !ok {
+			reasoning["summary"] = responsesDefaultReasoningSummary
+		}
+	} else if reasoning["summary"] == responsesDefaultReasoningSummary {
+		delete(reasoning, "summary")
+	}
+	if len(reasoning) == 0 {
+		delete(body, "reasoning")
+	}
+}
+
+func applyOpenAICompatibleResponsesRequestDefaults(body map[string]any, provider domain.ProviderConfig) {
+	providerID := providerDefinitionIDForConfig(provider)
+	def, ok := providerDefinition(providerID)
+	if !ok {
+		applyOpenAIResponsesRequestDefaults(body)
+		return
+	}
+	applyOpenAIResponsesRequestDefaultsWithOptions(body, def.ResponsesDefaults)
+}
+
+func removeResponsesEncryptedReasoningInclude(body map[string]any) {
+	values := includeValues(body["include"])
+	if len(values) == 0 {
+		delete(body, "include")
+		return
+	}
+	filtered := make([]any, 0, len(values))
+	for _, value := range values {
+		if item, ok := value.(string); ok && item == responsesEncryptedReasoningInclude {
+			continue
+		}
+		filtered = append(filtered, value)
+	}
+	if len(filtered) == 0 {
+		delete(body, "include")
+		return
+	}
+	body["include"] = filtered
 }
 
 func applyOpenAIResponsesOptionAliases(body map[string]any) {

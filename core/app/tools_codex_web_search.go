@@ -53,8 +53,8 @@ func (t *CodexWebSearchTool) Spec() domain.ToolSpec {
 
 func (t *CodexWebSearchTool) Execute(ctx context.Context, args json.RawMessage, execCtx domain.ToolExecutionContext) domain.ToolResult {
 	result := domain.ToolResult{Name: "web_search", CallID: execCtx.ToolCallID}
-	if t == nil || t.service == nil || execCtx.ActiveModel == nil {
-		result.Error = "Codex web search route is unavailable"
+	if t == nil || t.service == nil {
+		result.Error = "web search route is unavailable"
 		return result
 	}
 	var input struct {
@@ -79,21 +79,27 @@ func (t *CodexWebSearchTool) Execute(ctx context.Context, args json.RawMessage, 
 	}
 	webSearch := normalizeWebSearchRuntimeConfig(cfg.WebSearch)
 	if webSearch.Mode == domain.WebSearchModeDisabled || nativeToolDisabled(normalizeNativeToolsRuntimeConfig(cfg.NativeTools), "web_search") {
-		return toolErrorWithCallID("web_search", execCtx.ToolCallID, errors.New("Codex web search is disabled"))
+		return toolErrorWithCallID("web_search", execCtx.ToolCallID, errors.New("web search is disabled"))
 	}
-	route, err := t.service.ResolveModelRoute(ctx, cfg, execCtx.ActiveModel)
-	if err != nil || !isChatGPTCodexRoute(route) {
-		return toolErrorWithCallID("web_search", execCtx.ToolCallID, errors.New("active model is not an authenticated Codex route"))
+	if execCtx.ActiveModel != nil {
+		route, err := t.service.ResolveModelRoute(ctx, cfg, execCtx.ActiveModel)
+		if err == nil && isChatGPTCodexRoute(route) {
+			model, ok := t.service.modelInfoForRoute(ctx, route)
+			if ok && declaredModelCapabilitySupported(model, codexWebSearchCapability) {
+				return t.executeCodexSearch(ctx, execCtx, route, model, webSearch, input.Query, input.Limit, input.Recency, input.Domains)
+			}
+		}
 	}
-	model, ok := t.service.modelInfoForRoute(ctx, route)
-	if !ok || !declaredModelCapabilitySupported(model, codexWebSearchCapability) {
-		return toolErrorWithCallID("web_search", execCtx.ToolCallID, errors.New("active Codex model did not declare standalone search compatibility"))
-	}
+	return t.executeParallelSearch(ctx, execCtx, input.Query, input.Limit)
+}
+
+func (t *CodexWebSearchTool) executeCodexSearch(ctx context.Context, execCtx domain.ToolExecutionContext, route ResolvedModelRoute, model domain.ModelInfo, webSearch domain.WebSearchConfig, query string, limit, recency int, domains []string) domain.ToolResult {
+	result := domain.ToolResult{Name: "web_search", CallID: execCtx.ToolCallID}
 	access, accountID, err := t.service.validOpenAIAccessToken(ctx, route.Credential)
 	if err != nil {
 		return toolErrorWithCallID("web_search", execCtx.ToolCallID, err)
 	}
-	body := codexSearchRequestBody(execCtx.SessionID, route.Model.ModelID, webSearch, input.Query, input.Limit, input.Recency, input.Domains)
+	body := codexSearchRequestBody(execCtx.SessionID, route.Model.ModelID, webSearch, query, limit, recency, domains)
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return toolErrorWithCallID("web_search", execCtx.ToolCallID, err)
@@ -131,10 +137,10 @@ func (t *CodexWebSearchTool) Execute(ctx context.Context, args json.RawMessage, 
 	if err := json.Unmarshal(responseRaw, &payload); err != nil {
 		return toolErrorWithCallID("web_search", execCtx.ToolCallID, errors.New("Codex search response could not be parsed"))
 	}
-	sources := boundedCodexSearchSources(payload.Results, input.Limit)
+	sources := boundedCodexSearchSources(payload.Results, limit)
 	content := strings.TrimSpace(payload.Output)
 	if content == "" {
-		content = formatCodexSearchSources(input.Query, sources)
+		content = formatCodexSearchSources(query, sources)
 	}
 	if content == "" {
 		return toolErrorWithCallID("web_search", execCtx.ToolCallID, errors.New("Codex search returned no output"))
@@ -142,8 +148,17 @@ func (t *CodexWebSearchTool) Execute(ctx context.Context, args json.RawMessage, 
 	result.OK = true
 	result.Content = content
 	result.ModelContent = content
-	result.Structured = map[string]any{"query": input.Query, "results": sources, "provider": "codex", "status": response.StatusCode}
+	result.Structured = map[string]any{"query": query, "results": sources, "provider": "codex", "status": response.StatusCode}
 	return result
+}
+
+func (t *CodexWebSearchTool) executeParallelSearch(ctx context.Context, execCtx domain.ToolExecutionContext, query string, limit int) domain.ToolResult {
+	backend := NewParallelSearchBackend(nil, "")
+	response, err := backend.Search(ctx, WebSearchRequest{Query: query, Limit: limit})
+	if err != nil {
+		return toolErrorWithCallID("web_search", execCtx.ToolCallID, err)
+	}
+	return webSearchResponseToolResult("web_search", execCtx.ToolCallID, query, response, backend.Name())
 }
 
 func codexSearchRequestBody(sessionID, modelID string, config domain.WebSearchConfig, query string, limit, recency int, domains []string) map[string]any {

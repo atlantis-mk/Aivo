@@ -30,6 +30,116 @@ func TestToolsForModelRouteUsesHostedWebSearchForOpenAIResponses(t *testing.T) {
 	}
 }
 
+func TestToolsForModelRouteUsesDeclaredHostedWebSearchForCompatibleProvider(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	route := ResolvedModelRoute{
+		Provider: domain.ProviderConfig{ID: "search-compatible"},
+		Model:    domain.ModelRef{ProviderID: "search-compatible", ModelID: "search-model"},
+		Definition: ProviderDefinition{
+			ID:                "search-compatible",
+			Transport:         TransportOpenAICompatible,
+			NativeHostedTools: nativeWebSearch("web_search"),
+			Models:            []domain.ModelInfo{model("search-compatible", "search-model", "Search Model", true, 1000, []string{"tools", "streaming", "web_search"})},
+		},
+		Transport: TransportOpenAICompatible,
+	}
+	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
+	if len(tools) != 1 || tools[0].Hosted == nil || tools[0].Hosted.Type != "web_search" {
+		t.Fatalf("tools = %#v, want data-driven hosted web_search", tools)
+	}
+}
+
+func TestToolsForModelRouteUsesPoeHostedWebSearchPreview(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	def, ok := providerDefinition("poe")
+	if !ok {
+		t.Fatal("poe provider definition missing")
+	}
+	route := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "poe"},
+		Model:      domain.ModelRef{ProviderID: "poe", ModelID: "GPT-5.4"},
+		Definition: def,
+		Transport:  def.Transport,
+	}
+	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
+	if len(tools) != 1 || tools[0].Hosted == nil || tools[0].Hosted.Type != "web_search_preview" {
+		t.Fatalf("tools = %#v, want Poe hosted web_search_preview", tools)
+	}
+	if !providerUsesResponsesAPI(domain.ProviderConfig{ID: "poe"}, tools) {
+		t.Fatalf("Poe hosted web_search_preview should route through Responses API")
+	}
+}
+
+func TestToolsForModelRouteUsesPerplexityAgentHostedWebSearch(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	def, ok := providerDefinition("perplexity-agent")
+	if !ok {
+		t.Fatal("perplexity-agent provider definition missing")
+	}
+	route := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "perplexity-agent"},
+		Model:      domain.ModelRef{ProviderID: "perplexity-agent", ModelID: "openai/gpt-5.6-terra"},
+		Definition: def,
+		Transport:  def.Transport,
+	}
+	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
+	if len(tools) != 1 || tools[0].Hosted == nil || tools[0].Hosted.Type != "web_search" {
+		t.Fatalf("tools = %#v, want Perplexity Agent hosted web_search", tools)
+	}
+	if !providerUsesResponsesAPI(domain.ProviderConfig{ID: "perplexity-agent"}, tools) {
+		t.Fatalf("Perplexity Agent hosted web_search should route through Responses API")
+	}
+}
+
+func TestToolsForModelRouteUsesRequestyHostedWebSearchWithoutResponsesSwitch(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	def, ok := providerDefinition("requesty")
+	if !ok {
+		t.Fatal("requesty provider definition missing")
+	}
+	route := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "requesty"},
+		Model:      domain.ModelRef{ProviderID: "requesty", ModelID: "anthropic/claude-sonnet-4-20250514"},
+		Definition: def,
+		Transport:  def.Transport,
+	}
+	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
+	if len(tools) != 1 || tools[0].Hosted == nil || tools[0].Hosted.Type != "web_search" {
+		t.Fatalf("tools = %#v, want Requesty hosted web_search", tools)
+	}
+	if providerUsesResponsesAPI(domain.ProviderConfig{ID: "requesty"}, tools) {
+		t.Fatalf("Requesty chat-completions web_search should not force Responses API")
+	}
+}
+
+func TestToolsForModelRouteUsesVeniceHostedWebSearchParameters(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	def, ok := providerDefinition("venice")
+	if !ok {
+		t.Fatal("venice provider definition missing")
+	}
+	route := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "venice"},
+		Model:      domain.ModelRef{ProviderID: "venice", ModelID: "zai-org-glm-5"},
+		Definition: def,
+		Transport:  def.Transport,
+	}
+	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
+	if len(tools) != 1 || tools[0].Hosted == nil || tools[0].Hosted.Type != "venice_web_search" {
+		t.Fatalf("tools = %#v, want Venice provider-specific hosted web search", tools)
+	}
+}
+
 func TestToolsForModelRouteUsesHostedWebSearchForAnthropic(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	route := ResolvedModelRoute{
@@ -297,6 +407,34 @@ func TestToolsForModelRouteDoesNotImplicitlyInjectConfiguredGeminiNativeTools(t 
 	}
 }
 
+func TestToolsForModelRouteUsesAlibabaHostedWebSearchOnlyForDeclaredModels(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	def, ok := providerDefinition("alibaba")
+	if !ok {
+		t.Fatal("alibaba provider definition missing")
+	}
+	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+	cfg := domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}
+
+	hostedRoute := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "alibaba"},
+		Model:      domain.ModelRef{ProviderID: "alibaba", ModelID: "qwen3-max"},
+		Definition: def,
+		Transport:  def.Transport,
+	}
+	hosted := service.toolsForModelRoute(context.Background(), cfg, hostedRoute, specs)
+	if len(hosted) != 1 || hosted[0].Hosted == nil || hosted[0].Hosted.Type != "web_search" {
+		t.Fatalf("hosted tools = %#v, want Alibaba hosted web_search", hosted)
+	}
+
+	localRoute := hostedRoute
+	localRoute.Model.ModelID = "qwen3-235b-a22b"
+	local := service.toolsForModelRoute(context.Background(), cfg, localRoute, specs)
+	if len(local) != 1 || local[0].Hosted != nil || local[0].Name != "web_search" {
+		t.Fatalf("local tools = %#v, want local web_search fallback for default Alibaba model", local)
+	}
+}
+
 func TestToolsForModelRouteSkipsFileSearchWithoutVectorStore(t *testing.T) {
 	service := NewService(&memoryProviderStore{})
 	route := ResolvedModelRoute{
@@ -370,10 +508,47 @@ func TestToolsForModelRouteKeepsLocalWebSearchForUnsupportedProvider(t *testing.
 		Definition: ProviderDefinition{ID: "anthropic", Transport: TransportAnthropicMessages},
 		Transport:  TransportAnthropicMessages,
 	}
-	specs := []domain.ToolSpec{{Name: "web_search", Description: "Search", InputSchema: map[string]any{"type": "object"}}}
+	specs := []domain.ToolSpec{NewCodexWebSearchTool(service).Spec()}
 
 	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
 	if len(tools) != 1 || tools[0].Hosted != nil || tools[0].Name != "web_search" {
 		t.Fatalf("tools = %#v, want local web_search", tools)
+	}
+}
+
+func TestToolsForModelRouteKeepsLocalWebSearchForXiaomi(t *testing.T) {
+	service := NewService(&memoryProviderStore{})
+	def, ok := providerDefinition("xiaomi")
+	if !ok {
+		t.Fatal("xiaomi provider definition missing")
+	}
+	route := ResolvedModelRoute{
+		Provider:   domain.ProviderConfig{ID: "xiaomi"},
+		Model:      domain.ModelRef{ProviderID: "xiaomi", ModelID: "mimo-v2.5-pro"},
+		Definition: def,
+		Transport:  def.Transport,
+	}
+	specs := []domain.ToolSpec{NewCodexWebSearchTool(service).Spec()}
+
+	tools := service.toolsForModelRoute(context.Background(), domain.AppConfig{WebSearch: domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto}}, route, specs)
+	if len(tools) != 1 || tools[0].Hosted != nil || tools[0].Name != "web_search" {
+		t.Fatalf("tools = %#v, want local web_search fallback", tools)
+	}
+}
+
+func TestProviderDeclaredLocalToolActivationsAddsParallelFallbackForUnsupportedProvider(t *testing.T) {
+	cfg := domain.AppConfig{
+		Provider:     &domain.ProviderConfig{ID: "local-compatible", Type: string(TransportOpenAICompatible), BaseURL: "http://127.0.0.1:1/v1", Model: "local-model"},
+		DefaultModel: &domain.ModelRef{ProviderID: "local-compatible", ModelID: "local-model"},
+		WebSearch:    domain.WebSearchConfig{Mode: domain.WebSearchModeLive, Route: domain.WebSearchRouteAuto},
+	}
+	store := &memoryProviderStore{config: &cfg}
+	service := NewService(store)
+	defer service.Shutdown()
+	registerNoAuthProvider(t, service, "local-compatible", "http://127.0.0.1:1/v1", "local-model")
+
+	activations := service.providerDeclaredLocalToolActivations(context.Background(), cfg.DefaultModel)
+	if activations["web_search"] != "providerCapability" {
+		t.Fatalf("activations = %#v, want local web_search fallback", activations)
 	}
 }

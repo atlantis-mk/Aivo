@@ -60,6 +60,7 @@ export type SessionActiveSkillsResult = {
   sessionId: string;
   skillIds: string[];
   skills?: SkillEntry[];
+  visibleSkillIds?: string[];
 };
 
 export function scanGlobalSkills() {

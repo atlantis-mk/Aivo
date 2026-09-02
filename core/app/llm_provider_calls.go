@@ -113,16 +113,16 @@ func callOpenAICompatible(ctx context.Context, provider domain.ProviderConfig, m
 	var body map[string]any
 	usesResponsesAPI := providerUsesResponsesAPI(provider, tools)
 	if usesResponsesAPI {
-		endpoint = baseURL + "/responses"
-		body = responsesRequestBody(model.ModelID, messages, tools, reasoningEffort, serviceTier)
+		endpoint = providerResponsesBaseURL(provider, baseURL) + "/responses"
+		body = responsesRequestBodyWithoutDefaults(model.ModelID, messages, tools, reasoningEffort, serviceTier)
 	} else {
-		endpoint = baseURL + "/chat/completions"
+		endpoint = openAICompatibleChatCompletionsURL(baseURL)
 		body = chatCompletionsRequestBody(model.ModelID, messages, tools)
 	}
 	applyProviderNativeWebSearchOptions(body, provider, tools)
 	applyRequestProfile(body, requestProfile, provider, model.ModelID)
 	if usesResponsesAPI {
-		applyOpenAIResponsesRequestDefaults(body)
+		applyOpenAICompatibleResponsesRequestDefaults(body, provider)
 	} else {
 		applyOpenAIChatCompletionsRequestDefaults(body, reasoningEffort)
 	}
@@ -144,11 +144,50 @@ func callOpenAICompatible(ctx context.Context, provider domain.ProviderConfig, m
 }
 
 func providerUsesResponsesAPI(provider domain.ProviderConfig, tools []domain.ToolSpec) bool {
-	providerID := normalizeProviderID(firstNonEmpty(provider.ID, provider.Type))
-	if providerID == "openai" {
+	providerID := providerDefinitionIDForConfig(provider)
+	def, ok := providerDefinition(providerID)
+	if ok && def.Transport == TransportOpenAIResponses {
 		return true
 	}
-	return providerID == "xai" && hasResponsesHostedTool(tools)
+	if ok && def.DefaultResponsesAPI {
+		return true
+	}
+	return ok && def.ResponsesAPIForHostedTools && hasResponsesHostedTool(tools)
+}
+
+func providerResponsesBaseURL(provider domain.ProviderConfig, baseURL string) string {
+	providerID := providerDefinitionIDForConfig(provider)
+	def, ok := providerDefinition(providerID)
+	if !ok || strings.TrimSpace(def.ResponsesBaseURL) == "" {
+		return baseURL
+	}
+	configuredBaseURL := strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/")
+	defaultBaseURL := strings.TrimRight(strings.TrimSpace(def.DefaultBaseURL), "/")
+	if configuredBaseURL != "" && configuredBaseURL != defaultBaseURL {
+		return baseURL
+	}
+	return strings.TrimRight(strings.TrimSpace(def.ResponsesBaseURL), "/")
+}
+
+func providerDefinitionIDForConfig(provider domain.ProviderConfig) string {
+	for _, candidate := range []string{provider.ID, provider.Type} {
+		providerID := normalizeProviderID(candidate)
+		if providerID == "" {
+			continue
+		}
+		if _, ok := providerDefinition(providerID); ok {
+			return providerID
+		}
+	}
+	return normalizeProviderID(firstNonEmpty(provider.ID, provider.Type))
+}
+
+func openAICompatibleChatCompletionsURL(baseURL string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.HasSuffix(strings.ToLower(trimmed), "/chat/completions") {
+		return trimmed
+	}
+	return trimmed + "/chat/completions"
 }
 
 func hasResponsesHostedTool(tools []domain.ToolSpec) bool {
@@ -157,7 +196,7 @@ func hasResponsesHostedTool(tools []domain.ToolSpec) bool {
 			continue
 		}
 		switch tool.Hosted.Type {
-		case "web_search", "x_search", "code_interpreter", "file_search", "mcp":
+		case "web_search", "web_search_preview", "x_search", "code_interpreter", "file_search", "mcp":
 			return true
 		}
 	}
@@ -165,20 +204,106 @@ func hasResponsesHostedTool(tools []domain.ToolSpec) bool {
 }
 
 func applyProviderNativeWebSearchOptions(body map[string]any, provider domain.ProviderConfig, tools []domain.ToolSpec) {
-	if normalizeProviderID(provider.ID) != "perplexity" {
-		return
-	}
+	providerID := providerDefinitionIDForConfig(provider)
 	for _, tool := range tools {
-		if tool.Hosted == nil || tool.Hosted.Type != "perplexity_search" {
+		if tool.Hosted == nil {
 			continue
 		}
-		if len(tool.Hosted.AllowedDomains) > 0 {
-			body["search_domain_filter"] = append([]string(nil), tool.Hosted.AllowedDomains...)
+		switch providerID {
+		case "perplexity":
+			if tool.Hosted.Type != "perplexity_search" {
+				continue
+			}
+			if len(tool.Hosted.AllowedDomains) > 0 {
+				body["search_domain_filter"] = append([]string(nil), tool.Hosted.AllowedDomains...)
+			}
+			if size := strings.TrimSpace(tool.Hosted.SearchContextSize); size != "" {
+				body["web_search_options"] = map[string]any{"search_context_size": size}
+			}
+			return
+		case "perplexity-agent":
+			if tool.Hosted.Type != "web_search" {
+				continue
+			}
+			applyPerplexityAgentWebSearchFilters(body)
+			return
+		case "requesty":
+			if tool.Hosted.Type != "web_search" {
+				continue
+			}
+			serializedTools := requestToolsFromBody(body)
+			serializedTools = append(serializedTools, map[string]any{"type": "web_search"})
+			body["tools"] = serializedTools
+			body["tool_choice"] = "auto"
+			return
+		case "venice":
+			if tool.Hosted.Type != "venice_web_search" {
+				continue
+			}
+			params := ensureProviderParamsMap(body, "venice_parameters")
+			params["enable_web_search"] = "auto"
+			return
 		}
-		if size := strings.TrimSpace(tool.Hosted.SearchContextSize); size != "" {
-			body["web_search_options"] = map[string]any{"search_context_size": size}
-		}
+	}
+}
+
+func applyPerplexityAgentWebSearchFilters(body map[string]any) {
+	if body == nil {
 		return
+	}
+	for _, tool := range requestToolsFromBody(body) {
+		if tool["type"] != "web_search" {
+			continue
+		}
+		filters, ok := tool["filters"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if domains, ok := filters["allowed_domains"]; ok {
+			filters["search_domain_filter"] = domains
+			delete(filters, "allowed_domains")
+		}
+	}
+}
+
+func requestToolsFromBody(body map[string]any) []map[string]any {
+	if body == nil {
+		return nil
+	}
+	switch typed := body["tools"].(type) {
+	case []map[string]any:
+		return append([]map[string]any(nil), typed...)
+	case []any:
+		tools := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if tool, ok := item.(map[string]any); ok {
+				tools = append(tools, tool)
+			}
+		}
+		return tools
+	default:
+		return nil
+	}
+}
+
+func ensureProviderParamsMap(body map[string]any, key string) map[string]any {
+	if body == nil {
+		return map[string]any{}
+	}
+	switch typed := body[key].(type) {
+	case map[string]any:
+		return typed
+	case map[string]string:
+		params := make(map[string]any, len(typed))
+		for k, v := range typed {
+			params[k] = v
+		}
+		body[key] = params
+		return params
+	default:
+		params := map[string]any{}
+		body[key] = params
+		return params
 	}
 }
 

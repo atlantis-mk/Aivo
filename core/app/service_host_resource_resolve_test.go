@@ -83,9 +83,9 @@ func TestFirstPrimaryRequestDoesNotPreSnapshotFilterSkillInventory(t *testing.T)
 	if !strings.Contains(joined, "call resource_resolve with mode \"inspect\"") {
 		t.Fatalf("primary request missing the replaceable resource-resolution protocol: %s", joined)
 	}
-	wantTools := []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", ResourceResolveName}
+	wantTools := []string{"read", ExecCommandToolName, WriteStdinToolName, "edit", "write", "update_plan", "ask_user", ResourceResolveName, "web_search"}
 	if len(capturedTools) != len(wantTools) {
-		t.Fatalf("provider tools = %#v, want core tools plus Host resource control only", capturedTools)
+		t.Fatalf("provider tools = %#v, want core tools plus Host resource control and default web_search", capturedTools)
 	}
 	for index, want := range wantTools {
 		if capturedTools[index].Function.Name != want {
@@ -487,6 +487,13 @@ func TestResourceResolveUseResolvesToolGroupsAndInstructionResources(t *testing.
 	visibleIDs, visibleSkills := service.visibleSkills(ctx, session.ID)
 	if len(visibleIDs) != 1 || len(visibleSkills) != 1 || visibleSkills[0].Name != "ui-review" {
 		t.Fatalf("automatic Skill selection did not persist filtered visible catalog: ids:%#v skills:%#v", visibleIDs, visibleSkills)
+	}
+	activeSkills, err := service.GetSessionActiveSkills(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activeSkills.SkillIDs) != 0 || !containsToolNames(activeSkills.VisibleSkillIDs, visibleIDs...) {
+		t.Fatalf("session active skills = %#v, want visible ids %#v without active Skill content", activeSkills, visibleIDs)
 	}
 }
 

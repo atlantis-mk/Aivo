@@ -106,7 +106,7 @@ func (s *Service) DeleteRuntimeSession(ctx context.Context, id string) (domain.S
 	}
 	deleted, err := s.store.SetRuntimeSessionStatus(ctx, id, domain.SessionStatusDeleted)
 	if err == nil {
-		defaultAgentPTYRegistry.CleanupSession(strings.TrimSpace(id))
+		s.agentPTYRegistry().CleanupSession(strings.TrimSpace(id))
 		cleanupRetainedOutputSession(strings.TrimSpace(id))
 	}
 	return deleted, err

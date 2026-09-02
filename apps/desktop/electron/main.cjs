@@ -592,9 +592,19 @@ ipcMain.handle('aivo:inspect-dropped-composer-resources', async (_event, selecte
 })
 
 ipcMain.handle('aivo:open-external', async (_event, target) => {
-  if (typeof target !== 'string' || target.length === 0) {
-    return
+  if (typeof target !== 'string') {
+    throw new Error('外部链接无效。')
   }
+  let url
+  try {
+    url = new URL(target)
+  } catch {
+    throw new Error('外部链接无效。')
+  }
+  if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) {
+    throw new Error('仅支持 HTTP、HTTPS 或邮件链接。')
+  }
+
   await shell.openExternal(target)
 })
 

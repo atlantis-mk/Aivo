@@ -3,6 +3,7 @@ package app
 type providerAccountCapabilities struct {
 	NamespaceTools  bool
 	ImageGeneration bool
+	LocalImageView  bool
 	WebSearch       bool
 }
 
@@ -16,6 +17,7 @@ func capabilitiesForProviderAccount(route ResolvedModelRoute) providerAccountCap
 	return providerAccountCapabilities{
 		NamespaceTools:  true,
 		ImageGeneration: true,
+		LocalImageView:  true,
 		WebSearch:       true,
 	}
 }

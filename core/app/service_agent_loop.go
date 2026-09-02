@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -193,9 +192,6 @@ func (s *Service) runAssistantAgentLoop(
 			_ = s.recordToolResult(ctx, input.SessionID, turn.ID, call, result)
 			if result.PermissionRequested {
 				return "等待你批准工具权限后，我可以继续执行这次修改。", model, nil
-			}
-			if call.Name == ResourceResolveName && result.ToolError != nil && result.ToolError.Code == "no_available_resource" {
-				return "", model, errors.New(result.ToolError.Message)
 			}
 			messages = appendToolResultMessages(messages, call, result)
 			if call.Name == projectAssociateToolName && result.OK {

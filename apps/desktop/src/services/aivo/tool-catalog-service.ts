@@ -22,6 +22,7 @@ export type ToolCatalogEntry = {
 };
 
 export type SessionActiveToolsResult = {
+  automaticToolNames?: string[];
   coreToolNames: string[];
   sessionId: string;
   toolNames: string[];

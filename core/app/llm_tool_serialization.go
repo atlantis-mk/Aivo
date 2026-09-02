@@ -77,7 +77,7 @@ func responsesHostedTool(spec *domain.HostedToolSpec) map[string]any {
 		return nil
 	}
 	switch strings.TrimSpace(spec.Type) {
-	case "web_search", "x_search":
+	case "web_search", "web_search_preview", "x_search":
 		tool := map[string]any{"type": strings.TrimSpace(spec.Type)}
 		if spec.ExternalWebAccess != nil {
 			tool["external_web_access"] = *spec.ExternalWebAccess

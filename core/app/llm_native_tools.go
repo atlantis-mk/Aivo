@@ -19,7 +19,7 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 		if (spec.ActivationPolicy == providerDeclarationActivationPolicy || spec.ActivationPolicy == providerAccountActivationPolicy) && nativeToolDisabled(nativeTools, spec.Name) {
 			continue
 		}
-		if spec.ActivationPolicy == providerDeclarationActivationPolicy && !isChatGPTCodexRoute(route) {
+		if spec.ActivationPolicy == providerDeclarationActivationPolicy && !isChatGPTCodexRoute(route) && spec.Name != "web_search" {
 			continue
 		}
 		if spec.ActivationPolicy == providerAccountActivationPolicy && !isChatGPTCodexRoute(route) {
@@ -37,6 +37,10 @@ func (s *Service) toolsForModelRoute(ctx context.Context, cfg domain.AppConfig, 
 				}
 			case CodexImagegenToolName:
 				if spec.ActivationPolicy != providerAccountActivationPolicy || !accountCapabilities.ImageGeneration || !accountCapabilities.NamespaceTools {
+					continue
+				}
+			case CodexViewImageToolName:
+				if spec.ActivationPolicy != providerAccountActivationPolicy || !accountCapabilities.LocalImageView {
 					continue
 				}
 			}
@@ -104,17 +108,20 @@ func (s *Service) providerDeclaredLocalToolActivations(ctx context.Context, requ
 	}
 	activations := map[string]string{}
 	for _, route := range routes {
+		s.ensureDynamicProviderCapabilities(ctx, route)
+		nativeTools := normalizeNativeToolsRuntimeConfig(cfg.NativeTools)
+		if webSearch.Mode != domain.WebSearchModeDisabled && !nativeToolDisabled(nativeTools, "web_search") {
+			activations["web_search"] = "providerCapability"
+		}
 		if !isChatGPTCodexRoute(route) {
 			continue
 		}
 		accountCapabilities := capabilitiesForProviderAccount(route)
-		if accountCapabilities.ImageGeneration && accountCapabilities.NamespaceTools && !nativeToolDisabled(normalizeNativeToolsRuntimeConfig(cfg.NativeTools), CodexImagegenToolName) {
+		if accountCapabilities.ImageGeneration && accountCapabilities.NamespaceTools && !nativeToolDisabled(nativeTools, CodexImagegenToolName) {
 			activations[CodexImagegenToolName] = "providerAccount"
 		}
-		s.ensureDynamicProviderCapabilities(ctx, route)
-		model, ok := s.modelInfoForRoute(ctx, route)
-		if ok && webSearch.Mode != domain.WebSearchModeDisabled && !nativeToolDisabled(normalizeNativeToolsRuntimeConfig(cfg.NativeTools), "web_search") && declaredModelCapabilitySupported(model, codexWebSearchCapability) && (webSearch.Route == domain.WebSearchRouteLocal || codexModelUsesResponsesLite(model)) {
-			activations["web_search"] = "providerCapability"
+		if accountCapabilities.LocalImageView && !nativeToolDisabled(nativeTools, CodexViewImageToolName) {
+			activations[CodexViewImageToolName] = "providerAccount"
 		}
 	}
 	return activations
@@ -164,29 +171,73 @@ func routeSupportsHostedWebSearch(ctx context.Context, service *Service, route R
 	if !ok {
 		return false
 	}
-	providerID := normalizedRouteProviderID(route)
 	if isChatGPTCodexRoute(route) {
 		return !codexModelUsesResponsesLite(model) && declaredModelCapabilitySupported(model, codexWebSearchCapability)
 	}
-	switch route.Transport {
-	case TransportOpenAIResponses, TransportAzureOpenAI:
-		return modelSupportsCapability(model, "web_search") && (providerID == "openai" || providerID == "azure-openai")
-	case TransportOpenAICompatible:
-		if providerID == "xai" {
-			return modelSupportsCapability(model, "web_search")
-		}
-		if providerID == "perplexity" {
-			return modelSupportsCapability(model, "web_search") || modelSupportsCapability(model, "search")
-		}
-	case TransportAnthropicMessages:
-		return modelSupportsCapability(model, "web_search") && (providerID == "anthropic" || providerID == "claude-code")
-	case TransportGoogleGemini, TransportGoogleVertex:
-		if !modelSupportsCapability(model, "web_search") {
-			return false
-		}
+	hostedTool := hostedWebSearchToolForRoute(service, route)
+	if hostedTool.Type == "" || !hostedWebSearchTypeSupportedByTransport(route.Transport, hostedTool.Type) || !modelSupportsAnyCapability(model, hostedWebSearchCapabilities(hostedTool)) {
+		return false
+	}
+	if hostedTool.Type == "google_search" {
 		return googleSearchCanCombineWithTools(route.Model.ModelID) || onlyWebSearchTool(specs)
 	}
+	return true
+}
+
+func hostedWebSearchToolForRoute(service *Service, route ResolvedModelRoute) ProviderNativeHostedTool {
+	hostedTool := route.Definition.NativeHostedTools.WebSearch
+	if strings.TrimSpace(hostedTool.Type) == "" {
+		providerID := normalizedRouteProviderID(route)
+		if service != nil {
+			if def, ok := service.providerDefinition(providerID); ok {
+				hostedTool = def.NativeHostedTools.WebSearch
+			}
+		} else if def, ok := providerDefinition(providerID); ok {
+			hostedTool = def.NativeHostedTools.WebSearch
+		}
+	}
+	hostedTool.Type = strings.TrimSpace(hostedTool.Type)
+	return hostedTool
+}
+
+func hostedWebSearchCapabilities(hostedTool ProviderNativeHostedTool) []string {
+	if len(hostedTool.Capabilities) == 0 {
+		return []string{"web_search"}
+	}
+	capabilities := make([]string, 0, len(hostedTool.Capabilities))
+	for _, capability := range hostedTool.Capabilities {
+		if trimmed := strings.TrimSpace(capability); trimmed != "" {
+			capabilities = append(capabilities, trimmed)
+		}
+	}
+	if len(capabilities) == 0 {
+		return []string{"web_search"}
+	}
+	return capabilities
+}
+
+func modelSupportsAnyCapability(model domain.ModelInfo, capabilities []string) bool {
+	for _, capability := range capabilities {
+		if modelSupportsCapability(model, capability) {
+			return true
+		}
+	}
 	return false
+}
+
+func hostedWebSearchTypeSupportedByTransport(transport TransportType, hostedType string) bool {
+	switch transport {
+	case TransportOpenAIResponses, TransportAzureOpenAI:
+		return hostedType == "web_search" || hostedType == "web_search_preview"
+	case TransportOpenAICompatible:
+		return hostedType == "web_search" || hostedType == "web_search_preview" || hostedType == "perplexity_search" || hostedType == "venice_web_search"
+	case TransportAnthropicMessages:
+		return strings.HasPrefix(hostedType, "web_search_")
+	case TransportGoogleGemini, TransportGoogleVertex:
+		return hostedType == "google_search"
+	default:
+		return false
+	}
 }
 
 func routeSupportsHostedWebFetch(ctx context.Context, service *Service, route ResolvedModelRoute, specs []domain.ToolSpec) bool {
@@ -311,24 +362,15 @@ func hostedWebSearchToolSpec(config domain.WebSearchConfig, route ResolvedModelR
 		indexed := true
 		indexedWebAccess = &indexed
 	}
-	hostedType := "web_search"
-	providerID := normalizedRouteProviderID(route)
+	hostedTool := hostedWebSearchToolForRoute(nil, route)
+	hostedType := firstNonEmpty(hostedTool.Type, "web_search")
 	allowedDomains := append([]string(nil), config.AllowedDomains...)
 	var searchContentTypes []string
 	if isChatGPTCodexRoute(route) && model.WebSearchToolType == "text_and_image" {
 		searchContentTypes = []string{"text", "image"}
 	}
-	switch providerID {
-	case "anthropic", "claude-code":
-		hostedType = "web_search_20250305"
-	case "gemini", "google", "google-vertex":
-		hostedType = "google_search"
-	case "perplexity":
-		hostedType = "perplexity_search"
-	case "xai":
-		if len(allowedDomains) > 5 {
-			allowedDomains = allowedDomains[:5]
-		}
+	if hostedTool.MaxAllowedDomains > 0 && len(allowedDomains) > hostedTool.MaxAllowedDomains {
+		allowedDomains = allowedDomains[:hostedTool.MaxAllowedDomains]
 	}
 	return domain.ToolSpec{
 		Name:        "web_search",

@@ -25,6 +25,7 @@ Be concise, direct, and practical. Keep the user informed about meaningful actio
 
 ## Tool use
 
+- Before starting task execution, an operation, or any workflow that needs tools, first call `resource_resolve` to inject the relevant available resources when `resource_resolve` is present in the current request. Use a concise description of the task and needed capability. If `resource_resolve` is not present, continue with the tools already visible in the request.
 - Invoke `update_plan` for non-trivial visible progress, multi-step work, or when sequencing matters. Keep plans short, meaningful, and current.
 - Invoke `ask_user` only when execution genuinely needs user input and a reasonable assumption would be risky.
 - Invoke tools through their structured schemas, never through keyword-formatted prose.

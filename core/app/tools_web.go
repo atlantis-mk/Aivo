@@ -180,10 +180,11 @@ func (t *WebSearchTool) Execute(ctx context.Context, args json.RawMessage, execC
 	if err != nil {
 		return toolError("web_search", err)
 	}
+	return webSearchResponseToolResult("web_search", execCtx.ToolCallID, query, response, backend.Name())
+}
+
+func webSearchResponseToolResult(name, callID, query string, response WebSearchResponse, provider string) domain.ToolResult {
 	results := response.Results
-	if len(results) == 0 {
-		return toolError("web_search", errors.New("no search results found"))
-	}
 	var content strings.Builder
 	content.WriteString("Search results for: " + query)
 	for i, result := range results {
@@ -194,6 +195,14 @@ func (t *WebSearchTool) Execute(ctx context.Context, args json.RawMessage, execC
 			content.WriteString("\n" + result.Snippet)
 		}
 	}
+	if len(results) == 0 {
+		raw := strings.TrimSpace(response.Content)
+		if raw == "" {
+			return toolErrorWithCallID(name, callID, errors.New("no search results found"))
+		}
+		content.WriteString("\n\n")
+		content.WriteString(raw)
+	}
 	structuredResults := make([]map[string]any, 0, len(results))
 	for _, result := range results {
 		structuredResults = append(structuredResults, map[string]any{"title": result.Title, "url": result.URL, "snippet": result.Snippet})
@@ -201,9 +210,10 @@ func (t *WebSearchTool) Execute(ctx context.Context, args json.RawMessage, execC
 	text := content.String()
 	return domain.ToolResult{
 		Name:         "web_search",
+		CallID:       callID,
 		OK:           response.Status >= 200 && response.Status < 400,
 		Content:      text,
 		ModelContent: text,
-		Structured:   map[string]any{"query": query, "results": structuredResults, "status": response.Status, "provider": backend.Name()},
+		Structured:   map[string]any{"query": query, "results": structuredResults, "status": response.Status, "provider": provider},
 	}
 }

@@ -1,4 +1,10 @@
-import { Bot, Check, ChevronDown, Hand, ShieldAlert } from "lucide-react";
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Hand,
+  ShieldAlert,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {

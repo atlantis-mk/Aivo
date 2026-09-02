@@ -145,6 +145,41 @@ func TestSessionContextIncludesLiveTerminalInventory(t *testing.T) {
 	}
 }
 
+func TestDeleteRuntimeSessionCleansServiceOwnedTerminals(t *testing.T) {
+	service, cleanup := newSessionTestService(t)
+	defer cleanup()
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	session, err := service.CreateRuntimeSession(ctx, domain.CreateSessionRequest{
+		Type: domain.SessionTypeCoding, ProjectPath: projectRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	terminal, err := service.ptyManager.Start(ctx, SandboxRequest{
+		WorkspaceRoot: projectRoot, CWD: projectRoot, SessionID: session.ID,
+		Command: `sleep 30`, EnvAllowlist: defaultEnvAllowlist(),
+	}, 24, 80, 100*time.Millisecond, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.Status != AgentPTYStatusRunning {
+		t.Fatalf("terminal status = %q, want running", terminal.Status)
+	}
+
+	if _, err := service.DeleteRuntimeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	terminals, err := service.ptyManager.List(projectRoot, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(terminals) != 0 {
+		t.Fatalf("service-owned terminals remain after session deletion: %#v", terminals)
+	}
+}
+
 func TestCreateRuntimeSessionWithoutProjectPathUsesConfiguredInitialWorkspace(t *testing.T) {
 	service, cleanup := newSessionTestService(t)
 	defer cleanup()

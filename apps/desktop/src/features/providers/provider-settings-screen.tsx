@@ -44,6 +44,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { ProviderIcon } from "@/features/providers/provider-icon";
@@ -57,6 +64,12 @@ import {
   providerReadinessLabel,
 } from "@/features/providers/provider-settings-model";
 import type { ProviderChoice } from "@/features/providers/provider-types";
+import {
+  normalizeWebSearchMode,
+  webSearchModeLabel,
+  webSearchModeOptions,
+  type WebSearchMode,
+} from "@/features/projects/project-model-options";
 import { ProviderConnectionDialogs } from "@/features/setup/provider-connection-dialogs";
 import { useSetupProviderActions } from "@/features/setup/setup-provider-actions";
 import {
@@ -77,7 +90,23 @@ import {
   getProviderCatalog,
   refreshProviderEcosystemCatalog,
   refreshProviderModels,
+  updateModelPreferences,
 } from "@/services/aivo";
+import type { domain } from "../../../bridge/go/models";
+
+type AppConfigWithWebSearch = domain.AppConfig & {
+  webSearch?: {
+    mode?: WebSearchMode;
+    route?: string;
+  };
+};
+
+type WebSearchPreferenceInput = domain.ModelPreferencesInput & {
+  webSearch: {
+    mode: WebSearchMode;
+    route: "auto";
+  };
+};
 
 export function ProviderSettingsScreen() {
   const {
@@ -93,7 +122,11 @@ export function ProviderSettingsScreen() {
   const [deletingProviderId, setDeletingProviderId] = useState("");
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [refreshingProviderId, setRefreshingProviderId] = useState("");
+  const [savingWebSearch, setSavingWebSearch] = useState(false);
   const [providerValidated, setProviderValidated] = useState(false);
+  const webSearchMode = normalizeWebSearchMode(
+    (config as AppConfigWithWebSearch | null)?.webSearch?.mode,
+  );
 
   const actions = useSetupProviderActions({
     catalog,
@@ -123,7 +156,14 @@ export function ProviderSettingsScreen() {
   );
 
   async function removeProvider(provider: ProviderInfo) {
-    if (deletingProviderId || refreshingCatalog || refreshingProviderId) return;
+    if (
+      deletingProviderId ||
+      refreshingCatalog ||
+      refreshingProviderId ||
+      savingWebSearch
+    ) {
+      return;
+    }
     setDeletingProviderId(provider.id);
     setError("");
     try {
@@ -146,7 +186,13 @@ export function ProviderSettingsScreen() {
   }
 
   async function refreshEcosystemCatalog() {
-    if (refreshingCatalog || refreshingProviderId || deletingProviderId || saving) {
+    if (
+      refreshingCatalog ||
+      refreshingProviderId ||
+      deletingProviderId ||
+      saving ||
+      savingWebSearch
+    ) {
       return;
     }
     if (!hasAppBridge()) {
@@ -171,7 +217,13 @@ export function ProviderSettingsScreen() {
   }
 
   async function refreshConfiguredProvider(provider: ProviderInfo) {
-    if (refreshingProviderId || refreshingCatalog || deletingProviderId || saving) {
+    if (
+      refreshingProviderId ||
+      refreshingCatalog ||
+      deletingProviderId ||
+      saving ||
+      savingWebSearch
+    ) {
       return;
     }
     const unavailableMessage = providerRefreshUnavailableMessage(provider);
@@ -209,6 +261,44 @@ export function ProviderSettingsScreen() {
     }
   }
 
+  async function saveWebSearchMode(nextMode: string) {
+    if (savingWebSearch) return;
+    const normalized = normalizeWebSearchMode(nextMode);
+    const existing = (config as AppConfigWithWebSearch | null)?.webSearch ?? {};
+    const webSearch = {
+      ...existing,
+      mode: normalized,
+      route: "auto" as const,
+    };
+    if (!hasAppBridge()) {
+      if (config) {
+        setConfig({
+          ...(config as AppConfigWithWebSearch),
+          webSearch,
+        } as unknown as domain.AppConfig);
+      }
+      return;
+    }
+    setSavingWebSearch(true);
+    setError("");
+    try {
+      const nextConfig = await updateModelPreferences({
+        webSearch: {
+          mode: normalized,
+          route: "auto",
+        },
+      } as WebSearchPreferenceInput);
+      setConfig(nextConfig);
+      toast.success(`Web Search 已设置为${webSearchModeLabel(normalized)}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Web Search 模式保存失败：${message}`);
+      toast.error("Web Search 模式保存失败");
+    } finally {
+      setSavingWebSearch(false);
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-aivo-8 px-aivo-4 py-aivo-6 sm:px-aivo-8 sm:py-aivo-8">
@@ -227,6 +317,63 @@ export function ProviderSettingsScreen() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
+
+        <section
+          aria-labelledby="model-runtime-preferences-heading"
+          className="flex flex-col gap-aivo-4"
+        >
+          <div className="flex flex-col gap-aivo-1">
+            <h2
+              className="aivo-type-title-3 font-semibold text-foreground"
+              id="model-runtime-preferences-heading"
+            >
+              模型运行偏好
+            </h2>
+            <p className="aivo-type-footnote text-muted-foreground">
+              这些默认值会随模型请求一起发送，Provider 或模型不支持时由 Core 跳过。
+            </p>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Web Search</CardTitle>
+              <CardDescription>
+                默认使用实时搜索，可按需要限制为索引、缓存或关闭。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-aivo-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    搜索模式
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {
+                      webSearchModeOptions.find(
+                        (option) => option.mode === webSearchMode,
+                      )?.description
+                    }
+                  </p>
+                </div>
+                <Select
+                  disabled={loading || savingWebSearch}
+                  onValueChange={(value) => void saveWebSearchMode(value)}
+                  value={webSearchMode}
+                >
+                  <SelectTrigger className="h-9 w-full px-3 text-sm sm:w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {webSearchModeOptions.map((option) => (
+                      <SelectItem key={option.mode} value={option.mode}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
 
         <section aria-labelledby="configured-providers-heading" className="flex flex-col gap-aivo-4">
           <div className="flex items-end justify-between gap-aivo-3">
@@ -257,7 +404,8 @@ export function ProviderSettingsScreen() {
                     Boolean(deletingProviderId) ||
                     refreshingCatalog ||
                     Boolean(refreshingProviderId) ||
-                    saving
+                    saving ||
+                    savingWebSearch
                   }
                   key={provider.id}
                   onDelete={() => void removeProvider(provider)}
@@ -303,7 +451,8 @@ export function ProviderSettingsScreen() {
                 refreshingCatalog ||
                 Boolean(refreshingProviderId) ||
                 Boolean(deletingProviderId) ||
-                saving
+                saving ||
+                savingWebSearch
               }
               onClick={() => void refreshEcosystemCatalog()}
               variant="outline"

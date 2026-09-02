@@ -132,7 +132,8 @@ type SessionActiveSkillsInput struct {
 }
 
 type SessionActiveSkillsResult struct {
-	SessionID string       `json:"sessionId"`
-	SkillIDs  []string     `json:"skillIds"`
-	Skills    []SkillEntry `json:"skills,omitempty"`
+	SessionID       string       `json:"sessionId"`
+	SkillIDs        []string     `json:"skillIds"`
+	Skills          []SkillEntry `json:"skills,omitempty"`
+	VisibleSkillIDs []string     `json:"visibleSkillIds,omitempty"`
 }
