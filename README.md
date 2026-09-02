@@ -75,7 +75,10 @@ You can also use Codex with an API key, but this requires [additional setup](htt
 
 - [**Codex Documentation**](https://developers.openai.com/codex)
 - [**Contributing**](./docs/contributing.md)
+- [**Licensing in this fork**](./AIVO-LICENSE-NOTICE.md)
 - [**Installing & building**](./docs/install.md)
 - [**Open source fund**](./docs/open-source-fund.md)
 
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+Codex-derived code remains available under the [Apache-2.0 License](LICENSE).
+The separate terms for designated standalone Aivo code are described in
+[AIVO-LICENSE-NOTICE.md](./AIVO-LICENSE-NOTICE.md).
