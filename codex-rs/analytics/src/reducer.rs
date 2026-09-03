@@ -621,6 +621,34 @@ impl AnalyticsReducer {
                 CustomAnalyticsFact::Goal(input) => {
                     self.ingest_goal(*input, out);
                 }
+                CustomAnalyticsFact::ThreadHintStatus(input) => {
+                    if let Some((connection, thread, metadata)) =
+                        self.thread_context_or_warn(AnalyticsDropSite {
+                            event_name: "codex_thread_hint_status",
+                            thread_id: &input.thread_id,
+                            turn_id: None,
+                            review_id: None,
+                            item_id: None,
+                        })
+                    {
+                        out.push(TrackEventRequest::ThreadHintStatus(Box::new(
+                            crate::thread_hint::ThreadHintStatusEventRequest {
+                                event_type: "codex_thread_hint_status",
+                                event_params: crate::thread_hint::ThreadHintStatusEventParams {
+                                    thread_id: input.thread_id,
+                                    session_id: metadata.session_id.clone(),
+                                    app_server_client: thread.app_server_client(connection),
+                                    runtime: connection.runtime.clone(),
+                                    thread_source: metadata.thread_source.clone(),
+                                    subagent_source: metadata.subagent_source.clone(),
+                                    parent_thread_id: metadata.parent_thread_id.clone(),
+                                    status: input.status,
+                                    occurred_at_ms: input.occurred_at_ms,
+                                },
+                            },
+                        )));
+                    }
+                }
                 CustomAnalyticsFact::GuardianV2(input) => {
                     let event_type = match &input.kind {
                         GuardianV2EventKind::Classification { .. } => {
@@ -2027,6 +2055,7 @@ impl AnalyticsReducer {
             thread_id,
             turn_id,
             item_id,
+            originator,
             plugin_id,
             execution_id,
             operation,
@@ -2042,6 +2071,7 @@ impl AnalyticsReducer {
                             thread_id: thread_id.clone(),
                             turn_id: turn_id.clone(),
                             item_id: item_id.clone(),
+                            originator: originator.clone(),
                             plugin_id: plugin_id.clone(),
                             execution_id: execution_id.clone(),
                             operation: operation.clone(),
