@@ -1,15 +1,16 @@
-import { RotateCcw, Trash2 } from "lucide-react";
+import { ChevronRight, RotateCcw, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
-import { Marker, MarkerContent } from "@/components/ui/marker";
 import {
-  formatCompletionTime,
   formatPendingAssistantStatus,
   formatThinkingTime,
 } from "@/features/projects/conversation-timeline-display-model";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
+import { cn } from "@/lib/utils";
 import { CopyTextButton } from "./conversation-timeline-copy-button";
+import { useToolTurnExpansion } from "./conversation-timeline-tool-turn-expansion";
 import type { ConversationTimelineActions } from "./conversation-timeline-types";
 
 export function AssistantPreamble({
@@ -20,7 +21,7 @@ export function AssistantPreamble({
   workspaceRoot: string;
 }) {
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 text-sm duration-300">
+    <div className="aivo-assistant-preamble animate-in fade-in slide-in-from-bottom-2 text-sm duration-300">
       <Markdown content={text} isFinished workspaceRoot={workspaceRoot} />
     </div>
   );
@@ -28,15 +29,9 @@ export function AssistantPreamble({
 
 export function StoppedResponse({ stoppedSeconds }: { stoppedSeconds: number }) {
   return (
-    <Marker
-      className="animate-in fade-in slide-in-from-bottom-2 text-sm duration-300"
-      role="status"
-      variant="separator"
-    >
-      <MarkerContent>
-        你在 {formatThinkingTime(stoppedSeconds)} 后停止了
-      </MarkerContent>
-    </Marker>
+    <AssistantCompletionStatus>
+      你在 {formatThinkingTime(stoppedSeconds)} 后停止了
+    </AssistantCompletionStatus>
   );
 }
 
@@ -66,13 +61,17 @@ export function ThinkingResponse({
 export function AssistantStatus({
   actionHeading,
   completed,
+  hasToolActivity,
   isExecuting,
   responseSeconds,
+  turnId,
 }: {
   actionHeading?: string;
   completed: boolean;
+  hasToolActivity: boolean;
   isExecuting: boolean;
   responseSeconds: number;
+  turnId: string;
 }) {
   if (!completed) {
     return (
@@ -81,13 +80,54 @@ export function AssistantStatus({
   }
 
   return (
-    <Marker
-      className="animate-in fade-in slide-in-from-bottom-2 text-sm duration-300"
-      role="status"
-      variant="separator"
+    <AssistantCompletionStatus
+      hasToolActivity={hasToolActivity}
+      turnId={turnId}
     >
-      <MarkerContent>已完成 {formatThinkingTime(responseSeconds)}</MarkerContent>
-    </Marker>
+      用时 {formatThinkingTime(responseSeconds)}
+    </AssistantCompletionStatus>
+  );
+}
+
+function AssistantCompletionStatus({
+  children,
+  hasToolActivity = false,
+  turnId = "",
+}: {
+  children: ReactNode;
+  hasToolActivity?: boolean;
+  turnId?: string;
+}) {
+  const { expanded, toggle } = useToolTurnExpansion(turnId);
+  if (hasToolActivity) {
+    return (
+      <div className="aivo-assistant-status animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <button
+          aria-expanded={expanded}
+          className="aivo-assistant-status-toggle"
+          onClick={toggle}
+          type="button"
+        >
+          {children}
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground/80 transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
+          />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="aivo-assistant-status animate-in fade-in slide-in-from-bottom-2 duration-300"
+      role="status"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -119,7 +159,7 @@ function ShimmerText({ text }: { text: string }) {
   return (
     <span
       aria-label={text}
-      className="aivo-text-shimmer font-semibold text-muted-foreground"
+      className="aivo-text-shimmer text-muted-foreground"
     >
       <span data-slot="text-shimmer-char">
         <span aria-hidden="true" data-slot="text-shimmer-char-base">
@@ -147,7 +187,7 @@ export function AssistantResponse({
   workspaceRoot: string;
 }) {
   return (
-    <div className="group/assistant-response relative">
+    <div className="aivo-assistant-response group/assistant-response relative">
       <Markdown
         content={responseText}
         isFinished={Boolean(completedAt)}
@@ -179,9 +219,6 @@ export function AssistantResponse({
             >
               <Trash2 />
             </Button>
-          ) : null}
-          {completedAt ? (
-            <span className="text-sm">{formatCompletionTime(completedAt)}</span>
           ) : null}
         </div>
       </div>

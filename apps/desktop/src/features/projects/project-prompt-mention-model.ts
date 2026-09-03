@@ -23,7 +23,7 @@ export type PromptMentionItem = {
 };
 
 export type PromptMentionAction = {
-  action: "compact-context" | "select-local";
+  action: "select-local";
   detail: string;
   id: string;
   label: string;
@@ -44,12 +44,6 @@ const promptMentionGroupOrder: PromptMentionItem["type"][] = [
 ];
 
 const promptMentionActions: PromptMentionAction[] = [
-  {
-    action: "compact-context",
-    detail: "@compact · 默认 80% 自动触发",
-    id: "action:compact-context",
-    label: "压缩上下文",
-  },
   {
     action: "select-local",
     detail: "文件或文件夹",

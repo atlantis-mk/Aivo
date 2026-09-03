@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -18,8 +18,10 @@ import { InlineShellPreview } from "./conversation-timeline-tool-shell-preview";
 import type { domain } from "../../../bridge/go/models";
 
 export function ToolCallCommandLine({
+  compact = false,
   toolCall,
 }: {
+  compact?: boolean;
   toolCall: domain.ToolCall;
 }) {
   const failed = toolCall.status === "failed";
@@ -28,20 +30,14 @@ export function ToolCallCommandLine({
   const commandTool = isCommandToolCall(toolCall);
   const skillTool = toolCall.name === "skill";
   const command = getToolCallCommand(toolCall);
+  const argumentsText = formatToolArguments(toolCall.arguments);
   const fileChanges = getToolCallFileChanges(toolCall);
   const retainedRefs = getRetainedOutputRefs(toolCall);
   const retainedRef = retainedRefs[0] ?? "";
   const retainedRefsKey = retainedRefs.join("\n");
   const showFileChanges =
     toolCallKind(toolCall) === "write" && fileChanges.length > 0;
-  const resultText =
-    toolCall.name === "ls" ||
-    toolCall.name === "list_files" ||
-    commandTool ||
-    skillTool ||
-    failed
-      ? getToolResultText(toolCall)
-      : "";
+  const resultText = getToolResultText(toolCall);
   const showCommandLine =
     skillTool || commandTool || (!resultText && !showFileChanges);
   const showRunningStatus = running && !showFileChanges;
@@ -52,7 +48,7 @@ export function ToolCallCommandLine({
     (skillTool && (resultText || retainedRefs.length > 0)) ||
       (resultText && (failed || commandTool) && retainedRefs.length === 0),
   );
-  const [resultDetailsOpen, setResultDetailsOpen] = useState(false);
+  const [resultDetailsOpen, setResultDetailsOpen] = useState(compact);
   const [retainedOutput, setRetainedOutput] =
     useState<RetainedOutputViewState | null>(null);
   const hasRetainedOutputRef = retainedRefs.length > 0;
@@ -61,11 +57,18 @@ export function ToolCallCommandLine({
       (!resultDetailsExpandable || resultDetailsOpen) &&
       !hasRetainedOutputRef,
   );
+  const showArguments = Boolean(argumentsText) && !commandTool;
+  const hasDetailContent = Boolean(
+    showArguments ||
+      showFileChanges ||
+      showInlineResult ||
+      retainedRefs.length > 0,
+  );
 
   useEffect(() => {
-    setResultDetailsOpen(false);
+    setResultDetailsOpen(compact);
     setRetainedOutput(null);
-  }, [toolCall.id, resultText, retainedRef, retainedRefsKey]);
+  }, [compact, retainedRef, retainedRefsKey, resultText, toolCall.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,10 +186,13 @@ export function ToolCallCommandLine({
 
   return (
     <div
-      className="my-2 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-foreground/[0.03]"
+      className={cn(
+        "aivo-tool-call-details my-0 flex min-w-0 flex-col overflow-hidden rounded-md border border-border/70 bg-muted/35 text-card-foreground",
+        compact && "aivo-tool-call-details--compact",
+      )}
       data-assistant-hover-ignore="true"
     >
-      {showCommandLine || showStatusLine ? (
+      {!compact && (showCommandLine || showStatusLine) ? (
         <div className="min-h-11 px-4 pt-3 pb-2">
           {resultDetailsExpandable ? (
             <button
@@ -202,43 +208,89 @@ export function ToolCallCommandLine({
           )}
         </div>
       ) : null}
-      <div className="min-w-0 px-4 pb-4 pt-1">
-        <AnimatedDisclosure open={showFileChanges}>
-          <ToolFileChangeLines files={fileChanges} live={running} />
-        </AnimatedDisclosure>
-        <AnimatedDisclosure open={showInlineResult}>
-          {resultText && commandTool ? (
-            <InlineShellPreview resultText={resultText} toolCall={toolCall} />
-          ) : resultText ? (
-            <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
-              {resultText}
-            </pre>
-          ) : null}
-        </AnimatedDisclosure>
-        {retainedRefs.length > 0 && (!skillTool || resultDetailsOpen) ? (
-          <div className="flex min-w-0 flex-col gap-1">
-            {retainedOutput?.loading && !retainedOutput.content ? (
-              <div className="text-xs text-muted-foreground">
-                加载完整输出...
-              </div>
-            ) : null}
-            {retainedOutput?.error ? (
-              <div className="text-xs text-destructive">
-                {retainedOutput.error}
-              </div>
-            ) : null}
-            <AnimatedDisclosure open={Boolean(retainedOutput?.content)}>
-              {retainedOutput?.content ? (
-                <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
-                  {retainedOutput.content}
+      {hasDetailContent ? (
+        <div className="min-w-0">
+          <AnimatedDisclosure open={showArguments}>
+            {showArguments ? (
+              <ToolCallDetailBlock label="参数">
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
+                  {argumentsText}
                 </pre>
+              </ToolCallDetailBlock>
+            ) : null}
+          </AnimatedDisclosure>
+          <AnimatedDisclosure open={showFileChanges}>
+            <ToolFileChangeLines files={fileChanges} live={running} />
+          </AnimatedDisclosure>
+          <AnimatedDisclosure open={showInlineResult}>
+            {resultText && commandTool ? (
+              <InlineShellPreview resultText={resultText} toolCall={toolCall} />
+            ) : resultText ? (
+              <ToolCallDetailBlock label={failed ? "错误" : "结果"}>
+                <pre
+                  className={cn(
+                    "max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground",
+                    failed && "text-destructive",
+                  )}
+                >
+                  {resultText}
+                </pre>
+              </ToolCallDetailBlock>
+            ) : null}
+          </AnimatedDisclosure>
+          {retainedRefs.length > 0 && (!skillTool || resultDetailsOpen) ? (
+            <div className="flex min-w-0 flex-col gap-1">
+              {retainedOutput?.loading && !retainedOutput.content ? (
+                <div className="text-xs text-muted-foreground">
+                  加载完整输出...
+                </div>
               ) : null}
-            </AnimatedDisclosure>
-          </div>
-        ) : null}
-      </div>
+              {retainedOutput?.error ? (
+                <div className="text-xs text-destructive">
+                  {retainedOutput.error}
+                </div>
+              ) : null}
+              <AnimatedDisclosure open={Boolean(retainedOutput?.content)}>
+                {retainedOutput?.content ? (
+                  <ToolCallDetailBlock label="完整输出">
+                    <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
+                      {retainedOutput.content}
+                    </pre>
+                  </ToolCallDetailBlock>
+                ) : null}
+              </AnimatedDisclosure>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function ToolCallDetailBlock({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <section className="aivo-tool-detail-block mb-2 min-w-0 rounded-sm border border-border/50 bg-background/45 px-2.5 py-2">
+      <div className="mb-2 text-[11px] text-muted-foreground">
+        {label}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function formatToolArguments(value: Record<string, unknown> | undefined) {
+  if (!value || Object.keys(value).length === 0) return "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 type RetainedOutputViewState = {

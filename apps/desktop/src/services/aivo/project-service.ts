@@ -1,8 +1,7 @@
-import type { domain } from "../../../bridge/go/models";
-import { invoke } from "@/services/aivo/invoke";
-
 export async function selectProjectDirectory() {
-  const selected = await window.aivo.selectProjectDirectory();
+  const selected = window.aivoDesktop?.workspace
+    ? await window.aivoDesktop.workspace.choose()
+    : await window.aivo.selectProjectDirectory();
   return selected || "";
 }
 
@@ -30,16 +29,4 @@ export function inspectDroppedComposerResources(files: File[]) {
 
 export function exportDiagnostics() {
   return window.aivo.exportDiagnostics();
-}
-
-export function listRecentProjects(limit: number) {
-  return invoke<domain.AssistantProject[]>("ListRecentProjects", limit);
-}
-
-export function upsertProject(path: string) {
-  return invoke<domain.AssistantProject>("UpsertProject", path);
-}
-
-export function setProjectSidebarHidden(path: string, hidden: boolean) {
-  return invoke<domain.AssistantProject>("SetProjectSidebarHidden", path, hidden);
 }

@@ -81,7 +81,11 @@ import {
   OtherProviderPickerDialog,
   ProviderChoiceGrid,
 } from "@/features/setup/setup-step-components";
-import { hasAppBridge, useAppConfig } from "@/lib/app-config";
+import {
+  hasAppBridge,
+  hasCodexDesktopBridge,
+  useAppConfig,
+} from "@/lib/app-config";
 import { deletePreviewProvider } from "@/lib/preview-state";
 import type { ProviderInfo } from "@/lib/provider-catalog";
 import {
@@ -167,7 +171,12 @@ export function ProviderSettingsScreen() {
     setDeletingProviderId(provider.id);
     setError("");
     try {
-      if (hasAppBridge()) {
+      if (hasCodexDesktopBridge() && provider.id !== "openai") {
+        await window.aivoDesktop.codex.deleteProvider(provider.id);
+        const next = deletePreviewProvider(provider.id);
+        setCatalog(next.catalog);
+        setConfig(next.config);
+      } else if (hasAppBridge()) {
         const nextCatalog = await deleteProvider(provider.id);
         const nextConfig = await getAppConfig();
         setCatalog(nextCatalog);
@@ -230,6 +239,33 @@ export function ProviderSettingsScreen() {
     if (unavailableMessage) {
       setError(unavailableMessage);
       toast.error(unavailableMessage);
+      return;
+    }
+    if (hasCodexDesktopBridge()) {
+      setRefreshingProviderId(provider.id);
+      setError("");
+      try {
+        const nextCatalog = await actions.refreshProviderCatalog(
+          configuredProviderRefreshInput(provider),
+        );
+        if (!nextCatalog) {
+          throw new Error("模型目录不可用。");
+        }
+        setCatalog(nextCatalog);
+        const refreshed = nextCatalog.providers.find(
+          (candidate) => candidate.id === provider.id,
+        );
+        toast.success(
+          `已刷新 ${provider.name}，获取 ${refreshed?.models.length ?? 0} 个模型`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const failureMessage = `刷新 ${provider.name} 模型失败，已保留原模型列表：${message}`;
+        setError(failureMessage);
+        toast.error(failureMessage);
+      } finally {
+        setRefreshingProviderId("");
+      }
       return;
     }
     if (!hasAppBridge()) {

@@ -49,7 +49,11 @@ export function mergeToolCallLists(
     callsById.set(toolCall.id, toolCall);
   }
   for (const toolCall of nextToolCalls) {
-    callsById.set(toolCall.id, toolCall);
+    const current = callsById.get(toolCall.id);
+    callsById.set(
+      toolCall.id,
+      current ? preserveToolCallOutput(current, toolCall) : toolCall,
+    );
   }
 
   return dedupeDelegateToolCalls([...callsById.values()]).toSorted((a, b) => {
@@ -58,6 +62,35 @@ export function mergeToolCallLists(
     if (timeDelta !== 0) return timeDelta;
     return a.id.localeCompare(b.id);
   });
+}
+
+export function appendToolCallOutput(
+  toolCall: domain.ToolCall,
+  delta: string,
+): domain.ToolCall {
+  if (!delta) return toolCall;
+  const content = stringFromUnknown(toolCall.result?.content);
+  const nextContent = `${content ?? ""}${delta}`;
+  return {
+    ...toolCall,
+    result: {
+      ...(toolCall.result ?? {}),
+      content: nextContent,
+    },
+    resultSummary: nextContent,
+  } as domain.ToolCall;
+}
+
+function preserveToolCallOutput(
+  current: domain.ToolCall,
+  next: domain.ToolCall,
+): domain.ToolCall {
+  if (next.result || !current.result) return next;
+  return {
+    ...next,
+    result: current.result,
+    resultSummary: next.resultSummary ?? current.resultSummary,
+  } as domain.ToolCall;
 }
 
 export function isDelegateTaskToolName(name: string) {

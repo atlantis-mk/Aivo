@@ -7,7 +7,7 @@ import {
 } from "@/features/projects/conversation-timeline-model";
 import type { LoadConversationTurnsOptions } from "@/features/projects/project-conversation-turn-loader";
 import { providerSupportsServiceTier } from "@/features/projects/project-model-options";
-import { hasAppBridge } from "@/lib/app-config";
+import { hasAppBridge, hasCodexDesktopBridge } from "@/lib/app-config";
 import {
   cancelSessionTurn,
   deleteSessionEvent,
@@ -67,11 +67,22 @@ export function useProjectConversationTurnActions({
             },
       ),
     );
-    if (!hasAppBridge()) return;
     if (!turnToStop?.turnId) {
       pendingStopRequestedRef.current = true;
       return;
     }
+    if (hasCodexDesktopBridge()) {
+      try {
+        await window.aivoDesktop.codex.interruptTurn({
+          threadId: sessionId,
+          turnId: turnToStop.turnId,
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    if (!hasAppBridge()) return;
     try {
       await cancelSessionTurn({
         turnId: turnToStop.turnId,

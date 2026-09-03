@@ -76,6 +76,42 @@ export function useSetupProviderActions({
       selectedModelId,
     });
     try {
+      if (
+        hasCodexDesktopBridge() &&
+        authMode === "api-key" &&
+        input.providerId !== "openai"
+      ) {
+        await window.aivoDesktop.codex.configureProvider({
+          apiKey: input.apiKey ?? "",
+          baseUrl: input.baseUrl ?? "",
+          model: input.modelId ?? "",
+          name: input.name ?? input.providerId,
+          providerId: input.providerId,
+        });
+        const backendManagedInput = {
+          ...input,
+          apiKey: undefined,
+          apiKeyEnv: undefined,
+        };
+        const next = connectPreviewProvider(backendManagedInput);
+        let nextCatalog = next.catalog;
+        try {
+          const codexModels = await window.aivoDesktop.codex.listCodexModels();
+          if (codexModels.length > 0) {
+            nextCatalog = catalogWithCodexModels(next.catalog, codexModels);
+          }
+        } catch {
+          // The selected provider remains usable when the optional Codex model refresh fails.
+        }
+        const nextConfig = connectedProviderConfig(
+          backendManagedInput,
+          configAuxiliaryModel(config),
+        );
+        setPreviewInitialized(nextConfig);
+        setCatalog(nextCatalog);
+        setConfig(nextConfig);
+        return true;
+      }
       if (hasAppBridge()) {
         try {
           const refreshedCatalog = await refreshProviderModels(
@@ -114,7 +150,7 @@ export function useSetupProviderActions({
           try {
             nextCatalog = catalogWithCodexModels(
               next.catalog,
-              await window.aivoDesktop.codex.listModels(),
+              await window.aivoDesktop.codex.listCodexModels(),
             );
           } catch {
             // The selected model remains valid even if a catalog refresh fails.
@@ -256,7 +292,7 @@ export function useSetupProviderActions({
   async function refreshProviderCatalog(input: ProviderConnectInput) {
     if (hasCodexDesktopBridge() && input.providerId === "openai") {
       try {
-        const codexModels = await window.aivoDesktop.codex.listModels();
+        const codexModels = await window.aivoDesktop.codex.listCodexModels();
         if (!catalog || codexModels.length === 0) return catalog;
 
         const nextCatalog = catalogWithCodexModels(catalog, codexModels);

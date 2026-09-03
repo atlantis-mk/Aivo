@@ -3,20 +3,24 @@ import type { Dispatch, SetStateAction } from "react";
 import { toast } from "sonner";
 
 import {
+  assistantProjectFromPath,
   projectIsUserSelectable,
+  projectsFromSessions,
   upsertRecentProject,
 } from "@/features/projects/project-sidebar-model";
 import type { LoadConversationTurnsOptions } from "@/features/projects/project-conversation-turn-loader";
 import { OPEN_CONVERSATION_FROM_EMPTY_DELAY } from "@/features/projects/project-workspace-state-model";
-import { hasAppBridge } from "@/lib/app-config";
+import { hasAppBridge, hasCodexDesktopBridge } from "@/lib/app-config";
+import {
+  archiveCodexSession,
+  listCodexSessions,
+  resumeCodexSession,
+} from "@/services/codex-thread-service";
 import {
   archiveSession,
-  listRecentProjects,
   listSessions,
   scanProjectSkills,
   selectProjectDirectory,
-  setProjectSidebarHidden,
-  upsertProject,
 } from "@/services/aivo";
 import type { ToolActivityTab } from "@/features/projects/tool-activity-model";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
@@ -85,14 +89,18 @@ export function useProjectSidebarActions({
   sidebarConversationSelectionRef: { current: number };
 }) {
   const refreshRecentProjects = useCallback(async () => {
-    if (!hasAppBridge()) return;
     try {
-      const projects = await listRecentProjects(20);
-      setRecentProjects((projects ?? []).filter(projectIsUserSelectable));
+      if (!hasAppBridge() && !hasCodexDesktopBridge()) return;
+      const loadSessions = hasCodexDesktopBridge()
+        ? listCodexSessions
+        : listSessions;
+      const sessions = await loadSessions(50);
+      setSessions(sessions);
+      setRecentProjects(projectsFromSessions(sessions));
     } catch {
       setRecentProjects([]);
     }
-  }, [setRecentProjects]);
+  }, [setRecentProjects, setSessions]);
 
   function scanProjectInBackground(projectPath: string) {
     if (!hasAppBridge() || !projectPath) return;
@@ -135,11 +143,11 @@ export function useProjectSidebarActions({
   }
 
   async function addComposerProject(selectedRootPath?: string) {
-    if (!hasAppBridge()) return;
+    if (!hasAppBridge() && !hasCodexDesktopBridge()) return;
     try {
       const rootPath = selectedRootPath || await selectProjectDirectory();
       if (!rootPath) return;
-      const project = await upsertProject(rootPath);
+      const project = assistantProjectFromPath(rootPath);
       if (projectIsUserSelectable(project)) {
         setRecentProjects((currentProjects) =>
           upsertRecentProject(currentProjects, project),
@@ -156,7 +164,7 @@ export function useProjectSidebarActions({
   }
 
   async function openConversation(session: domain.Session) {
-    if (!hasAppBridge()) return;
+    if (!hasAppBridge() && !hasCodexDesktopBridge()) return;
 
     const isDifferentSession = session.id !== activeSessionIdRef.current;
     if (isDifferentSession) {
@@ -190,7 +198,20 @@ export function useProjectSidebarActions({
       await loadConversationTurns(session.id, {
         snapToBottomAfterLoad: isDifferentSession,
       });
-      await refreshPendingPermissionRequests(session.id);
+      if (hasCodexDesktopBridge()) {
+        try {
+          await resumeCodexSession(session.id);
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? `已加载历史记录；恢复对话失败：${err.message}`
+              : "已加载历史记录；恢复对话失败。",
+          );
+        }
+      }
+      if (hasAppBridge()) {
+        await refreshPendingPermissionRequests(session.id);
+      }
     } finally {
       if (
         shouldAnimateFromEmpty &&
@@ -202,10 +223,11 @@ export function useProjectSidebarActions({
   }
 
   async function openConversationById(sessionId: string) {
-    if (!hasAppBridge() || !sessionId) return;
+    if ((!hasAppBridge() && !hasCodexDesktopBridge()) || !sessionId) return;
     let session = sessions.find((candidate) => candidate.id === sessionId);
     if (!session) {
-      const nextSessions = (await listSessions(50)) ?? [];
+      const loadSessions = hasCodexDesktopBridge() ? listCodexSessions : listSessions;
+      const nextSessions = (await loadSessions(50)) ?? [];
       setSessions(nextSessions);
       session = nextSessions.find((candidate) => candidate.id === sessionId);
     }
@@ -235,14 +257,6 @@ export function useProjectSidebarActions({
     if (!activeSessionIdRef.current && selectedProjectPath === projectPath) {
       setSelectedProjectPath("");
     }
-    if (!hasAppBridge()) return;
-    try {
-      await setProjectSidebarHidden(projectPath, true);
-      await refreshRecentProjects();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "移除项目失败");
-      await refreshRecentProjects();
-    }
   }
 
   function togglePinnedConversation(sessionId: string) {
@@ -266,9 +280,13 @@ export function useProjectSidebarActions({
       startNewConversation();
     }
 
-    if (!hasAppBridge()) return;
+    if (!hasAppBridge() && !hasCodexDesktopBridge()) return;
     try {
-      await archiveSession(sessionId);
+      if (hasCodexDesktopBridge()) {
+        await archiveCodexSession(sessionId);
+      } else {
+        await archiveSession(sessionId);
+      }
     } catch {
       setArchivedConversationIds((currentIds) =>
         currentIds.filter((id) => id !== sessionId),

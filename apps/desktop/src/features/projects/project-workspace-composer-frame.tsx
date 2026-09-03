@@ -37,7 +37,6 @@ export function ProjectWorkspaceComposerFrame({
   onHeightChange,
   onHideCompletedTodoPlan,
   onModelSelect,
-  onCompactContext,
   onOpenToolActivationDialog,
   onPermissionModeSelect,
   onProjectAdd,
@@ -59,7 +58,6 @@ export function ProjectWorkspaceComposerFrame({
   projectPath,
   projects,
   reasoningEffort,
-  runtimeStatsLine,
   serviceTier,
   shouldShowTodoFloatingStatus,
   showConversationLayout,
@@ -87,7 +85,6 @@ export function ProjectWorkspaceComposerFrame({
   onHeightChange: (height: number) => void;
   onHideCompletedTodoPlan: () => void;
   onModelSelect: (option: ModelOption) => void;
-  onCompactContext: () => Promise<void>;
   onOpenToolActivationDialog: () => void;
   onPermissionModeSelect: (mode: PermissionMode) => void;
   onProjectAdd: (rootPath?: string) => void;
@@ -109,7 +106,6 @@ export function ProjectWorkspaceComposerFrame({
   projectPath: string;
   projects: domain.AssistantProject[];
   reasoningEffort: string;
-  runtimeStatsLine: string;
   serviceTier: string;
   shouldShowTodoFloatingStatus: boolean;
   showConversationLayout: boolean;
@@ -122,7 +118,7 @@ export function ProjectWorkspaceComposerFrame({
     <div
       ref={composerFrameRef}
       className={cn(
-        "absolute left-1/2 z-30 w-[calc(100%-2rem)] max-w-[680px] -translate-x-1/2 sm:w-[calc(100%-48px)]",
+        "absolute left-1/2 z-30 w-[calc(100%-2rem)] max-w-[736px] -translate-x-1/2 sm:w-[calc(100%-48px)]",
         showConversationLayout
           ? "bottom-[var(--conversation-composer-bottom)] will-change-[bottom,transform] sm:bottom-[var(--conversation-composer-bottom-sm)]"
           : "bottom-[var(--conversation-composer-bottom)] will-change-[bottom,transform] sm:bottom-[var(--conversation-composer-bottom-sm)]",
@@ -148,7 +144,6 @@ export function ProjectWorkspaceComposerFrame({
         />
       ) : (
         <PromptComposer
-          onCompactContext={onCompactContext}
           onHeightChange={onHeightChange}
           onPromptChange={onPromptChange}
           onPromptMentionRemove={onPromptMentionRemove}
@@ -181,7 +176,6 @@ export function ProjectWorkspaceComposerFrame({
           agentModes={agentModes}
           attachments={attachments}
           reasoningEffort={reasoningEffort}
-          runtimeStatsLine={runtimeStatsLine}
           serviceTier={serviceTier}
           showProjectPicker={showProjectPicker}
           showServiceTier={showServiceTier}

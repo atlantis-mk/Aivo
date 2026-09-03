@@ -29,8 +29,6 @@ export function AnimatedDisclosure({
     return () => window.clearTimeout(timeout);
   }, [open]);
 
-  if (!open && !renderChildren) return null;
-
   return (
     <div
       aria-hidden={!open}
@@ -40,9 +38,9 @@ export function AnimatedDisclosure({
         className,
       )}
     >
-      {renderChildren ? (
-        <div className="min-h-0 overflow-hidden">{children}</div>
-      ) : null}
+      <div className="min-h-0 overflow-hidden">
+        {renderChildren ? children : null}
+      </div>
     </div>
   );
 }

@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { type CSSProperties } from "react";
 
 import {
   PermissionApprovalDock,
@@ -18,22 +11,8 @@ import {
 } from "@/features/projects/project-workspace-chat-overlays";
 import { ProjectWorkspaceComposerFrame } from "@/features/projects/project-workspace-composer-frame";
 import { ProjectConversationViewport } from "@/features/projects/project-workspace-conversation-view";
-import { constructConversationTimelineRows } from "@/features/projects/conversation-timeline-row-model";
-import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
-import { ConversationToolInspector } from "@/features/projects/conversation-tool-inspector";
-import {
-  deriveSessionRuntimeStats,
-  formatSessionRuntimeStatsValue,
-} from "@/features/projects/project-session-runtime-stats";
-import {
-  compactSessionContext,
-  getSessionRuntimeStats,
-  type SessionRuntimeStats,
-} from "@/services/aivo";
-import { toast } from "sonner";
 
 export function ProjectWorkspaceChatContent({
-  activeSessionId,
   activeSubagentRun,
   agentMode,
   agentModes,
@@ -104,149 +83,6 @@ export function ProjectWorkspaceChatContent({
   viewportHandlers,
   workspaceRoot,
 }: ProjectWorkspaceMainContentProps) {
-  const [selectedToolActivityId, setSelectedToolActivityId] = useState("");
-  const [contextCompactionPending, setContextCompactionPending] = useState(false);
-  const compactContext = useCallback(async () => {
-    if (!activeSessionId) {
-      toast.info("请先开始会话，再压缩上下文");
-      return;
-    }
-    if (hasPendingTurn) {
-      toast.info("请等待当前回复完成后再压缩上下文");
-      return;
-    }
-    if (contextCompactionPending) return;
-    setContextCompactionPending(true);
-    try {
-      await compactSessionContext(activeSessionId);
-      toast.success("上下文已压缩");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "压缩上下文失败");
-    } finally {
-      setContextCompactionPending(false);
-    }
-  }, [activeSessionId, contextCompactionPending, hasPendingTurn]);
-  const toolActivities = useMemo(
-    () =>
-      constructConversationTimelineRows(turns).flatMap((row) => {
-        if (row.type === "tool-cluster") {
-          return [{ id: row.key, groups: row.groups }];
-        }
-        if (row.type === "tool-group" && row.group.kind !== "delegate") {
-          return [{ id: row.key, groups: [row.group] }];
-        }
-        return [];
-      }),
-    [turns],
-  );
-  const [persistedRuntimeStats, setPersistedRuntimeStats] = useState<{
-    sessionId: string;
-    value?: SessionRuntimeStats;
-  }>({ sessionId: "" });
-  useEffect(() => {
-    let cancelled = false;
-    if (!activeSessionId) {
-      setPersistedRuntimeStats({ sessionId: "" });
-      return () => {
-        cancelled = true;
-      };
-    }
-    setPersistedRuntimeStats({ sessionId: activeSessionId });
-    void getSessionRuntimeStats(activeSessionId)
-      .then((value) => {
-        if (!cancelled) setPersistedRuntimeStats({ sessionId: activeSessionId, value });
-      })
-      .catch(() => {
-        if (!cancelled) setPersistedRuntimeStats({ sessionId: activeSessionId });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSessionId, hasPendingTurn]);
-  const runtimeStatsLine = useMemo(
-    () =>
-      showConversationLayout
-        ? formatSessionRuntimeStatsValue(
-            persistedRuntimeStats.sessionId === activeSessionId
-              ? persistedRuntimeStats.value ?? deriveSessionRuntimeStats(turns)
-              : deriveSessionRuntimeStats(turns),
-          )
-        : "",
-    [activeSessionId, persistedRuntimeStats, showConversationLayout, turns],
-  );
-  const toolInspectorAutoOpenRef = useRef({
-    observedToolCallIds: new Set(
-      toolActivities.flatMap((activity) =>
-        activity.groups.flatMap((group) =>
-          group.calls.map((toolCall) => toolCall.id),
-        ),
-      ),
-    ),
-    sessionId: activeSessionId,
-    suppressed: false,
-  });
-  const selectedToolActivity =
-    toolActivities.find(
-      (activity) => activity.id === selectedToolActivityId,
-    ) ?? null;
-  const openToolActivity = useCallback((activity: ToolCallActivity) => {
-    setSelectedToolActivityId(activity.id);
-  }, []);
-  const closeToolActivity = useCallback(() => {
-    toolInspectorAutoOpenRef.current.suppressed = true;
-    setSelectedToolActivityId("");
-  }, []);
-
-  useEffect(() => {
-    const currentToolCallIds = new Set(
-      toolActivities.flatMap((activity) =>
-        activity.groups.flatMap((group) =>
-          group.calls.map((toolCall) => toolCall.id),
-        ),
-      ),
-    );
-    const autoOpenState = toolInspectorAutoOpenRef.current;
-
-    if (autoOpenState.sessionId !== activeSessionId) {
-      toolInspectorAutoOpenRef.current = {
-        observedToolCallIds: currentToolCallIds,
-        sessionId: activeSessionId,
-        suppressed: false,
-      };
-      setSelectedToolActivityId("");
-      if (
-        hasPendingTurn &&
-        !isRevealingHistoryConversation &&
-        toolActivities.length > 0
-      ) {
-        setSelectedToolActivityId(toolActivities.at(-1)?.id ?? "");
-      }
-      return;
-    }
-
-    const latestNewActivity = toolActivities.findLast((activity) =>
-      activity.groups.some((group) =>
-        group.calls.some(
-          (toolCall) => !autoOpenState.observedToolCallIds.has(toolCall.id),
-        ),
-      ),
-    );
-    autoOpenState.observedToolCallIds = currentToolCallIds;
-    if (
-      latestNewActivity &&
-      hasPendingTurn &&
-      !isRevealingHistoryConversation &&
-      !autoOpenState.suppressed
-    ) {
-      setSelectedToolActivityId(latestNewActivity.id);
-    }
-  }, [
-    activeSessionId,
-    hasPendingTurn,
-    isRevealingHistoryConversation,
-    toolActivities,
-  ]);
-
   return (
     <div
       id="conversation-main"
@@ -280,7 +116,6 @@ export function ProjectWorkspaceChatContent({
           contentRef={contentRef}
           handlers={viewportHandlers}
           hasTurns={hasTurns}
-          onOpenToolActivity={openToolActivity}
           reserveFloatingControls={
             shouldShowTodoFloatingStatus || showScrollToBottomButton
           }
@@ -327,7 +162,6 @@ export function ProjectWorkspaceChatContent({
             onHeightChange={onHeightChange}
             onHideCompletedTodoPlan={onHideCompletedTodoPlan}
             onModelSelect={onModelSelect}
-            onCompactContext={compactContext}
             onOpenToolActivationDialog={onOpenToolActivationDialog}
             onPermissionModeSelect={onPermissionModeSelect}
             onProjectAdd={onProjectAdd}
@@ -341,7 +175,7 @@ export function ProjectWorkspaceChatContent({
             onScrollToBottom={onScrollToBottom}
             onServiceTierSelect={onServiceTierSelect}
             onSubmit={onSubmit}
-            pending={hasPendingTurn || contextCompactionPending}
+            pending={hasPendingTurn}
             permissionMode={permissionMode}
             prompt={prompt}
             promptResourceReferences={promptResourceReferences}
@@ -349,7 +183,6 @@ export function ProjectWorkspaceChatContent({
             projectPath={projectPath}
             projects={projects}
             reasoningEffort={reasoningEffort}
-            runtimeStatsLine={runtimeStatsLine}
             serviceTier={serviceTier}
             shouldShowTodoFloatingStatus={shouldShowTodoFloatingStatus}
             showConversationLayout={showConversationLayout}
@@ -360,10 +193,6 @@ export function ProjectWorkspaceChatContent({
           />
         )}
       </div>
-      <ConversationToolInspector
-        activity={selectedToolActivity}
-        onClose={closeToolActivity}
-      />
     </div>
   );
 }

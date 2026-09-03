@@ -48,6 +48,11 @@ export const providerChoices: ProviderChoice[] = [
     iconSrc: googleIcon,
   },
   {
+    id: "volcengine-agent-plan",
+    name: "火山方舟 Agent Plan",
+    iconSrc: syntheticIcon,
+  },
+  {
     id: "other",
     name: "其他",
     iconSrc: syntheticIcon,

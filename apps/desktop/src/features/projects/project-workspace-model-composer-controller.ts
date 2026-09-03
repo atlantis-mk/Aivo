@@ -152,6 +152,8 @@ export function useProjectWorkspaceModelComposerController({
     activeSessionIdRef,
     agentMode,
     composerAttachments,
+    defaultWorkspacePath:
+      (config as { initialWorkspacePath?: string } | null)?.initialWorkspacePath ?? "",
     pendingActiveToolNames,
     hasPendingTurn,
     loadConversationTurns,

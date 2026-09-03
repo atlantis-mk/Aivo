@@ -55,7 +55,7 @@ export function SubagentToolCard({
       title={`${modeLabel} · ${title} · ${statusLabel}`}
       type="button"
     >
-      <span className="shrink-0 font-semibold text-amber-600 dark:text-amber-400">
+      <span className="shrink-0 text-amber-600 dark:text-amber-400">
         {modeLabel}
       </span>
       <span className="min-w-0 truncate text-foreground">{title}</span>

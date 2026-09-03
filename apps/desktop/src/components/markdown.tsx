@@ -2,7 +2,12 @@ import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { ChartLineData01Icon, FileLinkIcon, GlobeIcon } from "@hugeicons/core-free-icons";
+import {
+ ChartLineData01Icon,
+ FileLinkIcon,
+ GlobeIcon,
+ Image02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
@@ -16,7 +21,15 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ECharts, EChartsCoreOption } from "echarts/core";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+ useEffect,
+ useLayoutEffect,
+ useMemo,
+ useRef,
+ useState,
+ type ComponentPropsWithoutRef,
+ type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { Streamdown, type Components, type ControlsConfig, type CustomRendererProps } from "streamdown";
 
@@ -153,15 +166,42 @@ function createStreamdownComponents(workspaceRoot: string): Components {
  </button>
  );
  },
- img: (props) => {
- const src = typeof props.src === "string" ? props.src : undefined;
- const alt = typeof props.alt === "string" ? props.alt : "";
- const title = typeof props.title === "string" ? props.title : undefined;
+ img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
+ };
+}
+
+function MarkdownImage({ alt = "", src, title, ...props }: ComponentPropsWithoutRef<"img">) {
+ const [hasLoadError, setHasLoadError] = useState(false);
+
+ useEffect(() => {
+ setHasLoadError(false);
+ }, [src]);
+
  if (!src) return null;
 
- return <img alt={alt} loading="lazy" src={src} title={title} />;
- },
- };
+ if (hasLoadError) {
+ return (
+ <span
+ aria-label={alt || "图片加载失败"}
+ className="inline-flex size-[120px] items-center justify-center rounded-xl bg-muted/70 text-muted-foreground"
+ role="img"
+ title={title}
+ >
+ <HugeiconsIcon aria-hidden="true" className="size-8" icon={Image02Icon} strokeWidth={1.8} />
+ </span>
+ );
+ }
+
+ return (
+ <img
+ {...props}
+ alt={alt}
+ loading="lazy"
+ onError={() => setHasLoadError(true)}
+ src={src}
+ title={title}
+ />
+ );
 }
 
 function LocalPathLinkContent({ children }: { children: ReactNode }) {
@@ -274,7 +314,7 @@ function MarkdownViewer({ content, isFinished, className, workspaceRoot = "" }: 
  return (
  <Streamdown
  animated={false}
- className={cn("aivo-markdown break-words text-sm/relaxed", className)}
+ className={cn("aivo-markdown aivo-markdown--codex break-words", className)}
  components={components}
  controls={markdownControls}
  isAnimating={!isFinished}

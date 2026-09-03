@@ -1,4 +1,4 @@
-import { Archive, History } from "lucide-react";
+import { Archive, History, LoaderCircle } from "lucide-react";
 
 import { AnimatedTitle } from "@/components/animated-title";
 import { Button } from "@/components/ui/button";
@@ -69,11 +69,14 @@ export function ProjectConversationHistoryList({
           const projectName = sessionProjectName(conversation);
           const pendingPermissionCount =
             pendingPermissionCountsBySessionId[conversation.id] ?? 0;
+          const isRunning =
+            runningConversationIdSet.has(conversation.id) ||
+            conversation.status === "inProgress";
           const status = pendingPermissionCount
             ? pendingPermissionCount > 1
               ? `待批准 ${pendingPermissionCount}`
               : "待批准"
-            : runningConversationIdSet.has(conversation.id)
+            : isRunning
               ? "运行中"
               : relativeConversationTime(
                   conversation.timeUpdated || conversation.timeCreated,
@@ -107,7 +110,14 @@ export function ProjectConversationHistoryList({
                       <span className="truncate">{projectName}</span>
                     ) : null}
                     <span className="ml-auto shrink-0 transition-opacity group-hover/history-item:opacity-0">
-                      {status}
+                      {isRunning ? (
+                        <span className="flex items-center gap-1">
+                          <LoaderCircle className="size-3 animate-spin" />
+                          {status}
+                        </span>
+                      ) : (
+                        status
+                      )}
                     </span>
                   </ItemDescription>
                 </ItemContent>

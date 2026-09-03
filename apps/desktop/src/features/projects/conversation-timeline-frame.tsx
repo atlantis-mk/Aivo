@@ -12,7 +12,11 @@ export function TimelineRowFrame({
   turnId: string;
 }) {
   return (
-    <div data-timeline-role={role} data-turn-id={turnId}>
+    <div
+      className="aivo-timeline-row"
+      data-timeline-role={role}
+      data-turn-id={turnId}
+    >
       {children}
     </div>
   );

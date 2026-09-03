@@ -72,12 +72,8 @@ async function getProviderCatalog() {
     if (!hasCodexDesktopBridge()) return catalog;
 
     try {
-      const account = await window.aivoDesktop.codex.getAccount();
-      if (account.authMode !== "chatgpt") return catalog;
-      return catalogWithCodexModels(
-        catalog,
-        await window.aivoDesktop.codex.listModels(),
-      );
+      const models = await window.aivoDesktop.codex.listCodexModels();
+      return models.length > 0 ? catalogWithCodexModels(catalog, models) : catalog;
     } catch {
       return catalog;
     }

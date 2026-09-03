@@ -15,11 +15,11 @@ export function catalogWithCodexModels(
     name: model.name,
   }));
   const defaultModelId = models[0]?.id;
-  const providers = catalog.providers.map((provider) =>
+  const updateProvider = (provider: (typeof catalog.providers)[number]) =>
     provider.id === "openai"
       ? { ...provider, defaultModelId, models }
-      : provider,
-  );
+      : provider;
+  const providers = catalog.providers.map(updateProvider);
 
   return {
     ...catalog,
@@ -31,5 +31,8 @@ export function catalogWithCodexModels(
     defaultModel: defaultModelId
       ? { providerId: "openai", modelId: defaultModelId }
       : catalog.defaultModel,
+    connectedProviders: catalog.connectedProviders?.map(updateProvider),
+    popularProviders: catalog.popularProviders?.map(updateProvider),
+    customProviders: catalog.customProviders?.map(updateProvider),
   };
 }

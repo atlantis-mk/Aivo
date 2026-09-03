@@ -56,8 +56,6 @@ export function GetSession(arg1:string):Promise<domain.Session>;
 
 export function ListPermissionRequests(arg1:string,arg2:string):Promise<Array<domain.PermissionRequest>>;
 
-export function ListRecentProjects(arg1:number):Promise<Array<domain.AssistantProject>>;
-
 export function ListSessionCheckpoints(arg1:string,arg2:number):Promise<Array<domain.SessionCheckpoint>>;
 
 export function ListSessionEvents(arg1:string,arg2:boolean,arg3:number):Promise<Array<domain.SessionEvent>>;

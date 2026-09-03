@@ -5,10 +5,11 @@ import {
   ipcMain,
   type IpcMainInvokeEvent,
   Menu,
+  safeStorage,
   shell,
 } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   createDesktopUpdater,
@@ -44,6 +45,51 @@ interface CodexModel {
   description: string;
 }
 
+interface CodexThreadStart {
+  threadId: string;
+}
+
+interface CodexThread {
+  id: string;
+  cwd: string;
+  model: string | null;
+  modelProvider: string;
+  name: string | null;
+  parentThreadId: string | null;
+  preview: string;
+  source: string;
+  status: string;
+  timeCreated: string;
+  timeUpdated: string;
+}
+
+interface CodexThreadTurn {
+  completedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  id: string;
+  items: unknown[];
+  startedAt: string | null;
+  status: string;
+}
+
+interface CodexTurnStart {
+  turnId: string;
+}
+
+interface BackendProviderConnectionInput {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  name: string;
+  providerId: string;
+}
+
+interface CodexRuntimeEvent {
+  method: string;
+  params: unknown;
+}
+
 class AppServerRuntime {
   private child?: ChildProcessWithoutNullStreams;
   private nextRequestId = 1;
@@ -53,6 +99,11 @@ class AppServerRuntime {
     state: "stopped",
     detail: "Local runtime has not been started.",
   };
+
+  constructor(
+    private readonly commandPrefix: string[] = [],
+    private readonly publishEvents = true,
+  ) {}
 
   status(): RuntimeStatus {
     return this.runtimeStatus;
@@ -81,10 +132,15 @@ class AppServerRuntime {
     });
 
     try {
-      const child = spawn(executable, ["app-server", "--stdio"], {
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      });
+      const child = spawn(
+        executable,
+        [...this.commandPrefix, "app-server", "--stdio"],
+        {
+          env: this.runtimeEnvironment(),
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+        },
+      );
       this.child = child;
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
@@ -93,10 +149,11 @@ class AppServerRuntime {
         console.warn("app-server stderr:", chunk.trim());
       });
       child.once("error", (error) => {
-        this.handleExit(`Could not start the local runtime: ${error.message}`);
+        this.handleExit(child, `Could not start the local runtime: ${error.message}`);
       });
       child.once("exit", (code, signal) => {
         this.handleExit(
+          child,
           `Local runtime stopped${code === null ? "" : ` (exit ${code})`}${signal ? ` (${signal})` : ""}.`,
         );
       });
@@ -131,8 +188,12 @@ class AppServerRuntime {
     const child = this.child;
     this.child = undefined;
     this.rejectPending(new Error("Local runtime stopped."));
-    if (child && !child.killed) {
-      child.kill();
+    if (child && child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        child.once("error", resolve);
+        child.once("exit", resolve);
+        child.kill();
+      });
     }
     this.setStatus({ state: "stopped", detail: "Local runtime stopped." });
     return this.runtimeStatus;
@@ -181,6 +242,246 @@ class AppServerRuntime {
     } while (cursor);
 
     return models;
+  }
+
+  async configureProvider({
+    apiKey,
+    baseUrl,
+    model,
+    name,
+    providerId,
+  }: BackendProviderConnectionInput): Promise<void> {
+    const normalizedProviderId = normalizeBackendProviderId(providerId);
+    const normalizedApiKey = normalizeProviderApiKey(normalizedProviderId, apiKey);
+    const normalizedBaseUrl = baseUrl.trim();
+    const trimmedModel = model.trim();
+    const normalizedName = name.trim() || normalizedProviderId;
+    if (!normalizedBaseUrl || !trimmedModel) {
+      throw new Error("请提供 Provider 的 API 地址和模型 ID。");
+    }
+
+    saveProviderApiKey(normalizedProviderId, normalizedApiKey);
+    const initialStatus = await this.start();
+    if (initialStatus.state !== "ready") {
+      throw new Error(initialStatus.detail);
+    }
+    await this.request("config/batchWrite", {
+      edits: [
+        configEdit(
+          `model_providers.${normalizedProviderId}.name`,
+          normalizedName,
+        ),
+        configEdit(
+          `model_providers.${normalizedProviderId}.base_url`,
+          normalizedBaseUrl,
+        ),
+        configEdit(
+          `model_providers.${normalizedProviderId}.env_key`,
+          providerApiKeyEnvironmentName(normalizedProviderId),
+        ),
+        configEdit(
+          `model_providers.${normalizedProviderId}.wire_api`,
+          "responses",
+        ),
+        configEdit(
+          `model_providers.${normalizedProviderId}.requires_openai_auth`,
+          false,
+        ),
+        configEdit(
+          `model_providers.${normalizedProviderId}.supports_websockets`,
+          false,
+        ),
+        ...(normalizedProviderId === "volcengine-agent-plan"
+          ? [
+              configEdit(
+                `model_providers.${normalizedProviderId}.request_max_retries`,
+                0,
+              ),
+              configEdit(
+                `model_providers.${normalizedProviderId}.stream_max_retries`,
+                0,
+              ),
+              configEdit(
+                `model_providers.${normalizedProviderId}.stream_idle_timeout_ms`,
+                45_000,
+              ),
+            ]
+          : []),
+      ],
+      reloadUserConfig: false,
+    });
+
+    await this.stop();
+    const status = await this.start();
+    if (status.state !== "ready") {
+      throw new Error(status.detail);
+    }
+  }
+
+  async deleteProvider(providerId: string): Promise<void> {
+    const normalizedProviderId = normalizeBackendProviderId(providerId);
+    removeProviderApiKey(normalizedProviderId);
+    const status = await this.start();
+    if (status.state !== "ready") {
+      throw new Error(status.detail);
+    }
+    await this.request("config/batchWrite", {
+      edits: [configEdit(`model_providers.${normalizedProviderId}`, null)],
+      reloadUserConfig: false,
+    });
+    await this.stop();
+    const restarted = await this.start();
+    if (restarted.state !== "ready") {
+      throw new Error(restarted.detail);
+    }
+  }
+
+  async startThread({
+    cwd,
+    model,
+    modelProvider,
+  }: {
+    cwd?: string;
+    model?: string;
+    modelProvider?: string;
+  }): Promise<CodexThreadStart> {
+    await this.start();
+    const result = await this.request("thread/start", {
+      cwd: cwd || undefined,
+      model: model || undefined,
+      modelProvider: modelProvider || undefined,
+    });
+    const thread = isRecord(result) && isRecord(result.thread) ? result.thread : null;
+    const threadId = stringOrNull(thread?.id);
+    if (!threadId) {
+      throw new Error("The local Codex runtime did not return a thread id.");
+    }
+    return { threadId };
+  }
+
+  async listThreads(limit: number): Promise<CodexThread[]> {
+    await this.start();
+    const result = await this.request("thread/list", {
+      limit,
+      sortKey: "recency_at",
+      sortDirection: "desc",
+      sourceKinds: [
+        "cli",
+        "vscode",
+        "exec",
+        "appServer",
+        "subAgent",
+        "subAgentReview",
+        "subAgentCompact",
+        "subAgentThreadSpawn",
+        "subAgentOther",
+        "unknown",
+      ],
+    });
+    if (!isRecord(result) || !Array.isArray(result.data)) {
+      throw new Error("The local Codex runtime returned an unexpected thread list.");
+    }
+    return result.data.flatMap((thread) => {
+      if (!isRecord(thread)) return [];
+      const id = stringOrNull(thread.id);
+      const cwd = stringOrNull(thread.cwd);
+      if (!id || !cwd) return [];
+
+      return [{
+        id,
+        cwd,
+        model: stringOrNull(thread.model),
+        modelProvider: stringOrNull(thread.modelProvider) ?? "openai",
+        name: stringOrNull(thread.name),
+        parentThreadId: stringOrNull(thread.parentThreadId),
+        preview: stringOrNull(thread.preview) ?? "",
+        source: stringOrNull(thread.source) ?? "codex",
+        status: isRecord(thread.status)
+          ? stringOrNull(thread.status.type) ?? "notLoaded"
+          : "notLoaded",
+        timeCreated: unixSecondsToIso(thread.createdAt),
+        timeUpdated: unixSecondsToIso(thread.recencyAt ?? thread.updatedAt ?? thread.createdAt),
+      } satisfies CodexThread];
+    });
+  }
+
+  async archiveThread(threadId: string): Promise<void> {
+    await this.start();
+    await this.request("thread/archive", { threadId });
+  }
+
+  async resumeThread(threadId: string): Promise<void> {
+    await this.start();
+    await this.request("thread/resume", { threadId, excludeTurns: true });
+  }
+
+  async listThreadTurns(threadId: string): Promise<CodexThreadTurn[]> {
+    await this.start();
+    const result = await this.request("thread/turns/list", {
+      threadId,
+      limit: 100,
+      sortDirection: "asc",
+      itemsView: "full",
+    });
+    if (!isRecord(result) || !Array.isArray(result.data)) {
+      throw new Error("The local Codex runtime returned an unexpected turn list.");
+    }
+    return result.data.flatMap((turn) => {
+      if (!isRecord(turn)) return [];
+      const id = stringOrNull(turn.id);
+      if (!id) return [];
+      const error = isRecord(turn.error) ? stringOrNull(turn.error.message) : null;
+      return [{
+        completedAt: unixSecondsToIsoOrNull(turn.completedAt),
+        durationMs:
+          typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs)
+            ? turn.durationMs
+            : null,
+        error,
+        id,
+        items: Array.isArray(turn.items) ? turn.items : [],
+        startedAt: unixSecondsToIsoOrNull(turn.startedAt),
+        status: isRecord(turn.status)
+          ? stringOrNull(turn.status.type) ?? "unknown"
+          : "unknown",
+      } satisfies CodexThreadTurn];
+    });
+  }
+
+  async startTurn({
+    model,
+    text,
+    threadId,
+  }: {
+    model?: string;
+    text: string;
+    threadId: string;
+  }): Promise<CodexTurnStart> {
+    await this.start();
+    const result = await this.request("turn/start", {
+      threadId,
+      model: model || undefined,
+      input: [{ type: "text", text, textElements: [] }],
+    });
+    const turn = isRecord(result) && isRecord(result.turn) ? result.turn : null;
+    const turnId = stringOrNull(turn?.id);
+    if (!turnId) {
+      throw new Error("The local Codex runtime did not return a turn id.");
+    }
+    return { turnId };
+  }
+
+  async interruptTurn({ threadId, turnId }: CodexTurnStart & CodexThreadStart): Promise<void> {
+    await this.request("turn/interrupt", { threadId, turnId });
+  }
+
+  private runtimeEnvironment(): NodeJS.ProcessEnv {
+    const credentials = readProviderApiKeys();
+    const environment = { ...process.env };
+    for (const [providerId, apiKey] of Object.entries(credentials)) {
+      environment[providerApiKeyEnvironmentName(providerId)] = apiKey;
+    }
+    return environment;
   }
 
   async loginWithChatGpt(): Promise<CodexLoginStart> {
@@ -292,7 +593,8 @@ class AppServerRuntime {
     }
   }
 
-  private handleExit(detail: string): void {
+  private handleExit(child: ChildProcessWithoutNullStreams, detail: string): void {
+    if (this.child !== child) return;
     this.child = undefined;
     this.rejectPending(new Error(detail));
     if (this.runtimeStatus.state !== "stopped") {
@@ -322,6 +624,20 @@ class AppServerRuntime {
       if (completion.success) {
         void this.publishCurrentAccount();
       }
+      return;
+    }
+
+    if (
+      method === "item/agentMessage/delta" ||
+      method === "item/started" ||
+      method === "item/completed" ||
+      method === "item/commandExecution/outputDelta" ||
+      method === "turn/completed"
+    ) {
+      this.sendToWindows("codex:event", {
+        method,
+        params,
+      } satisfies CodexRuntimeEvent);
     }
   }
 
@@ -349,6 +665,7 @@ class AppServerRuntime {
   }
 
   private sendToWindows(channel: string, payload: unknown): void {
+    if (!this.publishEvents) return;
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(channel, payload);
     }
@@ -361,7 +678,48 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const stringOrNull = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
 
+const unixSecondsToIso = (value: unknown): string =>
+  typeof value === "number" && Number.isFinite(value)
+    ? new Date(value * 1000).toISOString()
+    : new Date(0).toISOString();
+
+const unixSecondsToIsoOrNull = (value: unknown): string | null =>
+  typeof value === "number" && Number.isFinite(value)
+    ? new Date(value * 1000).toISOString()
+    : null;
+
 const runtime = new AppServerRuntime();
+const codexModelsRuntime = new AppServerRuntime(
+  ["-c", 'model_provider="openai"'],
+  /*publishEvents*/ false,
+);
+let codexModelsRequest: Promise<CodexModel[]> | undefined;
+
+function listCurrentCodexModels(): Promise<CodexModel[]> {
+  if (codexModelsRequest) return codexModelsRequest;
+
+  const request = (async () => {
+    try {
+      return await codexModelsRuntime.listModels();
+    } finally {
+      await codexModelsRuntime.stop();
+    }
+  })();
+  codexModelsRequest = request;
+  void request.then(
+    () => {
+      if (codexModelsRequest === request) {
+        codexModelsRequest = undefined;
+      }
+    },
+    () => {
+      if (codexModelsRequest === request) {
+        codexModelsRequest = undefined;
+      }
+    },
+  );
+  return request;
+}
 const devServerURL = process.env.VITE_DEV_SERVER_URL;
 const isMac = process.platform === "darwin";
 let desktopUpdater: DesktopUpdater | undefined;
@@ -545,7 +903,53 @@ app.whenReady().then(async () => {
   ipcMain.handle("runtime:start", () => runtime.start());
   ipcMain.handle("runtime:stop", () => runtime.stop());
   ipcMain.handle("account:read", () => runtime.readAccount());
+  ipcMain.handle(
+    "provider:configure",
+    (event, input: BackendProviderConnectionInput) => {
+      requireMainRenderer(event);
+      return runtime.configureProvider(input);
+    },
+  );
+  ipcMain.handle("provider:delete", (event, providerId: string) => {
+    requireMainRenderer(event);
+    return runtime.deleteProvider(providerId);
+  });
   ipcMain.handle("models:list", () => runtime.listModels());
+  ipcMain.handle("models:codex:list", () => listCurrentCodexModels());
+  ipcMain.handle("threads:list", (event, limit: number) => {
+    requireMainRenderer(event);
+    return runtime.listThreads(limit);
+  });
+  ipcMain.handle("thread:turns:list", (event, threadId: string) => {
+    requireMainRenderer(event);
+    return runtime.listThreadTurns(threadId);
+  });
+  ipcMain.handle("thread:resume", (event, threadId: string) => {
+    requireMainRenderer(event);
+    return runtime.resumeThread(threadId);
+  });
+  ipcMain.handle("thread:start", (event, input: { cwd?: string; model?: string; modelProvider?: string }) => {
+    requireMainRenderer(event);
+    return runtime.startThread(input);
+  });
+  ipcMain.handle(
+    "turn:start",
+    (event, input: { model?: string; text: string; threadId: string }) => {
+      requireMainRenderer(event);
+      return runtime.startTurn(input);
+    },
+  );
+  ipcMain.handle(
+    "turn:interrupt",
+    (event, input: CodexTurnStart & CodexThreadStart) => {
+      requireMainRenderer(event);
+      return runtime.interruptTurn(input);
+    },
+  );
+  ipcMain.handle("thread:archive", (event, threadId: string) => {
+    requireMainRenderer(event);
+    return runtime.archiveThread(threadId);
+  });
   ipcMain.handle("account:login", () => runtime.loginWithChatGpt());
   ipcMain.handle("account:cancel-login", (_event, loginId: string) =>
     runtime.cancelLogin(loginId),
@@ -624,4 +1028,117 @@ app.on("window-all-closed", async () => {
 app.on("before-quit", () => {
   desktopUpdater?.dispose();
   void runtime.stop();
+  void codexModelsRuntime.stop();
 });
+
+const PROVIDER_CREDENTIALS_FILE = "provider-credentials";
+const VOLCENGINE_AGENT_PLAN_SECRET_FILE = "volcengine-agent-plan-secret";
+
+function configEdit(keyPath: string, value: boolean | number | string | null) {
+  return { keyPath, mergeStrategy: "replace", value };
+}
+
+function providerCredentialsPath() {
+  return path.join(app.getPath("userData"), PROVIDER_CREDENTIALS_FILE);
+}
+
+function readProviderApiKeys(): Record<string, string> {
+  const credentialsPath = providerCredentialsPath();
+  if (!existsSync(credentialsPath)) return migrateVolcengineAgentPlanCredential();
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("系统安全存储不可用，无法读取 Provider API Key。");
+  }
+  const decrypted = safeStorage.decryptString(readFileSync(credentialsPath));
+  try {
+    const parsed = JSON.parse(decrypted) as unknown;
+    if (!isRecord(parsed)) throw new Error("invalid provider credentials");
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([providerId, apiKey]) => {
+        if (typeof apiKey !== "string" || !apiKey.trim()) return [];
+        return [[normalizeBackendProviderId(providerId), normalizeProviderApiKey(providerId, apiKey)]];
+      }),
+    );
+  } catch {
+    throw new Error("已保存的 Provider 凭据不可读取，请在设置中重新连接该 Provider。");
+  }
+}
+
+function saveProviderApiKey(providerId: string, apiKey: string) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("系统安全存储不可用，无法保存 Provider API Key。");
+  }
+  mkdirSync(app.getPath("userData"), { recursive: true });
+  const credentials = readProviderApiKeys();
+  credentials[providerId] = apiKey;
+  writeFileSync(
+    providerCredentialsPath(),
+    safeStorage.encryptString(JSON.stringify(credentials)),
+  );
+}
+
+function removeProviderApiKey(providerId: string) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("系统安全存储不可用，无法删除 Provider API Key。");
+  }
+  const credentials = readProviderApiKeys();
+  if (!(providerId in credentials)) return;
+  delete credentials[providerId];
+  writeFileSync(
+    providerCredentialsPath(),
+    safeStorage.encryptString(JSON.stringify(credentials)),
+  );
+}
+
+function migrateVolcengineAgentPlanCredential(): Record<string, string> {
+  const legacyPath = path.join(app.getPath("userData"), VOLCENGINE_AGENT_PLAN_SECRET_FILE);
+  if (!existsSync(legacyPath)) return {};
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("系统安全存储不可用，无法读取 Provider API Key。");
+  }
+  const apiKey = normalizeProviderApiKey(
+    "volcengine-agent-plan",
+    safeStorage.decryptString(readFileSync(legacyPath)),
+  );
+  return { "volcengine-agent-plan": apiKey };
+}
+
+function normalizeBackendProviderId(providerId: string) {
+  const normalized = providerId.trim().toLowerCase();
+  if (!/^[a-z][a-z0-9-]*$/.test(normalized)) {
+    throw new Error("Provider ID 只能包含小写字母、数字和连字符，且必须以字母开头。");
+  }
+  if (normalized === "openai") {
+    throw new Error("OpenAI 请使用浏览器登录或其专用 API Key 连接方式。");
+  }
+  return normalized;
+}
+
+function providerApiKeyEnvironmentName(providerId: string) {
+  return `AIVO_PROVIDER_${providerId.toUpperCase().replace(/-/g, "_")}_API_KEY`;
+}
+
+function normalizeProviderApiKey(providerId: string, apiKey: string) {
+  if (providerId !== "volcengine-agent-plan") return apiKey.trim();
+
+  let normalized = apiKey.trim();
+  const assignment = normalized.match(/^(?:export\s+)?ARK_API_KEY\s*=\s*(.+)$/i);
+  if (assignment) normalized = assignment[1].trim();
+
+  const bearer = normalized.match(/^Bearer\s+(.+)$/i);
+  if (bearer) normalized = bearer[1].trim();
+
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  if (!normalized || /\s/.test(normalized)) {
+    throw new Error(
+      "请输入火山方舟 Agent Plan 页面生成的 ARK_API_KEY 原始值；不要粘贴 Access Key、Secret Key 或多行配置。",
+    );
+  }
+
+  return normalized;
+}

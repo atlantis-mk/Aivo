@@ -78,6 +78,86 @@ function geminiProvider(): ProviderInfo {
   };
 }
 
+function volcengineAgentPlanProvider(): ProviderInfo {
+  return {
+    id: "volcengine-agent-plan",
+    name: "火山方舟 Agent Plan",
+    type: "openai",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+    builtIn: true,
+    custom: false,
+    connected: false,
+    environment: "ARK_API_KEY",
+    defaultModelId: "ark-code-latest",
+    models: [
+      {
+        id: "ark-code-latest",
+        providerId: "volcengine-agent-plan",
+        name: "ark-code-latest（自动路由）",
+        recommended: true,
+      },
+      {
+        id: "doubao-seed-2.0-lite",
+        providerId: "volcengine-agent-plan",
+        name: "doubao-seed-2.0-lite",
+      },
+      {
+        id: "doubao-seed-2.0-mini",
+        providerId: "volcengine-agent-plan",
+        name: "doubao-seed-2.0-mini",
+      },
+      {
+        id: "kimi-k2.7-code",
+        providerId: "volcengine-agent-plan",
+        name: "kimi-k2.7-code",
+      },
+      {
+        id: "minimax-m3",
+        providerId: "volcengine-agent-plan",
+        name: "minimax-m3",
+      },
+      {
+        id: "doubao-seed-evolving",
+        providerId: "volcengine-agent-plan",
+        name: "doubao-seed-evolving",
+      },
+      {
+        id: "kimi-k3",
+        providerId: "volcengine-agent-plan",
+        name: "kimi-k3",
+      },
+      {
+        id: "doubao-seed-2.1-turbo",
+        providerId: "volcengine-agent-plan",
+        name: "doubao-seed-2.1-turbo",
+      },
+      {
+        id: "deepseek-v4-flash",
+        providerId: "volcengine-agent-plan",
+        name: "deepseek-v4-flash",
+      },
+      {
+        id: "glm-5.3",
+        providerId: "volcengine-agent-plan",
+        name: "glm-5.3",
+      },
+      {
+        id: "deepseek-v4-pro",
+        providerId: "volcengine-agent-plan",
+        name: "deepseek-v4-pro",
+      },
+      {
+        id: "glm-5.3-flash",
+        providerId: "volcengine-agent-plan",
+        name: "glm-5.3-flash",
+      },
+    ],
+    authMethods: [
+      { id: "api-key", label: "API Key", stable: true, available: true },
+    ],
+  };
+}
+
 function openRouterProvider(): ProviderInfo {
   return {
     id: "openrouter",
@@ -118,6 +198,7 @@ export function fallbackProviders(): ProviderInfo[] {
     openAIProvider(),
     claudeCodeProvider(),
     geminiProvider(),
+    volcengineAgentPlanProvider(),
     openRouterProvider(),
     customAPIProvider(),
   ];
@@ -128,6 +209,7 @@ export function fallbackPopularProviders(): ProviderInfo[] {
     openAIProvider(),
     claudeCodeProvider(),
     geminiProvider(),
+    volcengineAgentPlanProvider(),
     openRouterProvider(),
   ];
 }

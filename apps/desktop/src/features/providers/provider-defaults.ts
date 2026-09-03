@@ -16,6 +16,7 @@ export const providerProtocolDefaults: Record<string, ProviderProtocol> = {
   openrouter: "openrouter",
   xai: "openai",
   xiaomi: "openai",
+  "volcengine-agent-plan": "openai",
   "kimi-for-coding": "anthropic",
   minimax: "anthropic",
   "minimax-cn": "anthropic",
@@ -111,6 +112,7 @@ export const providerBaseURLDefaults: Record<string, string> = {
   wandb: "https://api.inference.wandb.ai/v1",
   xai: "https://api.x.ai/v1",
   xiaomi: "https://api.xiaomimimo.com/v1",
+  "volcengine-agent-plan": "https://ark.cn-beijing.volces.com/api/plan/v3",
   zai: "https://api.z.ai/api/paas/v4",
   "zai-coding-plan": "https://api.z.ai/api/coding/paas/v4",
   zenmux: "https://zenmux.ai/api/v1",
@@ -207,6 +209,7 @@ const providerModelDefaults: Record<string, string> = {
   wandb: "openai/gpt-oss-20b",
   xai: "grok-4.3",
   xiaomi: "mimo-v2.5-pro",
+  "volcengine-agent-plan": "ark-code-latest",
   zai: "glm-5v-turbo",
   "zai-coding-plan": "glm-4.7",
   zenmux: "deepseek/deepseek-chat",
@@ -258,6 +261,7 @@ const providerDisplayNames: Record<string, string> = {
   stackit: "STACKIT",
   synthetic: "Synthetic",
   "tencent-coding-plan": "Tencent Coding Plan",
+  "volcengine-agent-plan": "火山方舟 Agent Plan",
   togetherai: "Together AI",
   v0: "v0",
   wandb: "Weights & Biases",
@@ -286,6 +290,7 @@ export function credentialReferenceFor(providerId: string) {
   if (providerId === "google") return "GEMINI_API_KEY";
   if (providerId === "gemini") return "GEMINI_API_KEY";
   if (providerId === "openrouter") return "OPENROUTER_API_KEY";
+  if (providerId === "volcengine-agent-plan") return "ARK_API_KEY";
   return undefined;
 }
 

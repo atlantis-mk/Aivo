@@ -5,6 +5,7 @@ import {
   toolCallArgumentLabels,
   visibleToolArgs,
 } from "@/features/projects/conversation-timeline-value-model";
+import { compactShellCommand } from "./conversation-timeline-shell-model";
 import type { domain } from "../../../bridge/go/models";
 
 export function getToolCallCommand(toolCall: domain.ToolCall) {
@@ -149,20 +150,22 @@ export function getToolCallCommand(toolCall: domain.ToolCall) {
       };
     case "exec_command":
       return {
-        label: "Exec command",
-        detail: joinCommandParts([
-          stringArg(args, "cmd"),
-          stringArg(args, "workdir") ? `workdir=${stringArg(args, "workdir")}` : "",
-        ]),
+        label: "已运行",
+        detail: compactShellCommand(stringArg(args, "cmd")),
       };
     case "run_tests":
       return {
-        label: "Run tests",
+        label: "已运行",
         detail: joinCommandParts([
           [stringArg(args, "target"), stringArg(args, "kind")]
             .filter(Boolean)
             .join(":"),
         ]),
+      };
+    case "web_search":
+      return {
+        label: "已搜索网页：",
+        detail: stringArg(args, "query"),
       };
     default:
       return {

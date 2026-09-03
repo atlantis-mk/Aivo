@@ -16,7 +16,6 @@ import {
 } from "@/features/projects/conversation-timeline-model";
 import {
   COLLAPSED_USER_MESSAGE_HEIGHT,
-  formatCompletionTime,
   formatTimelineAttachmentMeta,
   shouldShowUserMessageDisclosure,
 } from "@/features/projects/conversation-timeline-display-model";
@@ -70,13 +69,13 @@ export const UserMessageRow = memo(function UserMessageRow({
 
   return (
     <TimelineRowFrame role="user" turnId={turn.id}>
-      <div className="group/user-message ml-auto flex flex-col items-end">
+      <div className="aivo-user-message group/user-message relative ml-auto flex flex-col items-end">
         {turn.attachments?.length ? (
           <UserMessageAttachments attachments={turn.attachments} />
         ) : null}
         <div
           className={cn(
-            "max-w-[min(90%,42rem)] rounded-xl bg-card px-4 py-3 text-sm text-card-foreground shadow-lg shadow-foreground/5 sm:px-5",
+            "aivo-user-message-bubble max-w-[min(90%,42rem)] rounded-xl bg-card px-4 py-3 text-sm text-card-foreground shadow-lg shadow-foreground/5 sm:px-5",
             !userMessageExpandable &&
               "flex min-h-[52px] items-center justify-center",
           )}
@@ -112,8 +111,7 @@ export const UserMessageRow = memo(function UserMessageRow({
             </Button>
           ) : null}
         </div>
-        <div className="mb-3 mt-1.5 flex items-center gap-2">
-          <span className="text-sm">{formatCompletionTime(turn.submittedAt)}</span>
+        <div className="aivo-user-message-meta flex items-center gap-2">
           <CopyTextButton ariaLabel="复制消息" text={turn.prompt} />
           {turn.userEventId && actions.onEditUserMessage ? (
             <Button

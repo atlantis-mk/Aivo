@@ -23,7 +23,6 @@ export type PromptComposerProps = {
   onExtraHeightChange: (height: number) => void;
   onHeightChange: (height: number) => void;
   onModelSelect: (option: ModelOption) => void;
-  onCompactContext: () => Promise<void>;
   onPromptMentionRemove: (reference: PromptMentionReference) => void;
   onPromptMentionSelect: (reference: PromptMentionReference) => void;
   onOpenToolActivationDialog: () => void;
@@ -45,7 +44,6 @@ export type PromptComposerProps = {
   projects: domain.AssistantProject[];
   attachments: ComposerAttachment[];
   reasoningEffort: string;
-  runtimeStatsLine: string;
   serviceTier: string;
   showProjectPicker: boolean;
   showServiceTier: boolean;

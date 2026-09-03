@@ -64,7 +64,7 @@ export function ProjectTopBar({
   sessionId?: string;
 }) {
   const appName = appNameFromConfig(useAppConfig((state) => state.config));
-  const isMac = window.aivo?.platform === "darwin";
+  const isMac = window.aivoDesktop?.platform === "darwin";
   const projectLabel = repositoryPath
     ? projectNameFromPath(repositoryPath)
     : appName;

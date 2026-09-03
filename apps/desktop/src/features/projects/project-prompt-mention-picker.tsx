@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ArrowShrink01Icon, Folder01Icon } from "@hugeicons/core-free-icons";
+import { Folder01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -159,7 +159,7 @@ export function PromptMentionPicker({ activeIndex, onSelect, onSelectAction, pro
                   aria-hidden
                   className="size-4 shrink-0 text-muted-foreground"
                   data-icon="inline-start"
-                  icon={item.action === "compact-context" ? ArrowShrink01Icon : Folder01Icon}
+                  icon={Folder01Icon}
                   strokeWidth={1.8}
                 />
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>

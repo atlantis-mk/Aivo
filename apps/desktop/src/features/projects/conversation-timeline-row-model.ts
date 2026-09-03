@@ -40,14 +40,11 @@ export function constructConversationTimelineRows(
       preambleParts,
     );
     const hasVisibleToolCalls = toolGroups.length > 0;
+    const isExecuting = hasVisibleToolCalls || turn.activityVisible;
     const hasPreambleText = preambleParts.some((part) => part.text.trim());
-    if (hasVisibleToolCalls) {
-      pushToolActivityRows(rows, turn, toolGroups);
-    } else {
-      pushAssistantPreambles(rows, turn, preambleParts);
-    }
 
     if (turn.stopped) {
+      pushTurnActivityRows(rows, turn, hasVisibleToolCalls, preambleParts, toolGroups);
       rows.push({
         key: `stopped:${turn.id}`,
         stoppedSeconds: turn.thinkingSeconds,
@@ -60,11 +57,13 @@ export function constructConversationTimelineRows(
 
     if (turn.responseVisible || turn.responseText.trim()) {
       rows.push({
-        isExecuting: hasVisibleToolCalls,
+        hasToolActivity: hasVisibleToolCalls,
+        isExecuting,
         key: `assistant-status:${turn.id}`,
         turn,
         type: "assistant-status",
       });
+      pushTurnActivityRows(rows, turn, hasVisibleToolCalls, preambleParts, toolGroups);
       if (turn.responseText.trim()) {
         rows.push({
           key: `assistant-response:${turn.id}`,
@@ -76,11 +75,12 @@ export function constructConversationTimelineRows(
       return rows;
     }
 
+    pushTurnActivityRows(rows, turn, hasVisibleToolCalls, preambleParts, toolGroups);
     rows.push({
       actionHeading: hasVisibleToolCalls
         ? undefined
         : toolActionHeading(toolGroups),
-      isExecuting: hasVisibleToolCalls,
+      isExecuting,
       key: `thinking:${turn.id}`,
       showSkeleton:
         !turn.activityVisible && !hasPreambleText && !hasVisibleToolCalls,
@@ -90,6 +90,22 @@ export function constructConversationTimelineRows(
     pushSystemNotes(rows, turn);
     return rows;
   });
+}
+
+function pushTurnActivityRows(
+  rows: ConversationTimelineRow[],
+  turn: ConversationTurn,
+  hasVisibleToolCalls: boolean,
+  preambleParts: ConversationAssistantTextPart[],
+  toolGroups: ToolCallGroup[],
+) {
+  pushAssistantPreambles(
+    rows,
+    turn,
+    preambleParts,
+    hasVisibleToolCalls && Boolean(turn.responseCompletedAt),
+  );
+  if (hasVisibleToolCalls) pushToolActivityRows(rows, turn, toolGroups);
 }
 
 function assistantPreambleParts(
@@ -113,9 +129,11 @@ function pushAssistantPreambles(
   rows: ConversationTimelineRow[],
   turn: ConversationTurn,
   preambleParts: ConversationAssistantTextPart[],
+  hideWhenToolsCollapsed = false,
 ) {
   for (const part of preambleParts) {
     rows.push({
+      hideWhenToolsCollapsed,
       key: `assistant-preamble:${turn.id}:${part.id}`,
       text: part.text,
       turnId: turn.id,
@@ -142,11 +160,13 @@ function pushToolActivityRows(
   toolGroups: ToolCallGroup[],
 ) {
   let clusteredGroups: ToolCallGroup[] = [];
+  let lastDescription = "";
   const pushCluster = () => {
     const firstGroup = clusteredGroups[0];
     if (!firstGroup) return;
     rows.push({
       groups: clusteredGroups,
+      isCompleted: Boolean(turn.responseCompletedAt),
       key: `tool-cluster:${turn.id}:${firstGroup.id}`,
       turnId: turn.id,
       type: "tool-cluster",
@@ -155,6 +175,19 @@ function pushToolActivityRows(
   };
 
   for (const group of toolGroups) {
+    const description = group.description?.trim() ?? "";
+    if (description && description !== lastDescription) {
+      pushCluster();
+      rows.push({
+        hideWhenToolsCollapsed: Boolean(turn.responseCompletedAt),
+        key: `assistant-preamble:${turn.id}:${group.id}`,
+        text: description,
+        turnId: turn.id,
+        type: "assistant-preamble",
+      });
+      lastDescription = description;
+    }
+
     if (group.kind !== "delegate") {
       clusteredGroups.push(group);
       continue;
@@ -162,6 +195,7 @@ function pushToolActivityRows(
     pushCluster();
     rows.push({
       group,
+      isCompleted: Boolean(turn.responseCompletedAt),
       key: `tool-group:${turn.id}:${group.id}`,
       turnId: turn.id,
       type: "tool-group",

@@ -10,7 +10,6 @@ import {
   TimelineToolCluster,
   TimelineToolGroup,
 } from "@/features/projects/conversation-timeline-tool-components";
-import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
 import {
   AssistantPreamble,
   AssistantResponse,
@@ -18,8 +17,10 @@ import {
   StoppedResponse,
   ThinkingResponse,
 } from "./conversation-timeline-assistant-message";
+import { AnimatedDisclosure } from "./conversation-timeline-disclosure";
 import { SystemNoteRow, TimelineRowFrame } from "./conversation-timeline-frame";
 import { UserMessageRow } from "./conversation-timeline-user-message";
+import { useToolTurnExpansion } from "./conversation-timeline-tool-turn-expansion";
 import type { ConversationTimelineActions } from "./conversation-timeline-types";
 import type { AgentRun } from "@/services/aivo";
 
@@ -27,14 +28,12 @@ export const ConversationTimelineRowView = memo(function ConversationTimelineRow
   actions,
   agentRuns,
   onOpenSession,
-  onOpenToolActivity,
   row,
   workspaceRoot,
 }: {
   actions: ConversationTimelineActions;
   agentRuns: AgentRun[];
   onOpenSession?: (sessionId: string) => void;
-  onOpenToolActivity?: (activity: ToolCallActivity) => void;
   row: ConversationTimelineRow;
   workspaceRoot: string;
 }) {
@@ -45,30 +44,30 @@ export const ConversationTimelineRowView = memo(function ConversationTimelineRow
       return <UserMessageRow actions={actions} turn={row.turn} />;
     case "assistant-preamble":
       return (
-        <TimelineRowFrame role="assistant" turnId={row.turnId}>
-          <AssistantPreamble text={row.text} workspaceRoot={workspaceRoot} />
-        </TimelineRowFrame>
+        <TimelineAssistantPreambleRow
+          hideWhenToolsCollapsed={row.hideWhenToolsCollapsed}
+          text={row.text}
+          turnId={row.turnId}
+          workspaceRoot={workspaceRoot}
+        />
       );
     case "tool-group":
       return (
-        <TimelineRowFrame role="assistant" turnId={row.turnId}>
-          <TimelineToolGroup
-            agentRuns={agentRuns}
-            group={row.group}
-            onOpenSession={onOpenSession}
-            onOpenToolActivity={onOpenToolActivity}
-          />
-        </TimelineRowFrame>
+        <TimelineToolGroupRow
+          agentRuns={agentRuns}
+          group={row.group}
+          isCompleted={row.isCompleted}
+          onOpenSession={onOpenSession}
+          turnId={row.turnId}
+        />
       );
     case "tool-cluster":
       return (
-        <TimelineRowFrame role="assistant" turnId={row.turnId}>
-          <TimelineToolCluster
-            activityId={row.key}
-            groups={row.groups}
-            onOpenToolActivity={onOpenToolActivity}
-          />
-        </TimelineRowFrame>
+        <TimelineToolClusterRow
+          groups={row.groups}
+          isCompleted={row.isCompleted}
+          turnId={row.turnId}
+        />
       );
     case "assistant-status":
       return (
@@ -76,8 +75,10 @@ export const ConversationTimelineRowView = memo(function ConversationTimelineRow
           <AssistantStatus
             actionHeading={undefined}
             completed={Boolean(row.turn.responseCompletedAt)}
+            hasToolActivity={row.hasToolActivity}
             isExecuting={row.isExecuting}
             responseSeconds={row.turn.thinkingSeconds}
+            turnId={row.turn.id}
           />
         </TimelineRowFrame>
       );
@@ -118,12 +119,87 @@ export const ConversationTimelineRowView = memo(function ConversationTimelineRow
   }
 }, areTimelineRowPropsEqual);
 
+function TimelineAssistantPreambleRow({
+  hideWhenToolsCollapsed = false,
+  text,
+  turnId,
+  workspaceRoot,
+}: {
+  hideWhenToolsCollapsed?: boolean;
+  text: string;
+  turnId: string;
+  workspaceRoot: string;
+}) {
+  const { expanded } = useToolTurnExpansion(turnId);
+  if (hideWhenToolsCollapsed) {
+    return (
+      <AnimatedDisclosure open={expanded}>
+        <TimelineRowFrame role="assistant" turnId={turnId}>
+          <AssistantPreamble text={text} workspaceRoot={workspaceRoot} />
+        </TimelineRowFrame>
+      </AnimatedDisclosure>
+    );
+  }
+  return (
+    <TimelineRowFrame role="assistant" turnId={turnId}>
+      <AssistantPreamble text={text} workspaceRoot={workspaceRoot} />
+    </TimelineRowFrame>
+  );
+}
+
+function TimelineToolGroupRow({
+  agentRuns,
+  group,
+  isCompleted,
+  onOpenSession,
+  turnId,
+}: {
+  agentRuns: AgentRun[];
+  group: Extract<ConversationTimelineRow, { type: "tool-group" }>["group"];
+  isCompleted: boolean;
+  onOpenSession?: (sessionId: string) => void;
+  turnId: string;
+}) {
+  const { expanded } = useToolTurnExpansion(turnId);
+  const open = !isCompleted || expanded;
+  return (
+    <AnimatedDisclosure open={open}>
+      <TimelineRowFrame role="assistant" turnId={turnId}>
+        <TimelineToolGroup
+          agentRuns={agentRuns}
+          group={group}
+          onOpenSession={onOpenSession}
+        />
+      </TimelineRowFrame>
+    </AnimatedDisclosure>
+  );
+}
+
+function TimelineToolClusterRow({
+  groups,
+  isCompleted,
+  turnId,
+}: {
+  groups: Extract<ConversationTimelineRow, { type: "tool-cluster" }>["groups"];
+  isCompleted: boolean;
+  turnId: string;
+}) {
+  const { expanded } = useToolTurnExpansion(turnId);
+  const open = !isCompleted || expanded;
+  return (
+    <AnimatedDisclosure open={open}>
+      <TimelineRowFrame role="assistant" turnId={turnId}>
+        <TimelineToolCluster groups={groups} />
+      </TimelineRowFrame>
+    </AnimatedDisclosure>
+  );
+}
+
 function areTimelineRowPropsEqual(
   previous: {
     actions: ConversationTimelineActions;
     agentRuns: AgentRun[];
     onOpenSession?: (sessionId: string) => void;
-    onOpenToolActivity?: (activity: ToolCallActivity) => void;
     row: ConversationTimelineRow;
     workspaceRoot: string;
   },
@@ -131,7 +207,6 @@ function areTimelineRowPropsEqual(
     actions: ConversationTimelineActions;
     agentRuns: AgentRun[];
     onOpenSession?: (sessionId: string) => void;
-    onOpenToolActivity?: (activity: ToolCallActivity) => void;
     row: ConversationTimelineRow;
     workspaceRoot: string;
   },
@@ -140,7 +215,6 @@ function areTimelineRowPropsEqual(
     sameTimelineRow(previous.row, next.row) &&
     previous.actions === next.actions &&
     previous.onOpenSession === next.onOpenSession &&
-    previous.onOpenToolActivity === next.onOpenToolActivity &&
     previous.workspaceRoot === next.workspaceRoot &&
     (!timelineRowUsesAgentRuns(previous.row) ||
       sameAgentRuns(previous.agentRuns, next.agentRuns))

@@ -190,10 +190,20 @@ export function ProviderConnectionDialogs({
  <Input
  aria-label={`${activeProvider.name} API key`}
  onChange={(event) => onApiKeyChange(event.target.value)}
- placeholder="API 密钥"
+ placeholder={
+ activeProvider.id === "volcengine-agent-plan"
+ ? "粘贴 ARK_API_KEY 原始值"
+ : "API 密钥"
+ }
  type="password"
  value={apiKey}
  />
+ {activeProvider.id === "volcengine-agent-plan" ? (
+ <p className="text-xs text-muted-foreground">
+ 请使用 Agent Plan 页面生成的 ARK_API_KEY；不支持 IAM Access Key / Secret Key。也可直接粘贴
+ ARK_API_KEY=… 或 Bearer …。
+ </p>
+ ) : null}
  </div>
  ) : oauthReady ? null : authMode === "oauth-browser" && activeProvider.id === "openai" && !oauthStarted ? (
  <ProviderField label="操作" value="点击下方按钮打开浏览器授权" />

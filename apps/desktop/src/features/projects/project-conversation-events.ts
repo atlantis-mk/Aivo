@@ -24,6 +24,7 @@ export {
   upsertSession,
 } from "./project-conversation-permissions";
 export {
+  appendToolCallOutput,
   isDelegateTaskToolName,
   toolCallsForTurn,
 } from "./project-conversation-tool-calls";

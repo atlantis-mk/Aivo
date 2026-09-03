@@ -16,6 +16,19 @@ export function upsertRecentProject(
   ].slice(0, 20);
 }
 
+export function projectsFromSessions(sessions: domain.Session[]) {
+  const projectsByPathKey = new Map<string, domain.AssistantProject>();
+
+  for (const session of sessions) {
+    const rootPath = sessionSidebarProjectPath(session);
+    const pathKey = normalizeProjectPathKey(rootPath);
+    if (!pathKey || projectsByPathKey.has(pathKey)) continue;
+    projectsByPathKey.set(pathKey, assistantProjectFromPath(rootPath));
+  }
+
+  return [...projectsByPathKey.values()];
+}
+
 export function buildProjectConversationGroups(
   sessions: domain.Session[],
   projects: domain.AssistantProject[],
@@ -125,7 +138,9 @@ function getProjectGroupPathKeySet(projectGroups: ProjectConversationGroup[]) {
   );
 }
 
-function assistantProjectFromPath(rootPath: string): domain.AssistantProject {
+export function assistantProjectFromPath(
+  rootPath: string,
+): domain.AssistantProject {
   const now = new Date().toISOString();
   return {
     id: rootPath,

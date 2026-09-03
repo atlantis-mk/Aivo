@@ -3,8 +3,8 @@ import { memo, useMemo, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import { constructConversationTimelineRows } from "@/features/projects/conversation-timeline-row-model";
-import type { ToolCallActivity } from "@/features/projects/conversation-timeline-tool-model";
 import { ConversationTimelineRowView } from "./conversation-timeline-row-view";
+import { ToolTurnExpansionProvider } from "./conversation-timeline-tool-turn-expansion";
 import type { ConversationTimelineActions } from "./conversation-timeline-types";
 import type { AgentRun } from "@/services/aivo";
 
@@ -15,7 +15,6 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   onDeleteTurn,
   onEditUserMessage,
   onOpenSession,
-  onOpenToolActivity,
   onRetryTurn,
   revealFromHistory,
   reserveFloatingControls,
@@ -29,7 +28,6 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   onDeleteTurn?: (turn: ConversationTurn) => void;
   onEditUserMessage?: (turn: ConversationTurn) => void;
   onOpenSession?: (sessionId: string) => void;
-  onOpenToolActivity?: (activity: ToolCallActivity) => void;
   onRetryTurn?: (turn: ConversationTurn) => void;
   revealFromHistory: boolean;
   reserveFloatingControls: boolean;
@@ -56,7 +54,7 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
   return (
     <div
       className={cn(
-        "mx-auto flex w-[calc(100%-2rem)] max-w-[680px] flex-col px-0 pt-12 transition-transform ease-out sm:w-[calc(100%-48px)]",
+        "aivo-conversation-timeline mx-auto flex w-[calc(100%-2rem)] max-w-[736px] flex-col px-0 pt-8 transition-transform ease-out sm:w-[calc(100%-48px)]",
         reservePermissionDock
           ? "pb-[19rem]"
           : reserveFloatingControls
@@ -68,17 +66,18 @@ export const SubmittedPromptContent = memo(function SubmittedPromptContent({
       )}
       ref={contentRef}
     >
-      {rows.map((row) => (
-        <ConversationTimelineRowView
-          actions={actions}
-          agentRuns={agentRuns}
-          key={row.key}
-          onOpenSession={onOpenSession}
-          onOpenToolActivity={onOpenToolActivity}
-          row={row}
-          workspaceRoot={workspaceRoot}
-        />
-      ))}
+      <ToolTurnExpansionProvider>
+        {rows.map((row) => (
+          <ConversationTimelineRowView
+            actions={actions}
+            agentRuns={agentRuns}
+            key={row.key}
+            onOpenSession={onOpenSession}
+            row={row}
+            workspaceRoot={workspaceRoot}
+          />
+        ))}
+      </ToolTurnExpansionProvider>
     </div>
   );
 });

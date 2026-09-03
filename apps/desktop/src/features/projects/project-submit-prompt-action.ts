@@ -19,7 +19,8 @@ import {
   type PromptMentionReference,
 } from "@/features/projects/project-prompt-mention-model";
 import { consumePendingToolActivation } from "@/features/projects/project-tool-activation-scope";
-import { hasAppBridge } from "@/lib/app-config";
+import { hasAppBridge, hasCodexDesktopBridge } from "@/lib/app-config";
+import { listCodexSessions } from "@/services/codex-thread-service";
 import type { ModelInfo } from "@/lib/provider-catalog";
 import {
   cancelSessionTurn,
@@ -44,6 +45,7 @@ export function useProjectSubmitPromptAction({
   activeSessionIdRef,
   agentMode,
   composerAttachments,
+  defaultWorkspacePath,
   pendingActiveToolNames,
   hasPendingTurn,
   loadConversationTurns,
@@ -72,6 +74,7 @@ export function useProjectSubmitPromptAction({
   activeSessionIdRef: { current: string };
   agentMode: AgentModeId;
   composerAttachments: ComposerAttachment[];
+  defaultWorkspacePath: string;
   pendingActiveToolNames: string[];
   hasPendingTurn: boolean;
   loadConversationTurns: (
@@ -126,6 +129,10 @@ export function useProjectSubmitPromptAction({
       );
       return;
     }
+    if (hasCodexDesktopBridge() && composerAttachments.length > 0) {
+      toast.error("当前 Codex 桌面对话暂不支持发送附件。");
+      return;
+    }
     const localTurnId = crypto.randomUUID();
     const startedAt = Date.now();
     const submittedAttachments = composerAttachments;
@@ -156,7 +163,7 @@ export function useProjectSubmitPromptAction({
     setPrompt("");
     setPromptResourceReferences([]);
     setComposerAttachments([]);
-    if (!hasAppBridge()) {
+    if (!hasAppBridge() && !hasCodexDesktopBridge()) {
       setTurns((currentTurns) =>
         currentTurns.map((turn) =>
           turn.id === localTurnId
@@ -176,6 +183,38 @@ export function useProjectSubmitPromptAction({
     }
     let submittedSessionId = activeSessionId;
     try {
+      if (hasCodexDesktopBridge()) {
+        let threadId = submittedSessionId;
+        if (!threadId) {
+          const workspacePath = submittedProjectPath || defaultWorkspacePath;
+          const thread = await window.aivoDesktop.codex.startThread({
+            cwd: workspacePath || undefined,
+            model: activeModelRef?.modelId || activeModelId || undefined,
+            modelProvider: activeModelRef?.providerId || undefined,
+          });
+          threadId = thread.threadId;
+          activeSessionIdRef.current = threadId;
+          setActiveSessionId(threadId);
+          setCodingWorkspaceRoot(workspacePath);
+          setSessions(await listCodexSessions(50));
+        }
+        submittedSessionId = threadId;
+        const turn = await window.aivoDesktop.codex.startTurn({
+          model: activeModelRef?.modelId || activeModelId || undefined,
+          text: nextPrompt,
+          threadId,
+        });
+        setConversationRunning(threadId, true);
+        setTurns((currentTurns) =>
+          currentTurns.map((currentTurn) =>
+            currentTurn.id === localTurnId
+              ? { ...currentTurn, turnId: turn.turnId }
+              : currentTurn,
+          ),
+        );
+        return;
+      }
+
       let sessionId = submittedSessionId;
       if (!sessionId) {
         const session = await createSession({

@@ -19,6 +19,51 @@ interface CodexModel {
   description: string;
 }
 
+interface CodexThreadStart {
+  threadId: string;
+}
+
+interface CodexThread {
+  id: string;
+  cwd: string;
+  model: string | null;
+  modelProvider: string;
+  name: string | null;
+  parentThreadId: string | null;
+  preview: string;
+  source: string;
+  status: string;
+  timeCreated: string;
+  timeUpdated: string;
+}
+
+interface CodexThreadTurn {
+  completedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  id: string;
+  items: unknown[];
+  startedAt: string | null;
+  status: string;
+}
+
+interface CodexTurnStart {
+  turnId: string;
+}
+
+interface BackendProviderConnectionInput {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  name: string;
+  providerId: string;
+}
+
+interface CodexRuntimeEvent {
+  method: string;
+  params: unknown;
+}
+
 interface CodexLoginCompletion {
   error: string | null;
   loginId: string | null;
@@ -54,15 +99,34 @@ interface AivoDesktopApi {
     onStatus(listener: (status: RuntimeStatus) => void): () => void;
   };
   codex: {
+    configureProvider(input: BackendProviderConnectionInput): Promise<void>;
+    deleteProvider(providerId: string): Promise<void>;
     cancelLogin(loginId: string): Promise<void>;
     getAccount(): Promise<CodexAccount>;
+    listCodexModels(): Promise<CodexModel[]>;
     listModels(): Promise<CodexModel[]>;
+    listThreads(limit: number): Promise<CodexThread[]>;
+    listThreadTurns(threadId: string): Promise<CodexThreadTurn[]>;
+    resumeThread(threadId: string): Promise<void>;
+    startThread(input: {
+      cwd?: string;
+      model?: string;
+      modelProvider?: string;
+    }): Promise<CodexThreadStart>;
+    startTurn(input: {
+      model?: string;
+      text: string;
+      threadId: string;
+    }): Promise<CodexTurnStart>;
+    interruptTurn(input: CodexTurnStart & CodexThreadStart): Promise<void>;
+    archiveThread(threadId: string): Promise<void>;
     login(): Promise<CodexLoginStart>;
     logout(): Promise<void>;
     onAccount(listener: (account: CodexAccount) => void): () => void;
     onLoginCompleted(
       listener: (completion: CodexLoginCompletion) => void,
     ): () => void;
+    onRuntimeEvent(listener: (event: CodexRuntimeEvent) => void): () => void;
   };
   workspace: {
     choose(): Promise<string | null>;

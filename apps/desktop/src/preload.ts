@@ -19,10 +19,33 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
     },
   },
   codex: {
+    configureProvider: (input: BackendProviderConnectionInput): Promise<void> =>
+      ipcRenderer.invoke("provider:configure", input),
+    deleteProvider: (providerId: string): Promise<void> =>
+      ipcRenderer.invoke("provider:delete", providerId),
     cancelLogin: (loginId: string): Promise<void> =>
       ipcRenderer.invoke("account:cancel-login", loginId),
     getAccount: (): Promise<CodexAccount> => ipcRenderer.invoke("account:read"),
     listModels: (): Promise<CodexModel[]> => ipcRenderer.invoke("models:list"),
+    listCodexModels: (): Promise<CodexModel[]> =>
+      ipcRenderer.invoke("models:codex:list"),
+    listThreads: (limit: number): Promise<CodexThread[]> =>
+      ipcRenderer.invoke("threads:list", limit),
+    listThreadTurns: (threadId: string): Promise<CodexThreadTurn[]> =>
+      ipcRenderer.invoke("thread:turns:list", threadId),
+    resumeThread: (threadId: string): Promise<void> =>
+      ipcRenderer.invoke("thread:resume", threadId),
+    startThread: (input: { cwd?: string; model?: string; modelProvider?: string }): Promise<CodexThreadStart> =>
+      ipcRenderer.invoke("thread:start", input),
+    startTurn: (input: {
+      model?: string;
+      text: string;
+      threadId: string;
+    }): Promise<CodexTurnStart> => ipcRenderer.invoke("turn:start", input),
+    interruptTurn: (input: CodexTurnStart & CodexThreadStart): Promise<void> =>
+      ipcRenderer.invoke("turn:interrupt", input),
+    archiveThread: (threadId: string): Promise<void> =>
+      ipcRenderer.invoke("thread:archive", threadId),
     login: (): Promise<CodexLoginStart> => ipcRenderer.invoke("account:login"),
     logout: (): Promise<void> => ipcRenderer.invoke("account:logout"),
     onAccount: (listener: (account: CodexAccount) => void): (() => void) => {
@@ -45,6 +68,18 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
       ipcRenderer.on("account:login-completed", handler);
       return (): void => {
         ipcRenderer.removeListener("account:login-completed", handler);
+      };
+    },
+    onRuntimeEvent: (
+      listener: (event: CodexRuntimeEvent) => void,
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        runtimeEvent: CodexRuntimeEvent,
+      ): void => listener(runtimeEvent);
+      ipcRenderer.on("codex:event", handler);
+      return (): void => {
+        ipcRenderer.removeListener("codex:event", handler);
       };
     },
   },
