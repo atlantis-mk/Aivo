@@ -2101,10 +2101,9 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
         ),
         "a subagent must not inherit its parent review checkpoint",
     );
-    assert_eq!(
-        history.retained_context(),
-        &codex_history::RetainedContext::default()
-    );
+    let mut expected_retained_context = codex_history::RetainedContext::default();
+    expected_retained_context.mark_user_messages_incomplete();
+    assert_eq!(history.retained_context(), &expected_retained_context);
     assert!(
         history_contains_text(history.raw_items(), "compacted parent summary"),
         "forked child history should retain compacted non-hint content"
@@ -3639,6 +3638,7 @@ async fn resume_thread_subagent_restores_stored_metadata() {
         empty_extension_registry(),
         Arc::new(crate::test_support::EmptyUserInstructionsProvider),
         /*analytics_events_client*/ None,
+        crate::thread_manager::passthrough_image_store(),
         thread_store.clone(),
         /*agent_graph_store*/ None,
         uuid::Uuid::new_v4().to_string(),

@@ -137,6 +137,7 @@ pub(crate) use list_selection_view::popup_content_width;
 pub(crate) use list_selection_view::side_by_side_layout_widths;
 pub(crate) use memories_settings_view::MemoriesSettingsView;
 use slash_commands::ServiceTierCommand;
+mod feedback_note_view;
 mod feedback_view;
 mod hooks_browser_view;
 pub(crate) use feedback_view::FeedbackAudience;
@@ -166,7 +167,7 @@ mod selection_tabs;
 mod startup;
 mod textarea;
 mod unified_exec_footer;
-pub(crate) use feedback_view::FeedbackNoteView;
+pub(crate) use feedback_note_view::FeedbackNoteView;
 pub(crate) use hooks_browser_view::HooksBrowserView;
 pub(crate) use selection_tabs::SelectionTab;
 
@@ -738,14 +739,15 @@ impl BottomPane {
             if self.handle_inline_banner_key(key_event) {
                 return InputResult::None;
             }
-            // If a task is running and a status line is visible, allow the
-            // configured action to interrupt even while the composer has focus.
+            // Allow the configured interrupt while a task is running, even when its
+            // status row is hidden or the composer has focus.
             // When a popup is active, prefer dismissing it over interrupting the task.
-            if self.should_interrupt_running_task(key_event)
-                && let Some(status) = &self.status
-            {
-                // Send Op::Interrupt
-                status.interrupt();
+            if self.should_interrupt_running_task(key_event) {
+                if let Some(status) = &self.status {
+                    status.interrupt();
+                } else {
+                    self.app_event_tx.interrupt();
+                }
                 self.request_redraw();
                 return InputResult::None;
             }
@@ -1499,7 +1501,6 @@ impl BottomPane {
             && !(is_agent_command && key_event.code == KeyCode::Esc)
             && self.no_modal_or_popup_active()
             && !self.composer_should_handle_vim_insert_escape(key_event)
-            && self.status_widget().is_some()
     }
 
     pub(crate) fn terminal_title_requires_action(&self) -> bool {
@@ -3213,6 +3214,13 @@ mod tests {
             matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::Interrupt))),
             "expected Esc to send Op::Interrupt while a task is running"
         );
+
+        pane.hide_status_indicator();
+        pane.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AppEvent::CodexOp(Op::Interrupt))
+        ));
     }
 
     #[test]
@@ -3237,6 +3245,13 @@ mod tests {
             matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::Interrupt))),
             "expected configured key to interrupt while `/subagents` is being edited"
         );
+
+        pane.hide_status_indicator();
+        pane.handle_key_event(KeyEvent::new(KeyCode::F(12), KeyModifiers::NONE));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AppEvent::CodexOp(Op::Interrupt))
+        ));
     }
 
     #[test]

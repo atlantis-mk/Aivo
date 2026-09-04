@@ -774,6 +774,9 @@
             "guardian_reuse_parent_compaction": {
               "type": "boolean"
             },
+            "guardian_thread_context": {
+              "type": "boolean"
+            },
             "guardianv2": {
               "$ref": "#/definitions/FeatureToml_for_GuardianV2ConfigToml"
             },
@@ -1017,6 +1020,9 @@
             "unified_exec": {
               "type": "boolean"
             },
+            "unified_exec_tty": {
+              "type": "boolean"
+            },
             "unified_exec_zsh_fork": {
               "type": "boolean"
             },
@@ -1051,6 +1057,9 @@
               "type": "boolean"
             },
             "workspace_owner_usage_nudge": {
+              "type": "boolean"
+            },
+            "worktrees": {
               "type": "boolean"
             },
             "write_stdin_approval": {
@@ -4106,7 +4115,7 @@
         },
         "status_line": {
           "default": null,
-          "description": "Ordered list of status line item identifiers.\n\nWhen set, the TUI renders the selected items as the status line. When unset, the TUI defaults to: `model-with-reasoning` and `current-dir`.",
+          "description": "Ordered list of status line item identifiers.\n\nWhen set, the TUI renders the selected items as the status line. When unset, the TUI defaults to: `model-with-reasoning`, `current-dir`, and `thread-name`.",
           "items": {
             "type": "string"
           },
@@ -4126,7 +4135,7 @@
         },
         "terminal_title": {
           "default": null,
-          "description": "Ordered list of terminal title item identifiers.\n\nWhen set, the TUI renders the selected items into the terminal window/tab title. When unset, the TUI defaults to: `activity` and `project`. The `activity` item spins while working and shows an action-required message when blocked on the user.",
+          "description": "Ordered list of terminal title item identifiers.\n\nWhen set, the TUI renders the selected items into the terminal window/tab title. When unset, the TUI defaults to: `activity`, `thread-name`, and `project-name`. The `activity` item spins while working and shows an action-required message when blocked on the user.",
           "items": {
             "type": "string"
           },
@@ -5800,6 +5809,10 @@
       "description": "Whether the model may request a login shell for shell-based tools. Default to `true`\n\nIf `true`, the model may request a login shell (`login = true`), and omitting `login` defaults to using a login shell. If `false`, the model can never use a login shell: `login = true` requests are rejected, and omitting `login` defaults to a non-login shell.",
       "type": "boolean"
     },
+    "allow_symlinked_codex_home": {
+      "description": "Allow macOS sandbox writable roots at or beneath CODEX_HOME to traverse symlinks. Read only from the host's user config at startup; defaults to false. This grants no write access by itself, but trusts symlink targets even if they change between commands or lie outside CODEX_HOME. This setting has no effect on Linux or Windows.",
+      "type": "boolean"
+    },
     "analytics": {
       "allOf": [
         {
@@ -6122,6 +6135,9 @@
         "guardian_reuse_parent_compaction": {
           "type": "boolean"
         },
+        "guardian_thread_context": {
+          "type": "boolean"
+        },
         "guardianv2": {
           "$ref": "#/definitions/FeatureToml_for_GuardianV2ConfigToml"
         },
@@ -6365,6 +6381,9 @@
         "unified_exec": {
           "type": "boolean"
         },
+        "unified_exec_tty": {
+          "type": "boolean"
+        },
         "unified_exec_zsh_fork": {
           "type": "boolean"
         },
@@ -6399,6 +6418,9 @@
           "type": "boolean"
         },
         "workspace_owner_usage_nudge": {
+          "type": "boolean"
+        },
+        "worktrees": {
           "type": "boolean"
         },
         "write_stdin_approval": {

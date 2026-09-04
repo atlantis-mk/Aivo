@@ -90,6 +90,8 @@ pub struct LunaSamplerConfig {
 
 /// One tool-less Luna classification request over an already-open connection.
 pub struct LunaSamplingRequest {
+    /// Runtime receipt of the response handling the classified tool.
+    pub guardian_ticket: Option<codex_protocol::guardian_ticket::GuardianTicket>,
     /// Trusted instructions describing the requested classification.
     pub instructions: String,
     /// Host-supplied Guardian reviews isolated from untrusted transcript entries.
@@ -104,7 +106,7 @@ pub struct LunaSamplingRequest {
     pub images: Vec<ContentItem>,
     /// Opaque parent compaction to reuse only for compatible model configurations.
     pub parent_compaction: Option<ResponseItem>,
-    /// Current parent model's encrypted-compaction compatibility hash.
+    /// Host-selected compatibility hash for the supplied parent checkpoint.
     pub parent_compaction_hash: Option<String>,
     /// Reasoning budget explicitly selected for this request.
     pub reasoning_effort: ReasoningEffort,
@@ -135,6 +137,9 @@ pub enum LunaSamplerError {
     /// A newer classification replaced this request when the pool was full.
     #[error("Luna request was superseded by a newer classification")]
     Superseded,
+    /// The supplied parent checkpoint cannot be consumed by this Luna configuration.
+    #[error("parent compaction is incompatible with Luna")]
+    IncompatibleCompaction,
 }
 
 struct PooledConnection {
@@ -203,6 +208,15 @@ pub struct LunaSampler {
 }
 
 impl LunaSampler {
+    /// A checkpoint is reusable only when both models declare the same nonempty hash.
+    pub(super) fn supports_parent_compaction(&self, parent_hash: Option<&str>) -> bool {
+        parent_hash
+            .zip(self.config.luna_compaction_hash.as_deref())
+            .is_some_and(|(parent_hash, luna_hash)| {
+                !parent_hash.is_empty() && parent_hash == luna_hash
+            })
+    }
+
     pub(super) fn new(config: LunaSamplerConfig) -> Self {
         Self {
             config,
@@ -412,6 +426,7 @@ impl LunaSampler {
             | LunaSamplerError::MissingOutput
             | LunaSamplerError::OutputTooLarge
             | LunaSamplerError::Superseded
+            | LunaSamplerError::IncompatibleCompaction
             | LunaSamplerError::Api(
                 ApiError::Transport(TransportError::Build(_))
                 | ApiError::ContextWindowExceeded
@@ -432,8 +447,14 @@ impl LunaSampler {
 
     /// Sends one tool-less classification request on an exclusively leased WebSocket.
     pub async fn sample(&self, request: LunaSamplingRequest) -> Result<String, LunaSamplerError> {
+        if request.parent_compaction.is_some()
+            && !self.supports_parent_compaction(request.parent_compaction_hash.as_deref())
+        {
+            return Err(LunaSamplerError::IncompatibleCompaction);
+        }
         // A classification is its own inference turn; retries keep that identity.
         let turn_id = Uuid::now_v7().to_string();
+        let guardian_ticket = request.guardian_ticket;
         let parent_turn_id = request.parent_turn_id;
         let root_turn_id = request.root_turn_id;
         let mut input = vec![
@@ -452,15 +473,7 @@ impl LunaSampler {
                 internal_chat_message_metadata_passthrough: None,
             },
         ];
-        if request
-            .parent_compaction_hash
-            .as_deref()
-            .zip(self.config.luna_compaction_hash.as_deref())
-            .is_some_and(|(parent_hash, luna_hash)| {
-                !parent_hash.is_empty() && parent_hash == luna_hash
-            })
-            && let Some(parent_compaction) = request.parent_compaction
-        {
+        if let Some(parent_compaction) = request.parent_compaction {
             input.push(parent_compaction);
         }
         if !request.trusted_review_evidence.is_empty() {
@@ -624,6 +637,7 @@ impl LunaSampler {
                     ResponsesWsRequest::ResponseCreate((&request).into()),
                     /*connection_reused*/ true,
                     /*turn_state*/ None,
+                    guardian_ticket.as_ref(),
                 )
                 .await
             {

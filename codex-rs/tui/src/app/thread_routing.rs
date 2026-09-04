@@ -1686,7 +1686,19 @@ impl App {
         let cwd = self.chat_widget.config_ref().cwd.clone();
         let errors = errors_for_cwd(&cwd, &response);
         let errors = self.skill_load_warnings.newly_active_errors(&errors);
-        emit_skill_load_warnings(&self.app_event_tx, &errors);
+        let warnings = skill_load_warning_messages(&errors);
+        if self.skill_load_warnings.startup_complete {
+            for warning in warnings {
+                self.chat_widget.add_warning_message(warning);
+            }
+        } else {
+            self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                // The per-file diagnostics already identify every affected skill.
+                history_cell::StartupWarningsCell::new(
+                    warnings.into_iter().skip(/*n*/ 1).collect(),
+                ),
+            )));
+        }
         self.chat_widget.handle_skills_list_response(response);
     }
 
@@ -1871,37 +1883,16 @@ impl App {
         let had_active_view = self.chat_widget.has_active_view();
         self.handle_thread_event_now_recovering_file_changes(event)
             .await;
-        if let Some(user_message) = automatic_title_user_message {
-            let expected_title = user_message
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .chars()
-                .take(super::thread_title::THREAD_TITLE_MAX_CHARS)
-                .collect::<String>();
-
-            if !expected_title.is_empty()
-                && let Some(thread_id) = self.active_thread_id
-            {
-                match app_server
-                    .thread_set_name(thread_id, expected_title.clone())
-                    .await
-                {
-                    Ok(()) => {
-                        self.chat_widget
-                            .expect_automatic_thread_name(expected_title.clone());
-                        self.generate_thread_title(
-                            app_server,
-                            thread_id,
-                            ThreadTitleDestination::Automatic { expected_title },
-                            super::thread_title::thread_title_prompt(&user_message),
-                        );
-                    }
-                    Err(error) => {
-                        tracing::debug!(%error, "failed to set provisional thread title");
-                    }
-                }
-            }
+        if let Some(user_message) = automatic_title_user_message
+            && !user_message.trim().is_empty()
+            && let Some(thread_id) = self.active_thread_id
+        {
+            self.generate_thread_title(
+                app_server,
+                thread_id,
+                ThreadTitleDestination::Automatic,
+                super::thread_title::thread_title_prompt(&user_message),
+            );
         }
         if !had_active_view
             && self.chat_widget.has_active_view()

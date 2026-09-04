@@ -39,6 +39,7 @@ use super::CLASSIFICATION_TOKEN_USAGE_METRIC;
 use super::INITIAL_WEBSOCKET_CONNECTIONS;
 use super::LunaSampler;
 use super::LunaSamplerConfig;
+use super::LunaSamplerError;
 use super::LunaSamplingRequest;
 use super::MAX_SAMPLING_RETRIES;
 use super::MAX_WEBSOCKET_CONNECTIONS;
@@ -191,6 +192,7 @@ async fn connect_sampler(config: LunaSamplerConfig) -> Result<LunaSampler> {
 
 fn sample_request(parent_turn_id: &str) -> LunaSamplingRequest {
     LunaSamplingRequest {
+        guardian_ticket: None,
         instructions: "Return high for high risk or low for low risk.".to_owned(),
         trusted_review_evidence: Vec::new(),
         trusted_tool_context: None,
@@ -445,6 +447,7 @@ async fn preconnected_sampler_reuses_authenticated_websocket_for_classifications
 
     let first = sampler
         .sample(LunaSamplingRequest {
+            guardian_ticket: None,
             instructions: "Return high for high risk or low for low risk.".to_owned(),
             trusted_review_evidence: Vec::new(),
             trusted_tool_context: None,
@@ -476,6 +479,7 @@ async fn preconnected_sampler_reuses_authenticated_websocket_for_classifications
     manager.refresh_token_from_authority().await?;
     let second = sampler
         .sample(LunaSamplingRequest {
+            guardian_ticket: None,
             instructions: "Return high for high risk or low for low risk.".to_owned(),
             trusted_review_evidence: Vec::new(),
             trusted_tool_context: None,
@@ -570,7 +574,20 @@ async fn sampler_reuses_parent_compaction_only_for_matching_model_hashes() -> Re
         request.parent_compaction_hash = parent_hash.map(str::to_owned);
         request.trusted_review_evidence = vec!["trusted review".to_owned()];
 
-        assert_eq!(sampler.sample(request).await?, "low");
+        let result = sampler.sample(request).await;
+        if !should_reuse {
+            assert!(matches!(
+                result,
+                Err(LunaSamplerError::IncompatibleCompaction)
+            ));
+            assert!(server.connections().iter().all(Vec::is_empty));
+            assert_eq!(
+                sampler.sample(sample_request("uncompacted-turn")).await?,
+                "low"
+            );
+            continue;
+        }
+        assert_eq!(result?, "low");
 
         let request = server
             .wait_for_request(
@@ -582,31 +599,20 @@ async fn sampler_reuses_parent_compaction_only_for_matching_model_hashes() -> Re
         let input = request["input"].as_array().expect("input items");
         assert_eq!(input[0]["type"], "additional_tools");
         assert_eq!(input[1]["role"], "developer");
-        if should_reuse {
-            assert_eq!(input.len(), 5);
-            assert_eq!(input[2], serde_json::to_value(&parent_compaction)?);
-            assert_eq!(input[3]["role"], "developer");
-            assert_eq!(input[3]["content"][1]["text"], "trusted review");
-            assert_eq!(input[4]["role"], "user");
+        assert_eq!(input.len(), 5);
+        assert_eq!(input[2], serde_json::to_value(&parent_compaction)?);
+        assert_eq!(input[3]["role"], "developer");
+        assert_eq!(input[3]["content"][1]["text"], "trusted review");
+        assert_eq!(input[4]["role"], "user");
 
-            let mut switched_request = sample_request("turn-2");
-            switched_request.parent_compaction = Some(parent_compaction);
-            switched_request.parent_compaction_hash = Some("incompatible".to_owned());
-            assert_eq!(sampler.sample(switched_request).await?, "low");
-            let switched_request = server
-                .wait_for_request(
-                    /*connection_index*/ INITIAL_WEBSOCKET_CONNECTIONS - 1,
-                    /*request_index*/ 1,
-                )
-                .await
-                .body_json();
-            assert_eq!(switched_request["input"][2]["role"], "user");
-        } else {
-            assert_eq!(input.len(), 4);
-            assert_eq!(input[2]["role"], "developer");
-            assert_eq!(input[2]["content"][1]["text"], "trusted review");
-            assert_eq!(input[3]["role"], "user");
-        }
+        let mut switched_request = sample_request("turn-2");
+        switched_request.parent_compaction = Some(parent_compaction);
+        switched_request.parent_compaction_hash = Some("incompatible".to_owned());
+        assert!(matches!(
+            sampler.sample(switched_request).await,
+            Err(LunaSamplerError::IncompatibleCompaction)
+        ));
+        assert_eq!(server.connections().iter().map(Vec::len).sum::<usize>(), 1);
     }
 
     Ok(())
@@ -649,6 +655,7 @@ async fn sampler_returns_classification_token_before_terminal_response_events() 
     let output = tokio::time::timeout(
         Duration::from_secs(2),
         sampler.sample(LunaSamplingRequest {
+            guardian_ticket: None,
             instructions: "Return high for high risk or low for low risk.".to_owned(),
             trusted_review_evidence: Vec::new(),
             trusted_tool_context: None,
@@ -1107,6 +1114,57 @@ async fn sampler_limits_transient_recovery_attempts() -> Result<()> {
     assert_eq!(second.single_connection().len(), 1);
     assert_eq!(third.single_connection().len(), 1);
     assert!(unused.handshakes().is_empty());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guardian_ticket_survives_classifier_transport_retry() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    for free_guardian in [false, true] {
+        let healthy = responses::start_websocket_server(vec![vec![vec![
+            ev_assistant_message("resp-review", "low"),
+            ev_completed("resp-review"),
+        ]]])
+        .await;
+        let expired = responses::start_websocket_server(vec![vec![vec![json!({
+            "type": "error", "status": 400,
+            "error": {"type": "invalid_request_error", "code": "websocket_connection_limit_reached", "message": "expired"}
+        })]]]).await;
+        let base_url = proxy_websocket_servers(&[&healthy, &expired]).await?;
+        let mut config = sampler_config(base_url.clone());
+        if free_guardian {
+            config.free_guardian = true;
+            config.provider = create_model_provider(
+                ModelProviderInfo::create_openai_provider(Some(format!(
+                    "{}/backend-api/codex",
+                    base_url.trim_end_matches("/v1")
+                ))),
+                Some(AuthManager::from_auth_for_testing(
+                    CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+                )),
+            );
+        }
+        let sampler = connect_sampler(config).await?;
+        let raw_ticket = "t".repeat(43);
+        let mut request = sample_request("turn-1");
+        request.guardian_ticket =
+            codex_protocol::guardian_ticket::GuardianTicket::from_server(&raw_ticket);
+        assert_eq!(sampler.sample(request).await?, "low");
+        for server in [&expired, &healthy] {
+            let requests = server.single_connection();
+            assert_eq!(requests.len(), 1);
+            let body = requests[0].body_json();
+            assert_eq!(
+                (
+                    body["client_metadata"].get("guardian_ticket").cloned(),
+                    body["client_metadata"].get("guardian_ticket_requested"),
+                ),
+                (free_guardian.then(|| json!(raw_ticket)), None)
+            );
+            assert!(!body["input"].to_string().contains(&raw_ticket));
+        }
+    }
 
     Ok(())
 }

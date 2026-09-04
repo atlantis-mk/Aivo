@@ -124,6 +124,8 @@ pub enum Feature {
     CodeModeOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
+    /// Allow unified exec commands to allocate an interactive terminal.
+    UnifiedExecTty,
     /// Route shell tool execution through the zsh exec bridge.
     ShellZshFork,
     /// Allow unified exec to compose with the zsh exec bridge.
@@ -187,6 +189,8 @@ pub enum Feature {
     UnboundedConnectionRetries,
     /// Start the managed network proxy for sandboxed sessions.
     NetworkProxy,
+    /// Enable managed worktree creation and repository-aware sessions.
+    Worktrees,
     /// Respect host system proxy settings for Codex-owned network clients.
     RespectSystemProxy,
     /// Enable collab tools.
@@ -299,6 +303,9 @@ pub enum Feature {
     SendAsyncMessage,
     /// Enable automatic review for approval prompts.
     GuardianApproval,
+    /// Select thread-owned context for both Guardian reviewers.
+    /// Read once from the thread's fixed feature set when Guardian evidence is initialized.
+    GuardianThreadContext,
     /// Reuse encrypted parent compaction when restarting Guardian review sessions.
     GuardianReuseParentCompaction,
     /// Include completed node_repl or cua_repl Code Mode responses in Guardian reviews.
@@ -928,6 +935,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
+        id: Feature::UnifiedExecTty,
+        key: "unified_exec_tty",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
         id: Feature::ShellZshFork,
         key: "shell_zsh_fork",
         stage: Stage::UnderDevelopment,
@@ -1216,6 +1229,16 @@ pub const FEATURES: &[FeatureSpec] = &[
             name: "Network proxy",
             menu_description: "Apply network proxy restrictions to sandboxed sessions that already have network access.",
             announcement: "NEW: Network proxy can now be enabled from /experimental. Restart Codex after enabling it.",
+        },
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::Worktrees,
+        key: "worktrees",
+        stage: Stage::Experimental {
+            name: "Worktrees",
+            menu_description: "Create isolated Git worktrees and group sessions by repository.",
+            announcement: "NEW: Worktrees can now be enabled from /experimental. Restart Codex after enabling it.",
         },
         default_enabled: false,
     },
@@ -1518,6 +1541,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "guardian_approval",
         stage: Stage::Stable,
         default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::GuardianThreadContext,
+        key: "guardian_thread_context",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::GuardianReuseParentCompaction,
