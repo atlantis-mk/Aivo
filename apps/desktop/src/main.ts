@@ -16,6 +16,7 @@ import {
   type DesktopUpdateState,
   type DesktopUpdater,
 } from "./desktop-updater.cjs";
+import { buildAivoRuntimeEnvironment } from "./codex-runtime-environment";
 
 type RuntimeState = "stopped" | "starting" | "ready" | "error";
 
@@ -64,6 +65,8 @@ interface CodexThread {
 }
 
 interface CodexThreadTurn {
+  model?: string | null;
+  modelProvider?: string | null;
   completedAt: string | null;
   durationMs: number | null;
   error: string | null;
@@ -365,6 +368,7 @@ class AppServerRuntime {
       limit,
       sortKey: "recency_at",
       sortDirection: "desc",
+      modelProviders: [],
       sourceKinds: [
         "cli",
         "vscode",
@@ -432,6 +436,8 @@ class AppServerRuntime {
       if (!id) return [];
       const error = isRecord(turn.error) ? stringOrNull(turn.error.message) : null;
       return [{
+        model: stringOrNull(turn.model),
+        modelProvider: stringOrNull(turn.modelProvider),
         completedAt: unixSecondsToIsoOrNull(turn.completedAt),
         durationMs:
           typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs)
@@ -450,10 +456,12 @@ class AppServerRuntime {
 
   async startTurn({
     model,
+    modelProvider,
     text,
     threadId,
   }: {
     model?: string;
+    modelProvider?: string;
     text: string;
     threadId: string;
   }): Promise<CodexTurnStart> {
@@ -461,6 +469,7 @@ class AppServerRuntime {
     const result = await this.request("turn/start", {
       threadId,
       model: model || undefined,
+      modelProvider: modelProvider || undefined,
       input: [{ type: "text", text, textElements: [] }],
     });
     const turn = isRecord(result) && isRecord(result.turn) ? result.turn : null;
@@ -477,11 +486,15 @@ class AppServerRuntime {
 
   private runtimeEnvironment(): NodeJS.ProcessEnv {
     const credentials = readProviderApiKeys();
-    const environment = { ...process.env };
+    const providerEnvironment: Record<string, string> = {};
     for (const [providerId, apiKey] of Object.entries(credentials)) {
-      environment[providerApiKeyEnvironmentName(providerId)] = apiKey;
+      providerEnvironment[providerApiKeyEnvironmentName(providerId)] = apiKey;
     }
-    return environment;
+    return buildAivoRuntimeEnvironment({
+      homeDirectory: app.getPath("home"),
+      inheritedEnvironment: process.env,
+      injectedEnvironment: providerEnvironment,
+    });
   }
 
   async loginWithChatGpt(): Promise<CodexLoginStart> {

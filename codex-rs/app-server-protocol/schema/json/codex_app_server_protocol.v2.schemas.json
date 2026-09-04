@@ -22223,6 +22223,20 @@
           "default": "full",
           "description": "Describes how much of `items` has been loaded for this turn."
         },
+        "model": {
+          "description": "Model used for this turn, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelProvider": {
+          "description": "Model provider used for this turn, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "startedAt": {
           "description": "Unix timestamp (in seconds) when the turn started.",
           "format": "int64",
@@ -22245,6 +22259,18 @@
     "TurnCompletedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "threadId": {
           "type": "string"
         },
@@ -22527,6 +22553,13 @@
             "null"
           ]
         },
+        "modelProvider": {
+          "description": "Override the model provider for this turn and subsequent turns.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "outputSchema": {
           "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
         },
@@ -22621,6 +22654,18 @@
     "TurnStartedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "threadId": {
           "type": "string"
         },

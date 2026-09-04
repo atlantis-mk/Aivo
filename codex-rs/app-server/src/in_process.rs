@@ -998,8 +998,12 @@ mod tests {
         assert!(server_notification_requires_delivery(
             &ServerNotification::TurnCompleted(TurnCompletedNotification {
                 thread_id: "thread-1".to_string(),
+                model: None,
+                model_provider: None,
                 turn: Turn {
                     id: "turn-1".to_string(),
+                    model: None,
+                    model_provider: None,
                     items: Vec::new(),
                     items_view: TurnItemsView::NotLoaded,
                     status: TurnStatus::Completed,

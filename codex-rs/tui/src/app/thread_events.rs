@@ -451,6 +451,8 @@ mod tests {
 
     fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
         Turn {
+            model: None,
+            model_provider: None,
             id: turn_id.to_string(),
             items_view: codex_app_server_protocol::TurnItemsView::Full,
             items,
@@ -464,6 +466,8 @@ mod tests {
 
     fn turn_started_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id.to_string(),
             turn: Turn {
                 started_at: Some(0),
@@ -478,6 +482,8 @@ mod tests {
         status: TurnStatus,
     ) -> ServerNotification {
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id.to_string(),
             turn: Turn {
                 completed_at: Some(0),

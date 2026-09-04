@@ -8,6 +8,8 @@ use codex_config::ConfigLayerStack;
 use codex_config::RequirementSource;
 use codex_config::Sourced;
 use codex_features::Feature;
+use codex_login::AuthManager;
+use codex_login::CodexAuth;
 use codex_models_manager::manager::StaticModelsManager;
 use codex_models_manager::model_info::model_info_from_slug;
 use codex_protocol::config_types::ModeKind;
@@ -26,12 +28,35 @@ use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
 use core_test_support::test_codex::local;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use test_case::test_case;
+
+trait ApplySessionConfigurationForTests {
+    fn apply_for_tests(
+        &self,
+        updates: &SessionSettingsUpdate,
+        environments: &[TurnEnvironmentSelection],
+    ) -> ConstraintResult<SessionConfiguration>;
+}
+
+impl ApplySessionConfigurationForTests for SessionConfiguration {
+    fn apply_for_tests(
+        &self,
+        updates: &SessionSettingsUpdate,
+        environments: &[TurnEnvironmentSelection],
+    ) -> ConstraintResult<SessionConfiguration> {
+        self.apply(
+            updates,
+            environments,
+            AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test")),
+        )
+    }
+}
 
 pub(crate) fn update_selected_settings_for_test(
     settings: &mut ResolvedStepSettings,
@@ -92,7 +117,10 @@ async fn proposed_permission_profile_is_checked_before_step_settings() {
         ..Default::default()
     };
     assert_eq!(
-        configuration.apply(&invalid_profile, &[]).err().as_ref(),
+        configuration
+            .apply_for_tests(&invalid_profile, &[])
+            .err()
+            .as_ref(),
         Some(&permission_error)
     );
     for (step_settings, expected) in [
@@ -131,7 +159,7 @@ async fn proposed_permission_profile_is_checked_before_step_settings() {
         );
         assert_eq!(
             configuration
-                .apply(
+                .apply_for_tests(
                     &SessionSettingsUpdate {
                         step_settings,
                         ..invalid_profile.clone()
@@ -180,13 +208,13 @@ async fn model_review_requirement_uses_the_proposed_permission_profile() {
         ..Default::default()
     };
     assert_eq!(
-        configuration.apply(&updates, &[]).err(),
+        configuration.apply_for_tests(&updates, &[]).err(),
         Some(ConstraintError::AutoReviewRequired {
             model: "protected-model".to_string()
         }),
     );
     let updated = configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 permission_profile: Some(PermissionProfile::read_only()),
                 ..updates
@@ -205,7 +233,7 @@ async fn model_review_requirement_uses_the_proposed_permission_profile() {
     assert_eq!(updated.permission_profile(), PermissionProfile::read_only());
     assert_eq!(
         updated
-            .apply(
+            .apply_for_tests(
                 &SessionSettingsUpdate {
                     permission_profile: Some(PermissionProfile::Disabled),
                     ..Default::default()
@@ -273,7 +301,7 @@ async fn environment_only_update_revalidates_existing_step_settings() {
     // leaving this profile with full-disk write access.
     assert_eq!(
         configuration
-            .apply(
+            .apply_for_tests(
                 &SessionSettingsUpdate {
                     environments: Some(TurnEnvironmentSelections::new(
                         configuration.cwd().clone(),

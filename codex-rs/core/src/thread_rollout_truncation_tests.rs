@@ -77,6 +77,8 @@ fn inter_agent_communication(text: &str, trigger_turn: bool) -> RolloutItem {
 
 fn turn_started(turn_id: &str) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+        model: None,
+        model_provider: None,
         turn_id: turn_id.to_string(),
         trace_id: None,
         started_at: None,

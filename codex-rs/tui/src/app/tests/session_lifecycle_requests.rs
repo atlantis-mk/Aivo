@@ -1566,6 +1566,8 @@ async fn older_pagination_reconciles_review_prompts_across_page_boundaries() -> 
         user_item("newer-visible-prompt", "newer visible prompt"),
     ]);
     let events = std::iter::once(EventMsg::TurnStarted(TurnStartedEvent {
+        model: None,
+        model_provider: None,
         turn_id: "cross-page-review-turn".to_string(),
         trace_id: None,
         started_at: None,
@@ -1728,6 +1730,8 @@ async fn transcript_home_loads_every_older_history_page() -> Result<()> {
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<Result<Vec<_>, _>>()?;
     let events = std::iter::once(EventMsg::TurnStarted(TurnStartedEvent {
+        model: None,
+        model_provider: None,
         turn_id: "multi-page-turn".to_string(),
         trace_id: None,
         started_at: None,
@@ -2136,6 +2140,8 @@ async fn underfilled_scrollback_fetches_older_pages_without_opening_the_transcri
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<Result<Vec<_>, _>>()?;
     let events = std::iter::once(EventMsg::TurnStarted(TurnStartedEvent {
+        model: None,
+        model_provider: None,
         turn_id: "scrollback-pagination-turn".to_string(),
         trace_id: None,
         started_at: None,

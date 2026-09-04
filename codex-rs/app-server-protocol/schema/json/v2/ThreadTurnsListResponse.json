@@ -1810,6 +1810,20 @@
           "default": "full",
           "description": "Describes how much of `items` has been loaded for this turn."
         },
+        "model": {
+          "description": "Model used for this turn, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelProvider": {
+          "description": "Model provider used for this turn, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "startedAt": {
           "description": "Unix timestamp (in seconds) when the turn started.",
           "format": "int64",

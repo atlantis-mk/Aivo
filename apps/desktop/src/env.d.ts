@@ -38,6 +38,8 @@ interface CodexThread {
 }
 
 interface CodexThreadTurn {
+  model?: string | null;
+  modelProvider?: string | null;
   completedAt: string | null;
   durationMs: number | null;
   error: string | null;
@@ -115,6 +117,7 @@ interface AivoDesktopApi {
     }): Promise<CodexThreadStart>;
     startTurn(input: {
       model?: string;
+      modelProvider?: string;
       text: string;
       threadId: string;
     }): Promise<CodexTurnStart>;

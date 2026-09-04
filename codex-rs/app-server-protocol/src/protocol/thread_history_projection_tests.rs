@@ -30,6 +30,8 @@ fn projects_turn_lifecycle_without_prior_builder_state() {
             trace_id: None,
             started_at: Some(10),
             model_context_window: None,
+            model: None,
+            model_provider: None,
             collaboration_mode_kind: Default::default(),
         },
     )));

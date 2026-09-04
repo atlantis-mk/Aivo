@@ -19,6 +19,7 @@ use codex_http_client::ClientRouteClass;
 use codex_http_client::RouteAwareClientPool;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::SharedModelProvider;
+use codex_model_provider::create_model_provider;
 use codex_protocol::SessionId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
@@ -361,8 +362,36 @@ impl SessionConfiguration {
         &self,
         updates: &SessionSettingsUpdate,
         current_environments: &[TurnEnvironmentSelection],
+        auth_manager: Arc<AuthManager>,
     ) -> ConstraintResult<Self> {
         let mut next_configuration = self.clone();
+        if let Some(model_provider_id) = updates.model_provider.as_ref() {
+            let provider = self
+                .original_config_do_not_use
+                .model_providers
+                .get(model_provider_id)
+                .cloned()
+                .ok_or_else(|| ConstraintError::InvalidValue {
+                    field_name: "model_provider",
+                    candidate: model_provider_id.clone(),
+                    allowed: format!(
+                        "configured provider; current is `{}`",
+                        self.original_config_do_not_use.model_provider_id
+                    ),
+                    requirement_source: codex_config::RequirementSource::Unknown,
+                })?;
+            let mut config = (*next_configuration.original_config_do_not_use).clone();
+            config.model_provider_id = model_provider_id.clone();
+            config.model_provider = provider;
+            next_configuration.original_config_do_not_use = Arc::new(config);
+            next_configuration.provider = create_model_provider(
+                next_configuration
+                    .original_config_do_not_use
+                    .model_provider
+                    .clone(),
+                Some(auth_manager),
+            );
+        }
         let current_file_system_sandbox_policy =
             self.file_system_sandbox_policy(current_environments);
         let file_system_policy_has_rebindable_project_root_write =
@@ -547,6 +576,7 @@ pub(crate) struct SessionSettingsCommit {
 #[derive(Default, Clone)]
 pub(crate) struct SessionSettingsUpdate {
     pub(crate) step_settings: StepSettingsUpdate,
+    pub(crate) model_provider: Option<String>,
     pub(crate) environments: Option<TurnEnvironmentSelections>,
     pub(crate) profile_workspace_roots: Option<Vec<AbsolutePathBuf>>,
     pub(crate) sandbox_policy: Option<SandboxPolicy>,

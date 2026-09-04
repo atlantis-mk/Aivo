@@ -1238,8 +1238,12 @@ async fn interrupted_turn_after_goal_budget_limited_uses_budget_message_snapshot
     chat.handle_server_notification(
         codex_app_server_protocol::ServerNotification::TurnStarted(
             codex_app_server_protocol::TurnStartedNotification {
+                model: None,
+                model_provider: None,
                 thread_id: "thread-1".to_string(),
                 turn: codex_app_server_protocol::Turn {
+                    model: None,
+                    model_provider: None,
                     id: "turn-1".to_string(),
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
                     items: Vec::new(),
@@ -1275,8 +1279,12 @@ async fn interrupted_turn_after_goal_budget_limited_uses_budget_message_snapshot
     chat.handle_server_notification(
         codex_app_server_protocol::ServerNotification::TurnCompleted(
             codex_app_server_protocol::TurnCompletedNotification {
+                model: None,
+                model_provider: None,
                 thread_id: "thread-1".to_string(),
                 turn: codex_app_server_protocol::Turn {
+                    model: None,
+                    model_provider: None,
                     id: "turn-1".to_string(),
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
                     items: Vec::new(),

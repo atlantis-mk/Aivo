@@ -15,8 +15,12 @@ use pretty_assertions::assert_eq;
 
 fn turn_started_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
     ServerNotification::TurnStarted(TurnStartedNotification {
+        model: None,
+        model_provider: None,
         thread_id: thread_id.to_string(),
         turn: Turn {
+            model: None,
+            model_provider: None,
             id: turn_id.to_string(),
             items_view: TurnItemsView::Full,
             items: Vec::new(),

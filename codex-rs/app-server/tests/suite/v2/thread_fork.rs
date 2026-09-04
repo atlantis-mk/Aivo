@@ -1105,6 +1105,8 @@ async fn thread_fork_can_cut_before_unfinished_stored_turn() -> Result<()> {
             trace_id: None,
             started_at: None,
             model_context_window: None,
+            model: None,
+            model_provider: None,
             collaboration_mode_kind: Default::default(),
         })),
     )
@@ -1379,6 +1381,8 @@ async fn thread_fork_creates_reference_backed_paginated_thread() -> Result<()> {
             trace_id: None,
             started_at: Some(10),
             model_context_window: None,
+            model: None,
+            model_provider: None,
             collaboration_mode_kind: Default::default(),
         })),
         RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
@@ -1708,6 +1712,8 @@ async fn assert_thread_fork_freezes_active_paginated_turn_as_interrupted(
             trace_id: None,
             started_at: Some(10),
             model_context_window: None,
+            model: None,
+            model_provider: None,
             collaboration_mode_kind: Default::default(),
         })),
     )

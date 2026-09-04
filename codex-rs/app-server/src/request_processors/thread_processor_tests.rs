@@ -291,6 +291,8 @@ mod thread_processor_behavior_tests {
         ))];
         let active_turn = Turn {
             id: "live-turn".to_string(),
+            model: None,
+            model_provider: None,
             items: vec![ThreadItem::UserMessage {
                 id: "live-user-message".to_string(),
                 client_id: None,
@@ -1196,6 +1198,8 @@ mod thread_processor_behavior_tests {
                     trace_id: None,
                     started_at: None,
                     model_context_window: None,
+                    model: None,
+                    model_provider: None,
                     collaboration_mode_kind: Default::default(),
                 }),
             );

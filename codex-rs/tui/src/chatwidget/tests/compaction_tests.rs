@@ -112,6 +112,8 @@ async fn compaction_status_clears_when_turn_ends_without_item_completion() {
         chat.handle_server_notification(compaction_started("compact-1"), /*replay_kind*/ None);
         chat.handle_server_notification(
             ServerNotification::TurnCompleted(TurnCompletedNotification {
+                model: None,
+                model_provider: None,
                 thread_id: "thread-1".to_string(),
                 turn: app_server_turn(
                     "turn-1", status, /*duration_ms*/ None, /*error*/ None,

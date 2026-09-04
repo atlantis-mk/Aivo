@@ -4,6 +4,7 @@ export type ProviderDialogStep = "options" | "details";
 
 export type CustomProviderProtocol =
   | "openai"
+  | "responses"
   | "openai-compatible"
   | "anthropic"
   | "google"

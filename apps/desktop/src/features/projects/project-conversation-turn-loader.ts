@@ -175,6 +175,8 @@ function codexTurnToConversationTurn(
     assistantPreambles: assistantText.preambles,
     attachments: [],
     id: turn.id,
+    model: turn.model ?? undefined,
+    modelProvider: turn.modelProvider ?? undefined,
     preToolText: assistantText.preambles.map((part) => part.text).join("\n"),
     prompt,
     responseCompletedAt:

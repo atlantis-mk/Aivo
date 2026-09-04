@@ -548,6 +548,9 @@ pub struct ThreadSettingsOverrides {
     /// Updated model slug. When set, the model info is derived automatically.
     pub model: Option<String>,
 
+    /// Updated provider identifier. Resolved against the thread's configured providers.
+    pub model_provider: Option<String>,
+
     /// Updated reasoning effort (honored only for reasoning-capable models).
     ///
     /// Use `Some(Some(_))` to set a specific effort, `Some(None)` to clear the
@@ -2176,6 +2179,12 @@ pub struct TurnStartedEvent {
     pub started_at: Option<i64>,
     // TODO(aibrahim): make this not optional
     pub model_context_window: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model_provider: Option<String>,
     #[serde(default)]
     pub collaboration_mode_kind: ModeKind,
 }

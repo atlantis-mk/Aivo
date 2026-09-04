@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import { useRef, type Dispatch, type SetStateAction } from "react";
 
 import { EventsOn } from "../../../bridge/runtime/runtime";
 import {
@@ -72,6 +72,7 @@ export function useProjectWorkspaceEvents({
   setTodoItems: Dispatch<SetStateAction<TodoItem[]>>;
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
 }) {
+  const codexDeltaTurnIdsRef = useRef(new Set<string>());
   useEffect(() => {
     if (!hasAppBridge()) return;
     return EventsOn("session.updated", (...payloads: unknown[]) => {
@@ -223,18 +224,24 @@ export function useProjectWorkspaceEvents({
       const payload = recordValue(event.params);
       const threadId = stringValue(payload?.threadId);
       const completedTurn = recordValue(payload?.turn);
-      const turnId = stringValue(payload?.turnId) ?? stringValue(completedTurn?.id);
-      if (!threadId || !turnId || threadId !== activeSessionIdRef.current) return;
+      const turnId =
+        stringValue(payload?.turnId) ?? stringValue(completedTurn?.id);
+      if (!threadId || !turnId || threadId !== activeSessionIdRef.current)
+        return;
 
       if (event.method === "item/agentMessage/delta") {
         const delta = stringValue(payload?.delta);
         if (!delta) return;
+        codexDeltaTurnIdsRef.current.add(turnId);
         setTurns((currentTurns) =>
           updateCodexTurn(currentTurns, turnId, (turn) => ({
             ...turn,
             responseText: `${turn.responseText}${delta}`,
             responseVisible: true,
-            thinkingSeconds: Math.max(0, Math.floor((Date.now() - turn.startedAt) / 1000)),
+            thinkingSeconds: Math.max(
+              0,
+              Math.floor((Date.now() - turn.startedAt) / 1000),
+            ),
           })),
         );
         return;
@@ -258,7 +265,34 @@ export function useProjectWorkspaceEvents({
         return;
       }
 
-      if (event.method === "item/started" || event.method === "item/completed") {
+      if (
+        event.method === "item/started" ||
+        event.method === "item/completed"
+      ) {
+        const agentMessageText = agentMessageTextFromItem(payload?.item);
+        if (agentMessageText && !codexDeltaTurnIdsRef.current.has(turnId)) {
+          flushPendingAssistantDelta();
+          setTurns((currentTurns) =>
+            updateCodexTurn(currentTurns, turnId, (turn) => ({
+              ...turn,
+              responseText:
+                turn.responseText &&
+                !agentMessageText.startsWith(turn.responseText)
+                  ? `${turn.responseText}\n\n${agentMessageText}`
+                  : agentMessageText,
+              responseVisible: true,
+              thinkingSeconds: Math.max(
+                0,
+                Math.floor((Date.now() - turn.startedAt) / 1000),
+              ),
+            })),
+          );
+          if (event.method === "item/completed") {
+            codexDeltaTurnIdsRef.current.delete(turnId);
+          }
+          return;
+        }
+
         const toolCall = codexToolCallFromItem({
           item: payload?.item,
           threadId,
@@ -275,7 +309,9 @@ export function useProjectWorkspaceEvents({
             ),
           );
         } else {
-          setTurns((currentTurns) => mergeSingleToolCall(currentTurns, toolCall));
+          setTurns((currentTurns) =>
+            mergeSingleToolCall(currentTurns, toolCall),
+          );
         }
         mergeToolActivityFromCall(toolCall);
         return;
@@ -290,8 +326,15 @@ export function useProjectWorkspaceEvents({
       setTurns((currentTurns) =>
         updateCodexTurn(currentTurns, turnId, (currentTurn) => ({
           ...currentTurn,
+          model: stringValue(completedTurn?.model) || currentTurn.model,
+          modelProvider:
+            stringValue(completedTurn?.modelProvider) ||
+            currentTurn.modelProvider,
           responseCompletedAt: new Date(),
-          responseText: currentTurn.responseText || errorMessage || currentTurn.responseText,
+          responseText:
+            currentTurn.responseText ||
+            errorMessage ||
+            currentTurn.responseText,
           responseVisible: true,
           thinkingSeconds:
             durationMs === null
@@ -344,7 +387,9 @@ function updateCodexTurn(
 ) {
   const targetId =
     turns.find((turn) => turn.turnId === turnId)?.id ??
-    [...turns].reverse().find((turn) => !turn.turnId && !turn.responseCompletedAt)?.id;
+    [...turns]
+      .reverse()
+      .find((turn) => !turn.turnId && !turn.responseCompletedAt)?.id;
   if (!targetId) return turns;
   return turns.map((turn) =>
     turn.id === targetId ? update({ ...turn, turnId }) : turn,
@@ -363,4 +408,11 @@ function stringValue(value: unknown): string | null {
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function agentMessageTextFromItem(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const item = value as Record<string, unknown>;
+  if (item.type !== "agentMessage") return null;
+  return typeof item.text === "string" && item.text.trim() ? item.text : null;
 }

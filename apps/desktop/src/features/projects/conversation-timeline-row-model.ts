@@ -44,7 +44,13 @@ export function constructConversationTimelineRows(
     const hasPreambleText = preambleParts.some((part) => part.text.trim());
 
     if (turn.stopped) {
-      pushTurnActivityRows(rows, turn, hasVisibleToolCalls, preambleParts, toolGroups);
+      pushTurnActivityRows(
+        rows,
+        turn,
+        hasVisibleToolCalls,
+        preambleParts,
+        toolGroups,
+      );
       rows.push({
         key: `stopped:${turn.id}`,
         stoppedSeconds: turn.thinkingSeconds,
@@ -63,7 +69,13 @@ export function constructConversationTimelineRows(
         turn,
         type: "assistant-status",
       });
-      pushTurnActivityRows(rows, turn, hasVisibleToolCalls, preambleParts, toolGroups);
+      pushTurnActivityRows(
+        rows,
+        turn,
+        hasVisibleToolCalls,
+        preambleParts,
+        toolGroups,
+      );
       if (turn.responseText.trim()) {
         rows.push({
           key: `assistant-response:${turn.id}`,
@@ -75,18 +87,25 @@ export function constructConversationTimelineRows(
       return rows;
     }
 
-    pushTurnActivityRows(rows, turn, hasVisibleToolCalls, preambleParts, toolGroups);
     rows.push({
       actionHeading: hasVisibleToolCalls
         ? undefined
         : toolActionHeading(toolGroups),
       isExecuting,
       key: `thinking:${turn.id}`,
+      responseSeconds: turn.thinkingSeconds,
       showSkeleton:
         !turn.activityVisible && !hasPreambleText && !hasVisibleToolCalls,
       turnId: turn.id,
       type: "thinking",
     });
+    pushTurnActivityRows(
+      rows,
+      turn,
+      hasVisibleToolCalls,
+      preambleParts,
+      toolGroups,
+    );
     pushSystemNotes(rows, turn);
     return rows;
   });
@@ -142,7 +161,10 @@ function pushAssistantPreambles(
   }
 }
 
-function pushSystemNotes(rows: ConversationTimelineRow[], turn: ConversationTurn) {
+function pushSystemNotes(
+  rows: ConversationTimelineRow[],
+  turn: ConversationTurn,
+) {
   for (const note of turn.systemNotes ?? []) {
     if (!note.content.trim()) continue;
     rows.push({

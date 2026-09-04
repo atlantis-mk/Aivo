@@ -73,6 +73,8 @@ async fn misalignment_policy_failure_stops_the_thread_and_renders_once() {
 
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id.to_string(),
             turn: app_server_turn(
                 "turn-1",

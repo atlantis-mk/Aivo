@@ -566,6 +566,8 @@ fn out_of_range_truncation_drops_pre_user_active_turn_prefix() {
         RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+            model: None,
+            model_provider: None,
             turn_id: "turn-2".to_string(),
             trace_id: None,
             started_at: None,
@@ -2642,6 +2644,8 @@ async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
             config.clone(),
             InitialHistory::Forked(vec![
                 RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                    model: None,
+                    model_provider: None,
                     turn_id: "turn-explicit".to_string(),
                     trace_id: None,
                     started_at: None,

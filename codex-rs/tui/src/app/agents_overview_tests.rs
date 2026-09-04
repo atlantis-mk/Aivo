@@ -1849,8 +1849,12 @@ async fn resume_picker_round_trip_preserves_each_threads_input() -> Result<()> {
             app.chat_widget.handle_server_notification(
                 ServerNotification::TurnStarted(
                     codex_app_server_protocol::TurnStartedNotification {
+                        model: None,
+                        model_provider: None,
                         thread_id: target.thread_id.to_string(),
                         turn: codex_app_server_protocol::Turn {
+                            model: None,
+                            model_provider: None,
                             id: "turn-with-follow-up".to_string(),
                             items_view: codex_app_server_protocol::TurnItemsView::Full,
                             items: Vec::new(),

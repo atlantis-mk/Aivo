@@ -66,7 +66,11 @@ export function ModelSettingsMenu({
   });
   const groupedModels = groupModelOptionsByProvider(filteredModels);
   const activeModelKey = modelOptionKey(currentProviderId, modelId);
-  const activeModel = modelOptions.find((model) => model.id === modelId);
+  const activeModel =
+    allModelOptions.find(
+      (model) =>
+        modelOptionKey(model.providerId, model.id) === activeModelKey,
+    ) ?? modelOptions.find((model) => model.id === modelId);
 
   return (
     <>

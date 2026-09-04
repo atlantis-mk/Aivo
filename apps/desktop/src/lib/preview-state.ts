@@ -5,6 +5,7 @@ import {
   type CatalogState,
   type ProviderConnectInput,
 } from "@/lib/provider-catalog";
+import { migratePreviewStateStorage } from "@/preview-state-storage";
 
 const PREVIEW_STATE_KEY = "aivo.preview.state";
 const OPENAI_AUTH_ISSUER =
@@ -50,6 +51,7 @@ type PreviewState = {
   config?: PreviewAppConfig;
   auth?: Record<string, PreviewStoredAuth | PreviewStoredAuth[]>;
   pendingAuth?: PreviewPendingAuth | null;
+  storageVersion?: number;
 };
 
 function safeJSONParse<T>(raw: string | null, fallback: T): T {
@@ -63,7 +65,13 @@ function safeJSONParse<T>(raw: string | null, fallback: T): T {
 
 function readPreviewState(): PreviewState {
   if (typeof window === "undefined") return {};
-  return safeJSONParse<PreviewState>(window.localStorage.getItem(PREVIEW_STATE_KEY), {});
+  const state = safeJSONParse<PreviewState>(
+    window.localStorage.getItem(PREVIEW_STATE_KEY),
+    {},
+  );
+  const migrated = migratePreviewStateStorage(state);
+  if (migrated !== state) writePreviewState(migrated);
+  return migrated;
 }
 
 function writePreviewState(nextState: PreviewState) {

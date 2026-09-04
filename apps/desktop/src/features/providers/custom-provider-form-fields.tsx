@@ -21,6 +21,7 @@ const customProviderProtocols: Array<{
   label: string;
 }> = [
   { id: "openai", label: "OpenAI Responses" },
+  { id: "responses", label: "Responses API" },
   { id: "openai-compatible", label: "OpenAI Compatible" },
   { id: "anthropic", label: "Anthropic Messages" },
   { id: "google", label: "Google Gemini" },

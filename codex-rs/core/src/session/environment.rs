@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::MAX_SELECTED_CAPABILITY_ROOTS;
@@ -126,7 +127,11 @@ impl Session {
             });
         }
 
-        current.apply(updates, &current_environments)
+        current.apply(
+            updates,
+            &current_environments,
+            Arc::clone(&self.services.auth_manager),
+        )
     }
 
     pub(crate) async fn environment_ready(

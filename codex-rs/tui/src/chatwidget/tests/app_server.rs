@@ -79,8 +79,12 @@ fn start_safety_buffering_test_turn(
     chat.record_safety_buffering_turn(turn_id.to_string(), &turn);
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id.to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: turn_id.to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -718,8 +722,12 @@ async fn live_app_server_turn_completed_clears_working_status_after_answer_item(
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -765,8 +773,12 @@ async fn live_app_server_turn_completed_clears_working_status_after_answer_item(
 
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Summary,
                 items: vec![item],
@@ -795,8 +807,12 @@ async fn live_app_server_turn_started_sets_feedback_turn_id() {
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -1328,8 +1344,12 @@ async fn live_app_server_failed_turn_does_not_duplicate_error_history() {
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -1363,8 +1383,12 @@ async fn live_app_server_failed_turn_does_not_duplicate_error_history() {
 
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -1452,6 +1476,8 @@ async fn live_app_server_turn_completion_repairs_dropped_message_deltas() {
     }];
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: completed_turn,
         }),
@@ -1487,8 +1513,12 @@ async fn live_app_server_stream_recovery_restores_previous_status_header() {
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -1566,8 +1596,12 @@ async fn live_app_server_server_overloaded_error_renders_warning() {
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
@@ -1609,8 +1643,12 @@ async fn live_app_server_cyber_policy_error_renders_dedicated_notice() {
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: AppServerTurn {
+                model: None,
+                model_provider: None,
                 id: "turn-1".to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),

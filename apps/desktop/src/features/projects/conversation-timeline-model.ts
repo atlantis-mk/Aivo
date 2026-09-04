@@ -6,6 +6,8 @@ export type ConversationTurn = {
   assistantPreambles?: ConversationAssistantTextPart[];
   attachments?: ConversationUserAttachment[];
   id: string;
+  model?: string;
+  modelProvider?: string;
   prompt: string;
   preToolText: string;
   responseText: string;

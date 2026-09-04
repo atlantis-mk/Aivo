@@ -14,11 +14,15 @@ import type { ToolCallGroup } from "@/features/projects/conversation-timeline-to
 export const TimelineToolGroup = memo(function TimelineToolGroup({
   agentRuns,
   group,
+  expanded,
   onOpenSession,
+  onToggle,
 }: {
   agentRuns: AgentRun[];
   group: ToolCallGroup;
+  expanded: boolean;
   onOpenSession?: (sessionId: string) => void;
+  onToggle: () => void;
 }) {
   if (group.kind === "delegate") {
     const delegateCalls = uniqueDelegateToolCalls(group.calls, agentRuns);
@@ -39,27 +43,49 @@ export const TimelineToolGroup = memo(function TimelineToolGroup({
     );
   }
 
-  return <CodexToolActivity groups={[group]} />;
+  return (
+    <CodexToolActivity
+      expanded={expanded}
+      groups={[group]}
+      onToggle={onToggle}
+    />
+  );
 }, areTimelineToolGroupPropsEqual);
 
 export const TimelineToolCluster = memo(function TimelineToolCluster({
   groups,
+  expanded,
+  onToggle,
 }: {
   groups: ToolCallGroup[];
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  return <CodexToolActivity groups={groups} />;
+  return (
+    <CodexToolActivity
+      expanded={expanded}
+      groups={groups}
+      onToggle={onToggle}
+    />
+  );
 }, areTimelineToolClusterPropsEqual);
 
 function areTimelineToolClusterPropsEqual(
   previous: {
     groups: ToolCallGroup[];
+    expanded: boolean;
+    onToggle: () => void;
   },
   next: {
     groups: ToolCallGroup[];
+    expanded: boolean;
+    onToggle: () => void;
   },
 ) {
   return (
     previous.groups.length === next.groups.length &&
+    previous.expanded === next.expanded &&
+    previous.onToggle === next.onToggle &&
     previous.groups.every((group, index) => {
       const nextGroup = next.groups[index];
       return (
@@ -77,20 +103,26 @@ function areTimelineToolGroupPropsEqual(
   previous: {
     agentRuns: AgentRun[];
     group: ToolCallGroup;
+    expanded: boolean;
     onOpenSession?: (sessionId: string) => void;
+    onToggle: () => void;
   },
   next: {
     agentRuns: AgentRun[];
     group: ToolCallGroup;
+    expanded: boolean;
     onOpenSession?: (sessionId: string) => void;
+    onToggle: () => void;
   },
 ) {
   return (
     previous.group.description === next.group.description &&
+    previous.expanded === next.expanded &&
     previous.group.id === next.group.id &&
     previous.group.kind === next.group.kind &&
     previous.group.title === next.group.title &&
     previous.onOpenSession === next.onOpenSession &&
+    previous.onToggle === next.onToggle &&
     (previous.group.kind !== "delegate" ||
       sameAgentRuns(previous.agentRuns, next.agentRuns)) &&
     sameToolCalls(previous.group.calls, next.group.calls)

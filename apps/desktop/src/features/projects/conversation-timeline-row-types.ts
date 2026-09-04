@@ -59,6 +59,7 @@ export type ConversationTimelineRow =
       actionHeading?: string;
       isExecuting: boolean;
       key: string;
+      responseSeconds: number;
       showSkeleton: boolean;
       turnId: string;
     }

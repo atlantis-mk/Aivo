@@ -1,5 +1,6 @@
 export type ProviderProtocol =
   | "openai"
+  | "responses"
   | "openai-compatible"
   | "anthropic"
   | "google"
@@ -16,7 +17,7 @@ export const providerProtocolDefaults: Record<string, ProviderProtocol> = {
   openrouter: "openrouter",
   xai: "openai",
   xiaomi: "openai",
-  "volcengine-agent-plan": "openai",
+  "volcengine-agent-plan": "responses",
   "kimi-for-coding": "anthropic",
   minimax: "anthropic",
   "minimax-cn": "anthropic",

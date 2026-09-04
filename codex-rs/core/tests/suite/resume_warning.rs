@@ -60,6 +60,8 @@ fn resume_history(
         conversation_id: ThreadId::default(),
         history: Arc::new(vec![
             RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: turn_id.clone(),
                 trace_id: None,
                 started_at: None,

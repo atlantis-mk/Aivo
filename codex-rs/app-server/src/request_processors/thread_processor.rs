@@ -5788,6 +5788,8 @@ fn stored_turn_to_api_turn(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Turn {
         id: turn.turn_id,
+        model: None,
+        model_provider: None,
         items,
         items_view,
         status,

@@ -3572,6 +3572,8 @@ async fn cold_paginated_resume_restores_usage_without_loading_turns() -> Result<
             trace_id: None,
             started_at: None,
             model_context_window: None,
+            model: None,
+            model_provider: None,
             collaboration_mode_kind: Default::default(),
         })),
     )
@@ -3683,6 +3685,8 @@ async fn cold_paginated_resume_omits_usage_when_its_turn_is_ambiguous() -> Resul
             trace_id: None,
             started_at: None,
             model_context_window: None,
+            model: None,
+            model_provider: None,
             collaboration_mode_kind: Default::default(),
         })),
     )
@@ -3825,6 +3829,8 @@ async fn thread_resume_token_usage_replay_ignores_stale_interrupted_tail_turn() 
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
+                model: None,
+                model_provider: None,
                 collaboration_mode_kind: Default::default(),
             }))?,
         })
@@ -3913,6 +3919,8 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
+                model: None,
+                model_provider: None,
                 collaboration_mode_kind: Default::default(),
             }))?,
         })
@@ -4224,6 +4232,8 @@ async fn thread_resume_and_read_interrupt_incomplete_rollout_turn_when_thread_is
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
+                model: None,
+                model_provider: None,
                 collaboration_mode_kind: Default::default(),
             }))?,
         })

@@ -759,6 +759,8 @@ fn session_event_to_analytics_notification(
         EventMsg::TurnStarted(started) => {
             ServerNotification::TurnStarted(TurnStartedNotification {
                 thread_id: thread_id.to_string(),
+                model: started.model.clone(),
+                model_provider: started.model_provider.clone(),
                 turn: Turn {
                     started_at: started.started_at,
                     ..analytics_turn(&started.turn_id, TurnStatus::InProgress)
@@ -779,6 +781,8 @@ fn session_event_to_analytics_notification(
             };
             ServerNotification::TurnCompleted(TurnCompletedNotification {
                 thread_id: thread_id.to_string(),
+                model: None,
+                model_provider: None,
                 turn: Turn {
                     error,
                     started_at: completed.started_at,
@@ -791,6 +795,8 @@ fn session_event_to_analytics_notification(
         EventMsg::TurnAborted(aborted) => {
             ServerNotification::TurnCompleted(TurnCompletedNotification {
                 thread_id: thread_id.to_string(),
+                model: None,
+                model_provider: None,
                 turn: Turn {
                     started_at: aborted.started_at,
                     completed_at: aborted.completed_at,
@@ -819,6 +825,8 @@ fn session_event_to_analytics_notification(
 fn analytics_turn(turn_id: &str, status: TurnStatus) -> Turn {
     Turn {
         id: turn_id.to_string(),
+        model: None,
+        model_provider: None,
         items: Vec::new(),
         items_view: TurnItemsView::NotLoaded,
         status,

@@ -12,6 +12,14 @@ export type Turn = {
  */
 id: string,
 /**
+ * Model used for this turn, if known.
+ */
+model: string | null,
+/**
+ * Model provider used for this turn, if known.
+ */
+modelProvider: string | null,
+/**
  * Thread items currently included in this turn payload.
  */
 items: Array<ThreadItem>,

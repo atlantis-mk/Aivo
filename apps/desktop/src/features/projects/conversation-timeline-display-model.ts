@@ -25,16 +25,12 @@ export function formatCompletionTime(date: Date) {
 }
 
 export function formatThinkingTime(totalSeconds: number) {
-  if (totalSeconds < 60) return `${totalSeconds}s`;
+  if (totalSeconds < 60) return `${totalSeconds}秒`;
 
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  return seconds === 0 ? `${minutes}m` : `${minutes}m${seconds}s`;
-}
-
-export function formatPendingAssistantStatus(isExecuting: boolean) {
-  return isExecuting ? "正在执行" : "正在思考";
+  return seconds === 0 ? `${minutes}分钟` : `${minutes}分钟 ${seconds}秒`;
 }
 
 function readableTimelineAttachmentType(mimeType: string) {

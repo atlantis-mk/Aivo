@@ -49,6 +49,8 @@ impl ChatWidget {
                 started_at,
                 completed_at,
                 duration_ms,
+                model: _,
+                model_provider: _,
             } = turn;
             if matches!(status, TurnStatus::InProgress) {
                 self.warning_display_state.startup_complete = true;
@@ -83,8 +85,12 @@ impl ChatWidget {
                 self.handle_turn_completed_notification(
                     TurnCompletedNotification {
                         thread_id: self.thread_id.map(|id| id.to_string()).unwrap_or_default(),
+                        model: None,
+                        model_provider: None,
                         turn: Turn {
                             id: turn_id,
+                            model: None,
+                            model_provider: None,
                             items_view: codex_app_server_protocol::TurnItemsView::NotLoaded,
                             items: Vec::new(),
                             status,

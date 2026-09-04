@@ -105,6 +105,8 @@ async fn misalignment_continuation_requires_current_review_and_submits_once() ->
             vec![
                 error_notification(thread_id, &review.turn_id, withdrawn.clone()),
                 ServerNotification::TurnCompleted(TurnCompletedNotification {
+                    model: None,
+                    model_provider: None,
                     thread_id: thread_id.to_string(),
                     turn: Turn {
                         error: Some(AppServerTurnError {

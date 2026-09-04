@@ -230,6 +230,8 @@ mod tests {
             name: None,
             turns: vec![Turn {
                 id: "turn-1".to_string(),
+                model: None,
+                model_provider: None,
                 items,
                 items_view: TurnItemsView::Full,
                 status: TurnStatus::Completed,

@@ -121,6 +121,7 @@ struct ThreadSettingsBuildParams {
     sandbox_policy: Option<codex_app_server_protocol::SandboxPolicy>,
     permissions: Option<String>,
     model: Option<String>,
+    model_provider: Option<String>,
     service_tier: Option<Option<String>>,
     effort: Option<ReasoningEffort>,
     summary: Option<ReasoningSummary>,
@@ -518,6 +519,8 @@ impl TurnRequestProcessor {
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
     ) -> Result<TurnStartResponse, JSONRPCErrorError> {
+        let requested_model = params.model.clone();
+        let requested_model_provider = params.model_provider.clone();
         let (thread_id, thread) =
             self.load_thread(&params.thread_id)
                 .await
@@ -625,7 +628,8 @@ impl TurnRequestProcessor {
                     approvals_reviewer: params.approvals_reviewer,
                     sandbox_policy: params.sandbox_policy,
                     permissions: params.permissions,
-                    model: params.model,
+                    model: requested_model.clone(),
+                    model_provider: requested_model_provider.clone(),
                     service_tier: params.service_tier,
                     effort: params.effort,
                     summary: params.summary,
@@ -686,6 +690,8 @@ impl TurnRequestProcessor {
             .await;
         let turn = Turn {
             id: turn_id,
+            model: requested_model,
+            model_provider: requested_model_provider,
             items: vec![],
             items_view: TurnItemsView::NotLoaded,
             error: None,
@@ -774,6 +780,7 @@ impl TurnRequestProcessor {
             sandbox_policy,
             permissions,
             model,
+            model_provider,
             service_tier,
             effort,
             summary,
@@ -868,6 +875,7 @@ impl TurnRequestProcessor {
                     approval_policy,
                     approvals_reviewer,
                     sandbox_policy: sandbox_policy.clone(),
+                    model_provider: model_provider.clone(),
                     permission_profile: permission_profile.clone(),
                     active_permission_profile: active_permission_profile.clone(),
                     profile_workspace_roots: profile_workspace_roots.clone(),
@@ -895,6 +903,7 @@ impl TurnRequestProcessor {
             active_permission_profile,
             windows_sandbox_level: None,
             model,
+            model_provider,
             effort,
             summary,
             service_tier,
@@ -931,6 +940,7 @@ impl TurnRequestProcessor {
                     sandbox_policy: params.sandbox_policy,
                     permissions: params.permissions,
                     model: params.model,
+                    model_provider: None,
                     service_tier: params.service_tier,
                     effort: params.effort,
                     summary: params.summary,
@@ -1374,6 +1384,8 @@ impl TurnRequestProcessor {
 
         Turn {
             id: turn_id,
+            model: None,
+            model_provider: None,
             items,
             items_view: TurnItemsView::NotLoaded,
             error: None,

@@ -475,6 +475,8 @@ async fn get_status_returns_not_found_without_manager() {
 #[tokio::test]
 async fn on_event_updates_status_from_task_started() {
     let status = agent_status_from_event(&EventMsg::TurnStarted(TurnStartedEvent {
+        model: None,
+        model_provider: None,
         turn_id: "turn-1".to_string(),
         trace_id: None,
         started_at: None,

@@ -45,9 +45,9 @@ function ShellPreviewEntryView({ entry }: { entry: ShellPreviewEntry }) {
       </ScrollArea>
       <ScrollArea className="aivo-shell-preview-result h-full min-h-0 min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:min-h-0 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">
         <pre className="aivo-shell-preview-content">
-          {entry.stdout ? <span>{entry.stdout.trimEnd()}</span> : null}
+          {entry.stdout ? <span>{entry.stdout.trim()}</span> : null}
           {entry.stderr ? (
-            <span className="text-destructive">{entry.stderr.trimEnd()}</span>
+            <span className="text-destructive">{entry.stderr.trim()}</span>
           ) : null}
           {entry.error && !entry.stderr ? (
             <span className="text-destructive">{entry.error}</span>

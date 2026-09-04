@@ -145,6 +145,8 @@ export function useProjectSubmitPromptAction({
       ...currentTurns,
       {
         id: localTurnId,
+        model: activeModelRef?.modelId,
+        modelProvider: activeModelRef?.providerId,
         activityVisible: false,
         assistantPreambles: [],
         attachments: submittedTimelineAttachments,
@@ -201,6 +203,7 @@ export function useProjectSubmitPromptAction({
         submittedSessionId = threadId;
         const turn = await window.aivoDesktop.codex.startTurn({
           model: activeModelRef?.modelId || activeModelId || undefined,
+          modelProvider: activeModelRef?.providerId || undefined,
           text: nextPrompt,
           threadId,
         });

@@ -6363,6 +6363,8 @@ async fn resizing_empty_transcript_schedules_settled_size_recheck() {
 
 fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
     Turn {
+        model: None,
+        model_provider: None,
         id: turn_id.to_string(),
         items_view: codex_app_server_protocol::TurnItemsView::Full,
         items,
@@ -6376,6 +6378,8 @@ fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn 
 
 fn turn_started_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
     ServerNotification::TurnStarted(TurnStartedNotification {
+        model: None,
+        model_provider: None,
         thread_id: thread_id.to_string(),
         turn: Turn {
             started_at: Some(0),
@@ -6390,6 +6394,8 @@ fn turn_completed_notification(
     status: TurnStatus,
 ) -> ServerNotification {
     ServerNotification::TurnCompleted(TurnCompletedNotification {
+        model: None,
+        model_provider: None,
         thread_id: thread_id.to_string(),
         turn: Turn {
             completed_at: Some(0),
@@ -7395,6 +7401,8 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
     ] {
         for item in [
             RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: turn_id.to_string(),
                 trace_id: None,
                 started_at: None,
@@ -7629,6 +7637,8 @@ async fn replay_thread_snapshot_replays_turn_history_in_order() {
             )),
             turns: vec![
                 Turn {
+                    model: None,
+                    model_provider: None,
                     id: "turn-1".to_string(),
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
                     items: vec![ThreadItem::UserMessage {
@@ -7646,6 +7656,8 @@ async fn replay_thread_snapshot_replays_turn_history_in_order() {
                     duration_ms: None,
                 },
                 Turn {
+                    model: None,
+                    model_provider: None,
                     id: "turn-2".to_string(),
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
                     items: vec![

@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
       ipcRenderer.invoke("thread:start", input),
     startTurn: (input: {
       model?: string;
+      modelProvider?: string;
       text: string;
       threadId: string;
     }): Promise<CodexTurnStart> => ipcRenderer.invoke("turn:start", input),

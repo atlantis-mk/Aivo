@@ -381,6 +381,12 @@ impl<'de> Deserialize<'de> for Thread {
 pub struct Turn {
     /// Identifier for this turn. Codex-generated turn IDs are UUIDv7.
     pub id: String,
+    /// Model used for this turn, if known.
+    #[ts(type = "string | null")]
+    pub model: Option<String>,
+    /// Model provider used for this turn, if known.
+    #[ts(type = "string | null")]
+    pub model_provider: Option<String>,
     /// Thread items currently included in this turn payload.
     pub items: Vec<ThreadItem>,
     /// Describes how much of `items` has been loaded for this turn.

@@ -761,6 +761,13 @@
         "null"
       ]
     },
+    "modelProvider": {
+      "description": "Override the model provider for this turn and subsequent turns.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "outputSchema": {
       "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
     },

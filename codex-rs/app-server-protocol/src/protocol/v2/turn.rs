@@ -213,6 +213,9 @@ pub struct TurnStartParams {
     /// Override the model for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,
+    /// Override the model provider for this turn and subsequent turns.
+    #[ts(optional = nullable)]
+    pub model_provider: Option<String>,
     /// Override the service tier for this turn and subsequent turns.
     #[serde(
         default,
@@ -491,6 +494,10 @@ impl UserInput {
 #[ts(export_to = "v2/")]
 pub struct TurnStartedNotification {
     pub thread_id: String,
+    #[ts(type = "string | null")]
+    pub model: Option<String>,
+    #[ts(type = "string | null")]
+    pub model_provider: Option<String>,
     pub turn: Turn,
 }
 
@@ -508,6 +515,10 @@ pub struct Usage {
 #[ts(export_to = "v2/")]
 pub struct TurnCompletedNotification {
     pub thread_id: String,
+    #[ts(type = "string | null")]
+    pub model: Option<String>,
+    #[ts(type = "string | null")]
+    pub model_provider: Option<String>,
     pub turn: Turn,
 }
 

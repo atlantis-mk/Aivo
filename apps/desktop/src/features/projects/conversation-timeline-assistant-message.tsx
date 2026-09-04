@@ -1,12 +1,9 @@
 import { ChevronRight, RotateCcw, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
-import {
-  formatPendingAssistantStatus,
-  formatThinkingTime,
-} from "@/features/projects/conversation-timeline-display-model";
+import { formatThinkingTime } from "@/features/projects/conversation-timeline-display-model";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import { cn } from "@/lib/utils";
 import { CopyTextButton } from "./conversation-timeline-copy-button";
@@ -27,7 +24,11 @@ export function AssistantPreamble({
   );
 }
 
-export function StoppedResponse({ stoppedSeconds }: { stoppedSeconds: number }) {
+export function StoppedResponse({
+  stoppedSeconds,
+}: {
+  stoppedSeconds: number;
+}) {
   return (
     <AssistantCompletionStatus>
       你在 {formatThinkingTime(stoppedSeconds)} 后停止了
@@ -38,15 +39,20 @@ export function StoppedResponse({ stoppedSeconds }: { stoppedSeconds: number }) 
 export function ThinkingResponse({
   actionHeading,
   isExecuting,
+  responseSeconds,
   showSkeleton,
 }: {
   actionHeading?: string;
   isExecuting: boolean;
+  responseSeconds: number;
   showSkeleton: boolean;
 }) {
   return (
     <div className="animate-in flex min-w-0 max-w-full flex-col items-stretch gap-3 fade-in slide-in-from-bottom-2 duration-300">
-      <ThinkingStatus actionHeading={actionHeading} isExecuting={isExecuting} />
+      <ThinkingStatus
+        actionHeading={actionHeading}
+        responseSeconds={responseSeconds}
+      />
       {showSkeleton ? (
         <div className="flex min-w-0 max-w-full flex-col gap-3.5">
           <div className="h-4 w-full max-w-[540px] rounded-full bg-muted" />
@@ -63,6 +69,8 @@ export function AssistantStatus({
   completed,
   hasToolActivity,
   isExecuting,
+  model,
+  modelProvider,
   responseSeconds,
   turnId,
 }: {
@@ -70,12 +78,17 @@ export function AssistantStatus({
   completed: boolean;
   hasToolActivity: boolean;
   isExecuting: boolean;
+  model?: string;
+  modelProvider?: string;
   responseSeconds: number;
   turnId: string;
 }) {
   if (!completed) {
     return (
-      <ThinkingStatus actionHeading={actionHeading} isExecuting={isExecuting} />
+      <ThinkingStatus
+        actionHeading={actionHeading}
+        responseSeconds={responseSeconds}
+      />
     );
   }
 
@@ -84,7 +97,14 @@ export function AssistantStatus({
       hasToolActivity={hasToolActivity}
       turnId={turnId}
     >
-      用时 {formatThinkingTime(responseSeconds)}
+      <span>
+        用时 {formatThinkingTime(responseSeconds)}
+        {modelProvider || model ? (
+          <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+            {[modelProvider, model].filter(Boolean).join(" · ")}
+          </span>
+        ) : null}
+      </span>
     </AssistantCompletionStatus>
   );
 }
@@ -133,16 +153,17 @@ function AssistantCompletionStatus({
 
 function ThinkingStatus({
   actionHeading,
-  isExecuting,
+  responseSeconds,
 }: {
   actionHeading?: string;
-  isExecuting: boolean;
+  responseSeconds: number;
 }) {
-  const statusText = formatPendingAssistantStatus(isExecuting);
+  const elapsedSeconds = useElapsedSeconds(responseSeconds);
+  const statusText = `已处理 ${formatThinkingTime(elapsedSeconds)}`;
 
   return (
     <div
-      className="animate-in flex min-w-0 flex-col gap-1.5 fade-in slide-in-from-bottom-2 text-sm duration-300"
+      className="aivo-assistant-status animate-in fade-in slide-in-from-bottom-2 duration-300"
       role="status"
     >
       <ShimmerText text={statusText} />
@@ -155,12 +176,26 @@ function ThinkingStatus({
   );
 }
 
+function useElapsedSeconds(responseSeconds: number) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(responseSeconds);
+
+  useEffect(() => {
+    setElapsedSeconds(responseSeconds);
+  }, [responseSeconds]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setElapsedSeconds((seconds) => seconds + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return elapsedSeconds;
+}
+
 function ShimmerText({ text }: { text: string }) {
   return (
-    <span
-      aria-label={text}
-      className="aivo-text-shimmer text-muted-foreground"
-    >
+    <span aria-label={text} className="aivo-text-shimmer text-muted-foreground">
       <span data-slot="text-shimmer-char">
         <span aria-hidden="true" data-slot="text-shimmer-char-base">
           {text}

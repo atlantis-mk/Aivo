@@ -23,24 +23,21 @@ import { ToolCallCommandLine } from "./conversation-timeline-tool-command-line";
 import type { ToolCallGroup } from "./conversation-timeline-tool-types";
 import type { domain } from "../../../bridge/go/models";
 
-export function CodexToolActivity({ groups }: { groups: ToolCallGroup[] }) {
+export function CodexToolActivity({
+  expanded,
+  groups,
+  onToggle,
+}: {
+  expanded: boolean;
+  groups: ToolCallGroup[];
+  onToggle: () => void;
+}) {
   const calls = useMemo(() => groups.flatMap((group) => group.calls), [groups]);
   const isRunning = calls.some((call) => call.status === "running");
   const needsApproval = calls.some(
     (call) => call.status === "pending_approval",
   );
   const hasFailed = calls.some((call) => call.status === "failed");
-  const [expanded, setExpanded] = useState(
-    () => isRunning || needsApproval || hasFailed,
-  );
-  const toggledByUser = useRef(false);
-
-  useEffect(() => {
-    if (!toggledByUser.current && (isRunning || needsApproval || hasFailed)) {
-      setExpanded(true);
-    }
-  }, [hasFailed, isRunning, needsApproval]);
-
   if (calls.length === 0) return null;
 
   const status = hasFailed
@@ -75,8 +72,7 @@ export function CodexToolActivity({ groups }: { groups: ToolCallGroup[] }) {
         aria-expanded={expanded}
         className="aivo-tool-activity-header group/activity-header flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md py-1 text-left text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         onClick={() => {
-          toggledByUser.current = true;
-          setExpanded((current) => !current);
+          onToggle();
         }}
         type="button"
       >
@@ -108,11 +104,11 @@ export function CodexToolActivity({ groups }: { groups: ToolCallGroup[] }) {
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          <ScrollArea className="aivo-tool-activity-items mt-1 max-h-64 w-full min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-64 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">
+          <ScrollArea className="aivo-tool-activity-items mt-1 max-h-64 w-full min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-64 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!pr-3">
             <div className="aivo-tool-activity-items-list flex w-full min-w-0 flex-col">
               {calls.map((call) =>
                 isCommandToolCall(call) ? (
-                <CodexStandaloneToolActivity
+                  <CodexStandaloneToolActivity
                     call={call}
                     key={call.id}
                     status={call.status === "failed" ? "failed" : call.status}
@@ -164,14 +160,14 @@ function CodexToolCallDetail({
   const hasDetails = toolCallHasDetails(call);
   const [detailsOpen, setDetailsOpen] = useState(
     () =>
-      !collapseDetails ||
-      status === "running" ||
-      status === "pending_approval",
+      !collapseDetails || status === "running" || status === "pending_approval",
   );
+  const toggledByUser = useRef(false);
 
   useEffect(() => {
-    if (status === "running" || status === "pending_approval") {
-      setDetailsOpen(true);
+    if (!toggledByUser.current) {
+      const active = status === "running" || status === "pending_approval";
+      setDetailsOpen(active);
     }
   }, [status]);
 
@@ -181,7 +177,10 @@ function CodexToolCallDetail({
         <button
           aria-expanded={detailsOpen}
           className="aivo-tool-call-row flex w-full min-w-0 items-center gap-2 text-left text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-          onClick={() => setDetailsOpen((current) => !current)}
+          onClick={() => {
+            toggledByUser.current = true;
+            setDetailsOpen((current) => !current);
+          }}
           type="button"
         >
           <ToolActivityIcon

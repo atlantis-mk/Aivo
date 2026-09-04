@@ -1099,6 +1099,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                         sandbox_policy: None,
                         permissions: None,
                         model: None,
+                        model_provider: None,
                         service_tier: None,
                         service_tier_for_turn: None,
                         effort: default_effort,
@@ -1136,6 +1137,8 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
             let _ = event_processor.process_server_notification(ServerNotification::TurnStarted(
                 TurnStartedNotification {
                     thread_id: response.review_thread_id.clone(),
+                    model: None,
+                    model_provider: None,
                     turn: response.turn.clone(),
                 },
             ));

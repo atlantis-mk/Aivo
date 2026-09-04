@@ -194,11 +194,15 @@ async fn misalignment_buffered_replay_preserves_input_after_continuation() {
             will_retry: false,
         }),
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id.to_string(),
             turn: failed_turn.clone(),
         }),
         turn_started_notification(thread_id, "continued-turn"),
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id.to_string(),
             turn: continued_turn,
         }),
@@ -262,6 +266,8 @@ async fn misalignment_replay_blocks_when_turn_start_was_evicted() {
         (
             previous_turn,
             ServerNotification::TurnCompleted(TurnCompletedNotification {
+                model: None,
+                model_provider: None,
                 thread_id: thread_id.to_string(),
                 turn: failed_turn.clone(),
             }),

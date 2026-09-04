@@ -1280,6 +1280,7 @@ impl AppServerSession {
                     sandbox_policy,
                     permissions,
                     model: Some(model),
+                    model_provider: None,
                     service_tier,
                     service_tier_for_turn: None,
                     effort,
@@ -3767,6 +3768,8 @@ mod tests {
                 git_info: None,
                 name: None,
                 turns: vec![Turn {
+                    model: None,
+                    model_provider: None,
                     id: "turn-1".to_string(),
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
                     items: vec![

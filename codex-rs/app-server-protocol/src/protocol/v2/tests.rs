@@ -4809,6 +4809,7 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
     let without_override = TurnStartParams {
         thread_id: "thread_123".to_string(),
         client_user_message_id: None,
+        model_provider: None,
         input: vec![],
         turn_trigger: None,
         tool_output: None,
@@ -4835,6 +4836,37 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
     let serialized_without_override =
         serde_json::to_value(&without_override).expect("params should serialize");
     assert_eq!(serialized_without_override.get("serviceTier"), None);
+}
+
+#[test]
+fn turn_start_params_and_turn_source_use_camel_case() {
+    let params: TurnStartParams = serde_json::from_value(json!({
+        "threadId": "thread_123",
+        "input": [],
+        "model": "model-b",
+        "modelProvider": "provider-b"
+    }))
+    .expect("params should deserialize");
+    assert_eq!(params.model.as_deref(), Some("model-b"));
+    assert_eq!(params.model_provider.as_deref(), Some("provider-b"));
+
+    let serialized = serde_json::to_value(&params).expect("params should serialize");
+    assert_eq!(serialized.get("modelProvider"), Some(&json!("provider-b")));
+
+    let turn = Turn {
+        id: "turn_123".to_string(),
+        model: Some("model-b".to_string()),
+        model_provider: Some("provider-b".to_string()),
+        items: Vec::new(),
+        items_view: TurnItemsView::NotLoaded,
+        status: TurnStatus::InProgress,
+        error: None,
+        started_at: None,
+        completed_at: None,
+        duration_ms: None,
+    };
+    let serialized = serde_json::to_value(&turn).expect("turn should serialize");
+    assert_eq!(serialized.get("modelProvider"), Some(&json!("provider-b")));
 }
 
 #[test]

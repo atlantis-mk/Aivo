@@ -802,6 +802,8 @@ pub(super) fn replay_agent_message(
 pub(super) fn replay_turn_started(chat: &mut ChatWidget, replay_kind: ReplayKind) {
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: thread_id(chat),
             turn: app_server_turn(
                 "turn-1",
@@ -1003,6 +1005,8 @@ pub(super) fn app_server_turn(
     error: Option<AppServerTurnError>,
 ) -> AppServerTurn {
     AppServerTurn {
+        model: None,
+        model_provider: None,
         id: turn_id.to_string(),
         items_view: codex_app_server_protocol::TurnItemsView::Full,
         items: Vec::new(),
@@ -1017,6 +1021,8 @@ pub(super) fn app_server_turn(
 pub(super) fn handle_turn_started(chat: &mut ChatWidget, turn_id: &str) {
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
+            model: None,
+            model_provider: None,
             thread_id: chat.thread_id.map(|id| id.to_string()).unwrap_or_default(),
             turn: app_server_turn(
                 turn_id,
@@ -1036,6 +1042,8 @@ pub(super) fn handle_turn_completed(
 ) {
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: chat.thread_id.map(|id| id.to_string()).unwrap_or_default(),
             turn: app_server_turn(
                 turn_id,
@@ -1051,6 +1059,8 @@ pub(super) fn handle_turn_completed(
 pub(super) fn handle_turn_interrupted(chat: &mut ChatWidget, turn_id: &str) {
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: chat.thread_id.map(|id| id.to_string()).unwrap_or_default(),
             turn: app_server_turn(
                 turn_id,

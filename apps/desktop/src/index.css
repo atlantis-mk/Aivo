@@ -654,13 +654,9 @@
   .aivo-codex-tool-activity .aivo-shell-preview {
     display: grid;
     max-height: 14rem;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, auto) auto;
     overflow: hidden;
     padding: 0.5rem 0.625rem;
-  }
-
-  .aivo-codex-tool-activity .aivo-shell-preview[data-has-output="true"] {
-    height: 14rem;
   }
 
   .aivo-codex-tool-activity .aivo-shell-preview-label {
@@ -687,7 +683,15 @@
   }
 
   .aivo-codex-tool-activity .aivo-shell-preview-result {
+    max-height: 7.5rem;
     min-height: 0;
+  }
+
+  .aivo-codex-tool-activity
+    .aivo-shell-preview-result
+    > [data-slot="scroll-area-viewport"] {
+    height: auto;
+    max-height: 7.5rem;
   }
 
   .aivo-codex-tool-activity .aivo-shell-preview-status {

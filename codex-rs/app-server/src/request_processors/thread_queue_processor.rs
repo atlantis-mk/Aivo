@@ -217,6 +217,8 @@ impl ThreadQueueRequestProcessor {
         Ok(ThreadQueueStartResponse {
             turn: Turn {
                 id: turn_id,
+                model: None,
+                model_provider: None,
                 items: vec![],
                 items_view: TurnItemsView::NotLoaded,
                 error: None,

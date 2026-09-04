@@ -82,7 +82,7 @@ function volcengineAgentPlanProvider(): ProviderInfo {
   return {
     id: "volcengine-agent-plan",
     name: "火山方舟 Agent Plan",
-    type: "openai",
+    type: "responses",
     baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
     builtIn: true,
     custom: false,

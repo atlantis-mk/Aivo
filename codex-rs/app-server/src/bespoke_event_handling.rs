@@ -173,6 +173,8 @@ pub(crate) async fn apply_bespoke_event_handling(
                 let state = thread_state.lock().await;
                 let mut turn = state.active_turn_snapshot().unwrap_or_else(|| Turn {
                     id: payload.turn_id.clone(),
+                    model: payload.model.clone(),
+                    model_provider: payload.model_provider.clone(),
                     items: Vec::new(),
                     items_view: TurnItemsView::NotLoaded,
                     error: None,
@@ -182,11 +184,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                     duration_ms: None,
                 });
                 turn.items.clear();
+                turn.model = payload.model.clone();
+                turn.model_provider = payload.model_provider.clone();
                 turn.items_view = TurnItemsView::NotLoaded;
                 turn
             };
             let notification = TurnStartedNotification {
                 thread_id: conversation_id.to_string(),
+                model: payload.model.clone(),
+                model_provider: payload.model_provider.clone(),
                 turn,
             };
             outgoing
@@ -1387,6 +1393,8 @@ struct TurnCompletionMetadata {
     error: Option<TurnError>,
     last_agent_message: Option<ThreadItem>,
     started_at: Option<i64>,
+    model: Option<String>,
+    model_provider: Option<String>,
     completed_at: Option<i64>,
     duration_ms: Option<i64>,
 }
@@ -1403,8 +1411,12 @@ async fn emit_turn_completed_with_status(
     };
     let notification = TurnCompletedNotification {
         thread_id: conversation_id.to_string(),
+        model: turn_completion_metadata.model.clone(),
+        model_provider: turn_completion_metadata.model_provider.clone(),
         turn: Turn {
             id: event_turn_id,
+            model: turn_completion_metadata.model,
+            model_provider: turn_completion_metadata.model_provider,
             items,
             items_view,
             error: turn_completion_metadata.error,
@@ -1590,6 +1602,8 @@ async fn handle_turn_complete(
             error,
             last_agent_message,
             started_at: turn_summary.started_at,
+            model: turn_summary.model,
+            model_provider: turn_summary.model_provider,
             completed_at: turn_complete_event.completed_at,
             duration_ms: turn_complete_event.duration_ms,
         },
@@ -1615,6 +1629,8 @@ async fn handle_turn_interrupted(
             error: None,
             last_agent_message: None,
             started_at: turn_summary.started_at,
+            model: turn_summary.model,
+            model_provider: turn_summary.model_provider,
             completed_at: turn_aborted_event.completed_at,
             duration_ms: turn_aborted_event.duration_ms,
         },
@@ -3258,6 +3274,8 @@ mod tests {
                     trace_id: None,
                     started_at: Some(42),
                     model_context_window: None,
+                    model: None,
+                    model_provider: None,
                     collaboration_mode_kind: Default::default(),
                 }),
             );
@@ -3293,6 +3311,8 @@ mod tests {
                     trace_id: None,
                     started_at: Some(42),
                     model_context_window: None,
+                    model: None,
+                    model_provider: None,
                     collaboration_mode_kind: Default::default(),
                 }),
             },
@@ -3569,6 +3589,8 @@ mod tests {
                     trace_id: None,
                     started_at: Some(42),
                     model_context_window: None,
+                    model: None,
+                    model_provider: None,
                     collaboration_mode_kind: Default::default(),
                 }),
             );

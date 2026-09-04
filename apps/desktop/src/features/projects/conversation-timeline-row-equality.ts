@@ -64,6 +64,8 @@ export function sameTimelineRow(
         previous.turnId === (next as typeof previous).turnId &&
         previous.actionHeading === (next as typeof previous).actionHeading &&
         previous.isExecuting === (next as typeof previous).isExecuting &&
+        previous.responseSeconds ===
+          (next as typeof previous).responseSeconds &&
         previous.showSkeleton === (next as typeof previous).showSkeleton
       );
     case "stopped":

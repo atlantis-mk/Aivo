@@ -99,6 +99,8 @@ async fn timeline_pages_mix_items_and_resolve_the_opening_realtime_session() -> 
                     trace_id: None,
                     started_at: Some(10),
                     model_context_window: None,
+                    model: None,
+                    model_provider: None,
                     collaboration_mode_kind: Default::default(),
                 })),
                 RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {

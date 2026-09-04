@@ -666,8 +666,12 @@ mod tests {
 
     fn turn_completed(turn_id: &str) -> ServerNotification {
         ServerNotification::TurnCompleted(TurnCompletedNotification {
+            model: None,
+            model_provider: None,
             thread_id: "thread-1".to_string(),
             turn: Turn {
+                model: None,
+                model_provider: None,
                 id: turn_id.to_string(),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),

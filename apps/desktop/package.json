@@ -20,6 +20,7 @@
     "package:mac": "pnpm build && pnpm build:runtime && electron-builder --mac --publish never",
     "package:win": "pnpm build && pnpm build:runtime && electron-builder --win --publish never",
     "package:linux": "pnpm build && pnpm build:runtime && electron-builder --linux --publish never",
+    "test": "node --experimental-strip-types --test src/*.test.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

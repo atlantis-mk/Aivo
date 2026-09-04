@@ -48,6 +48,7 @@ use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use codex_http_client::RouteAwareClientPool;
+use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::create_model_provider;
@@ -221,6 +222,28 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration as StdDuration;
+
+trait ApplySessionConfigurationForTests {
+    fn apply_for_tests(
+        &self,
+        updates: &SessionSettingsUpdate,
+        environments: &[TurnEnvironmentSelection],
+    ) -> ConstraintResult<SessionConfiguration>;
+}
+
+impl ApplySessionConfigurationForTests for SessionConfiguration {
+    fn apply_for_tests(
+        &self,
+        updates: &SessionSettingsUpdate,
+        environments: &[TurnEnvironmentSelection],
+    ) -> ConstraintResult<SessionConfiguration> {
+        self.apply(
+            updates,
+            environments,
+            AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test")),
+        )
+    }
+}
 
 pub(crate) fn mcp_config_for_test(config: &crate::config::Config) -> Arc<codex_mcp::McpConfig> {
     Arc::new(config.to_mcp_config_with_loaded_plugins(
@@ -3798,6 +3821,8 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
     let rollout_items = vec![
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: turn_id.clone(),
                 trace_id: None,
                 started_at: None,
@@ -4005,6 +4030,8 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
     sess.persist_rollout_items(&[
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: first_turn_id.clone(),
                 trace_id: None,
                 started_at: None,
@@ -4036,6 +4063,8 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
         })),
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: rolled_back_turn_id.clone(),
                 trace_id: None,
                 started_at: None,
@@ -4129,6 +4158,8 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
     sess.persist_rollout_items(&[
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: first_turn_id.clone(),
                 trace_id: None,
                 started_at: None,
@@ -4158,6 +4189,8 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
         })),
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: compact_turn_id.clone(),
                 trace_id: None,
                 started_at: None,
@@ -4195,6 +4228,8 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
         })),
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: rolled_back_turn_id.clone(),
                 trace_id: None,
                 started_at: None,
@@ -4278,6 +4313,8 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
     sess.persist_rollout_items(&[
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: "turn-1".to_string(),
                 trace_id: None,
                 started_at: None,
@@ -4307,6 +4344,8 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
         })),
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: "turn-2".to_string(),
                 trace_id: None,
                 started_at: None,
@@ -4336,6 +4375,8 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
         })),
         RolloutItem::EventMsg(EventMsg::TurnStarted(
             codex_protocol::protocol::TurnStartedEvent {
+                model: None,
+                model_provider: None,
                 turn_id: "turn-3".to_string(),
                 trace_id: None,
                 started_at: None,
@@ -5167,7 +5208,7 @@ async fn session_settings_null_service_tier_update_uses_default_service_tier() {
     let session_configuration = make_session_configuration_for_tests().await;
 
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 step_settings: StepSettingsUpdate {
                     service_tier: Some(None),
@@ -5190,7 +5231,7 @@ async fn session_settings_legacy_fast_service_tier_update_uses_priority_request_
     let session_configuration = make_session_configuration_for_tests().await;
 
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 step_settings: StepSettingsUpdate {
                     service_tier: Some(Some("fast".to_string())),
@@ -5449,7 +5490,7 @@ async fn session_configuration_apply_client_metadata_preserves_permissions() {
         .expect("set custom permission profile");
     let expected = configuration.thread_settings_snapshot(&[]);
     let updated = configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 app_server_client_name: Some("codex-tui".to_string()),
                 app_server_client_version: Some("1.0.0".to_string()),
@@ -5515,7 +5556,7 @@ async fn session_configuration_apply_preserves_profile_file_system_policy_on_cwd
         file_system_sandbox_policy.materialize_project_roots_with_workspace_roots(&[]);
 
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 environments: Some(TurnEnvironmentSelections::new(project_root, Vec::new())),
                 ..Default::default()
@@ -5570,7 +5611,7 @@ async fn session_configuration_apply_permission_profile_preserves_existing_deny_
         NetworkSandboxPolicy::Restricted,
     );
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 permission_profile: Some(permission_profile),
                 ..Default::default()
@@ -5614,7 +5655,7 @@ async fn session_configuration_apply_permission_profile_accepts_direct_write_roo
     );
 
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 permission_profile: Some(permission_profile.clone()),
                 ..Default::default()
@@ -5729,7 +5770,7 @@ async fn active_profile_update_rebuilds_network_proxy_config() -> std::io::Resul
     session_configuration.original_config_do_not_use = Arc::clone(&locked_config);
 
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 permission_profile: Some(selected_config.permissions.permission_profile().clone()),
                 active_permission_profile: selected_config.permissions.active_permission_profile(),
@@ -5878,7 +5919,7 @@ async fn session_configuration_apply_preserves_absolute_cwd_write_root_on_cwd_up
         .expect("set permission profile");
 
     let updated = session_configuration
-        .apply(
+        .apply_for_tests(
             &SessionSettingsUpdate {
                 environments: Some(TurnEnvironmentSelections::new(next_cwd.clone(), Vec::new())),
                 ..Default::default()
