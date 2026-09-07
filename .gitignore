@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+/build/
+out/
+
+# Editor and system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs and caches
+*.log
+.cache/
+.eslintcache
+.ruff_cache/
+.turbo/
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example

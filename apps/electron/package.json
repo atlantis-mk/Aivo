@@ -1,0 +1,129 @@
+{
+  "name": "@aivo/electron",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Aivo Electron client for the local Codex app-server runtime.",
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm dev:main\" \"pnpm dev:preload\" \"pnpm dev:renderer\" \"pnpm dev:electron\"",
+    "predev": "pnpm build:runtime:debug",
+    "dev:main": "vite build --watch --config vite.main.config.ts",
+    "dev:preload": "vite build --watch --config vite.preload.config.ts",
+    "dev:renderer": "vite --host 127.0.0.1 --config vite.renderer.config.ts",
+    "dev:electron": "wait-on http-get://127.0.0.1:5173 file:dist/main/main.cjs file:dist/preload/preload.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build": "vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.renderer.config.ts",
+    "build:runtime": "node ./scripts/build-runtime.mjs --release --fast-release",
+    "build:runtime:full": "node ./scripts/build-runtime.mjs --release",
+    "build:runtime:debug": "node ./scripts/build-runtime.mjs --host-only",
+    "package": "pnpm build && pnpm build:runtime && electron-builder --publish never",
+    "package:mac": "pnpm build && pnpm build:runtime && electron-builder --mac --publish never",
+    "package:win": "pnpm build && pnpm build:runtime && electron-builder --win --publish never",
+    "package:linux": "pnpm build && pnpm build:runtime && electron-builder --linux --publish never",
+    "test": "node --experimental-strip-types --import ./scripts/node-test-register.mjs --test \"src/**/*.test.ts\"",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/router-plugin": "^1.168.35",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.3",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^41.10.7",
+    "electron-builder": "^26.15.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "wait-on": "^9.1.0"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@hugeicons/core-free-icons": "^4.3.0",
+    "@hugeicons/react": "^1.1.10",
+    "@shadcn/react": "^0.3.0",
+    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/code": "^1.1.1",
+    "@streamdown/math": "^1.0.2",
+    "@streamdown/mermaid": "^1.0.2",
+    "@tanstack/react-router": "^1.170.32",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "date-fns": "^4.4.0",
+    "echarts": "^6.1.0",
+    "embla-carousel-react": "^8.6.0",
+    "input-otp": "^1.5.0",
+    "katex": "^0.18.4",
+    "lucide-react": "^1.34.0",
+    "next-themes": "^0.4.6",
+    "radix-ui": "^1.6.7",
+    "react": "^19.2.8",
+    "react-day-picker": "^10.0.1",
+    "react-dom": "^19.2.8",
+    "react-resizable-panels": "^4.12.3",
+    "recharts": "^3.10.1",
+    "shadcn": "^4.19.0",
+    "sonner": "^2.0.8",
+    "streamdown": "^2.6.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3",
+    "tw-animate-css": "^1.4.0",
+    "vaul": "^1.1.2",
+    "zustand": "^5.0.15"
+  },
+  "build": {
+    "appId": "dev.aivo.desktop",
+    "productName": "Aivo",
+    "executableName": "aivo",
+    "asar": true,
+    "directories": {
+      "output": "../../build/desktop"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+      "from": "../../../vendor/codex/codex-rs/target/release/codex",
+        "to": "bin/codex"
+      },
+      {
+      "from": "../../../vendor/codex/codex-rs/target/release/codex-code-mode-host",
+        "to": "bin/codex-code-mode-host"
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "gatekeeperAssess": false,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage"
+      ]
+    }
+  }
+}

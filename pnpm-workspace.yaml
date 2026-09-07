@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+ignoredBuiltDependencies:
+  - esbuild
+  - electron-winstaller
+
+allowBuilds:
+  electron@41.10.7: true
+
+strictDepBuilds: false
