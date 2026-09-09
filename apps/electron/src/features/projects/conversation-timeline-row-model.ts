@@ -41,6 +41,9 @@ export function constructConversationTimelineRows(
     );
     const hasVisibleToolCalls = toolGroups.length > 0;
     const isExecuting = hasVisibleToolCalls || turn.activityVisible;
+    const actionHeading = turn.responseCompletedAt
+      ? undefined
+      : toolActionHeading(toolGroups);
     const hasPreambleText = preambleParts.some((part) => part.text.trim());
     const hasAssistantContent =
       Boolean(turn.responseText.trim()) ||
@@ -49,6 +52,7 @@ export function constructConversationTimelineRows(
 
     if (turn.steered) {
       rows.push({
+        actionHeading,
         hasToolActivity: hasVisibleToolCalls,
         isExecuting,
         key: `assistant-status:${turn.id}`,
@@ -98,25 +102,34 @@ export function constructConversationTimelineRows(
     }
 
     if (turn.stopped) {
-      pushTurnActivityRows(
-        rows,
-        turn,
-        hasVisibleToolCalls,
-        preambleParts,
-        toolGroups,
-      );
       rows.push({
         key: `stopped:${turn.id}`,
         stoppedSeconds: turn.thinkingSeconds,
         turnId: turn.id,
         type: "stopped",
       });
+      pushTurnActivityRows(
+        rows,
+        turn,
+        hasVisibleToolCalls,
+        preambleParts,
+        toolGroups,
+        { defaultCollapsed: true, isCompleted: false },
+      );
+      if (turn.responseText.trim()) {
+        rows.push({
+          key: `assistant-response:${turn.id}`,
+          turn,
+          type: "assistant-response",
+        });
+      }
       pushSystemNotes(rows, turn);
       return rows;
     }
 
     if (turn.responseVisible || turn.responseText.trim()) {
       rows.push({
+        actionHeading,
         hasToolActivity: hasVisibleToolCalls,
         isExecuting,
         key: `assistant-status:${turn.id}`,
@@ -142,9 +155,7 @@ export function constructConversationTimelineRows(
     }
 
     rows.push({
-      actionHeading: hasVisibleToolCalls
-        ? undefined
-        : toolActionHeading(toolGroups),
+      actionHeading,
       isExecuting,
       key: `thinking:${turn.id}`,
       responseSeconds: turn.thinkingSeconds,
@@ -171,12 +182,13 @@ function pushTurnActivityRows(
   hasVisibleToolCalls: boolean,
   preambleParts: ConversationAssistantTextPart[],
   toolGroups: ToolCallGroup[],
+  options?: ToolActivityOptions,
 ) {
   if (!hasVisibleToolCalls) {
     pushAssistantPreambles(rows, turn, preambleParts);
     return;
   }
-  pushToolActivityRows(rows, turn, toolGroups);
+  pushToolActivityRows(rows, turn, toolGroups, options);
 }
 
 function assistantPreambleParts(
@@ -232,12 +244,17 @@ function pushToolActivityRows(
   rows: ConversationTimelineRow[],
   turn: ConversationTurn,
   toolGroups: ToolCallGroup[],
+  {
+    defaultCollapsed = false,
+    isCompleted = Boolean(turn.responseCompletedAt),
+  }: ToolActivityOptions = {},
 ) {
   for (const group of toolGroups) {
     const description = group.description?.trim() ?? "";
     if (description) {
       rows.push({
         hideWhenToolsCollapsed: true,
+        isCompleted,
         key: `assistant-preamble:${turn.id}:${group.id}`,
         text: description,
         turnId: turn.id,
@@ -246,11 +263,17 @@ function pushToolActivityRows(
     }
 
     rows.push({
+      defaultCollapsed,
       group,
-      isCompleted: Boolean(turn.responseCompletedAt),
+      isCompleted,
       key: `tool-group:${turn.id}:${group.id}`,
       turnId: turn.id,
       type: "tool-group",
     });
   }
 }
+
+type ToolActivityOptions = {
+  defaultCollapsed?: boolean;
+  isCompleted?: boolean;
+};

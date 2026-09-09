@@ -43,6 +43,7 @@ export type ProjectWorkspaceMainContentProps = {
   hasPendingInteractionRequest: boolean;
   hasPendingQuestionRequest: boolean;
   hasPendingTurn: boolean;
+  hasPausedTurn: boolean;
   hasTurns: boolean;
   isComposerDropActive: boolean;
   isRevealingHistoryConversation: boolean;
@@ -80,7 +81,7 @@ export type ProjectWorkspaceMainContentProps = {
   onScrollToBottom: () => void;
   onServiceTierSelect: (serviceTier: string) => void;
   onSteerQueuedPrompt: (id: string) => void;
-  onSubmit: () => void;
+  onSubmit: (promptOverride?: string) => void;
   pendingQuestionRequest?: QuestionRequest;
   permissionMode: PermissionMode;
   project: domain.AssistantProject | null;

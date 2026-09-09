@@ -6,6 +6,7 @@ import {
   type ConversationAssistantTextPart,
   type ConversationTurn,
   type ConversationUserAttachment,
+  type ConversationUserPaste,
 } from "@/features/projects/conversation-timeline-model";
 import {
   applyPendingTurnMetadata,
@@ -155,10 +156,15 @@ function codexTurnToConversationTurn(
 ): ConversationTurn {
   const startedAt = turn.startedAt ? Date.parse(turn.startedAt) : Date.now();
   const completedAt = turn.completedAt ? new Date(turn.completedAt) : null;
-  const prompt = turn.items
+  const userMessage = userMessageContentFromItems(
+    turn.items
+      .filter(isCodexItemType("userMessage"))
+      .map((item) => item.content),
+    turn.id,
+  );
+  const attachments = turn.items
     .filter(isCodexItemType("userMessage"))
-    .flatMap((item) => textFromUserMessage(item.content))
-    .join("\n");
+    .flatMap((item) => imageAttachmentsFromUserMessage(item.content, turn.id));
   const assistantText = splitCodexAssistantText(turn.items);
   const toolCalls = turn.items.flatMap((item) => {
     const toolCall = codexToolCallFromItem({
@@ -174,12 +180,13 @@ function codexTurnToConversationTurn(
   return {
     activityVisible: turn.status === "inProgress" || toolCalls.length > 0,
     assistantPreambles: assistantText.preambles,
-    attachments: [],
+    attachments,
     id: turn.id,
     model: turn.model ?? undefined,
     modelProvider: turn.modelProvider ?? undefined,
     preToolText: assistantText.preambles.map((part) => part.text).join("\n"),
-    prompt,
+    pastes: userMessage.pastes,
+    prompt: userMessage.prompt,
     responseCompletedAt:
       completedAt ?? (turn.status === "inProgress" ? null : new Date(startedAt)),
     responseText: assistantText.responseText || turn.error || "",
@@ -277,16 +284,130 @@ function isCodexItemType(type: string) {
     (item as Record<string, unknown>).type === type;
 }
 
-function textFromUserMessage(content: unknown): string[] {
-  if (!Array.isArray(content)) return [];
-  return content.flatMap((item) =>
-    typeof item === "object" && item !== null &&
-    (item as Record<string, unknown>).type === "text"
-      ? textArrayFromString((item as Record<string, unknown>).text)
-      : [],
-  );
+function userMessageContentFromItems(contents: unknown[], turnId: string) {
+  const prompts: string[] = [];
+  const pastes: ConversationUserPaste[] = [];
+
+  for (const content of contents) {
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      if (typeof item !== "object" || item === null) continue;
+      const record = item as Record<string, unknown>;
+      if (record.type !== "text" || typeof record.text !== "string") continue;
+      const parsed = textAndPastesFromUserMessage(
+        record.text,
+        record.textElements ?? record.text_elements,
+        turnId,
+        pastes.length,
+      );
+      if (parsed.prompt) prompts.push(parsed.prompt);
+      pastes.push(...parsed.pastes);
+    }
+  }
+
+  return { pastes, prompt: prompts.join("\n") };
 }
 
-function textArrayFromString(value: unknown): string[] {
-  return typeof value === "string" ? [value] : [];
+function textAndPastesFromUserMessage(
+  text: string,
+  rawElements: unknown,
+  turnId: string,
+  pasteOffset: number,
+) {
+  const elements = textElementsFromUnknown(rawElements, text);
+  if (elements.length === 0) return { pastes: [], prompt: text };
+
+  let cursor = 0;
+  const promptParts: string[] = [];
+  const pastes: ConversationUserPaste[] = [];
+  for (const element of elements) {
+    const start = codeUnitOffsetForUtf8Byte(text, element.start);
+    const end = codeUnitOffsetForUtf8Byte(text, element.end);
+    if (start === null || end === null || start < cursor || start >= end) continue;
+    promptParts.push(text.slice(cursor, start));
+    const pastedText = text.slice(start, end);
+    const name = element.placeholder || "粘贴内容";
+    pastes.push({
+      id: `codex-paste:${turnId}:${pasteOffset + pastes.length + 1}`,
+      name,
+      preview: pastedText.trim().split("\n").find(Boolean)?.trim() || name,
+      text: pastedText,
+    });
+    cursor = end;
+  }
+  if (pastes.length === 0) return { pastes: [], prompt: text };
+  promptParts.push(text.slice(cursor));
+  return { pastes, prompt: promptParts.join("").trim() };
+}
+
+function textElementsFromUnknown(rawElements: unknown, text: string) {
+  if (!Array.isArray(rawElements)) return [];
+  return rawElements.flatMap((rawElement) => {
+    if (typeof rawElement !== "object" || rawElement === null) return [];
+    const element = rawElement as Record<string, unknown>;
+    const range = element.byteRange ?? element.byte_range;
+    if (typeof range !== "object" || range === null) return [];
+    const { start, end } = range as Record<string, unknown>;
+    if (
+      typeof start !== "number" ||
+      typeof end !== "number" ||
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      end > utf8ByteLength(text) ||
+      start >= end
+    ) {
+      return [];
+    }
+    return [{
+      end,
+      placeholder: typeof element.placeholder === "string" ? element.placeholder : "",
+      start,
+    }];
+  }).sort((a, b) => a.start - b.start);
+}
+
+function codeUnitOffsetForUtf8Byte(text: string, byteOffset: number) {
+  if (byteOffset === 0) return 0;
+  let bytes = 0;
+  for (let index = 0; index < text.length;) {
+    const codePoint = text.codePointAt(index)!;
+    const nextIndex = index + (codePoint > 0xffff ? 2 : 1);
+    bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+    if (bytes === byteOffset) return nextIndex;
+    if (bytes > byteOffset) return null;
+    index = nextIndex;
+  }
+  return bytes === byteOffset ? text.length : null;
+}
+
+function utf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
+function imageAttachmentsFromUserMessage(
+  content: unknown,
+  turnId: string,
+): ConversationUserAttachment[] {
+  if (!Array.isArray(content)) return [];
+  let imageIndex = 0;
+  return content.flatMap((item) => {
+    if (typeof item !== "object" || item === null) return [];
+    const record = item as Record<string, unknown>;
+    if (record.type !== "image" || typeof record.url !== "string") return [];
+    const mimeType = mimeTypeFromDataUrl(record.url);
+    if (!mimeType) return [];
+    imageIndex += 1;
+    return [{
+      id: `codex-image:${turnId}:${imageIndex}`,
+      kind: "image" as const,
+      mimeType,
+      name: `图片 ${imageIndex}`,
+      previewUrl: record.url,
+    }];
+  });
+}
+
+function mimeTypeFromDataUrl(url: string) {
+  return /^data:([^;,]+);base64,/i.exec(url)?.[1] ?? null;
 }

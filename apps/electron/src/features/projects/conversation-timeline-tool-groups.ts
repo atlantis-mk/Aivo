@@ -21,7 +21,14 @@ export function toolActionHeading(toolGroups: ToolCallGroup[]) {
           call.status === "running" || call.status === "pending_approval",
       ),
     ) ?? toolGroups.at(-1);
-  return activeGroup?.title;
+  if (!activeGroup) return undefined;
+  if (activeGroup.calls.some((call) => call.status === "pending_approval")) {
+    return activeGroup.title;
+  }
+  if (activeGroup.calls.some((call) => call.status === "running")) {
+    return activeGroup.title.replace(/^已/, "正在");
+  }
+  return activeGroup.title;
 }
 
 export function groupToolCalls(

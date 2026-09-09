@@ -14,15 +14,16 @@ export type ComposerAttachment = {
   name: string;
   mimeType: string;
   size: number;
-  kind: "image" | "file";
+  kind: "image" | "file" | "directory";
   data: string;
+  path?: string;
   text?: string;
   previewUrl?: string;
 };
 
 export type ComposerAttachmentInput = FileList | File[] | Extract<
   ComposerLocalSelection,
-  { kind: "file" }
+  { kind: "file" | "directory" }
 > | null;
 
 export function routeComposerLocalSelections(
@@ -195,6 +196,7 @@ export function modelSupportsAttachment(
   mimeType: string,
   name = "",
 ) {
+  if (kind === "directory") return true;
   if (kind === "file" && isTextComposerAttachment(mimeType, name)) {
     return true;
   }
@@ -230,6 +232,7 @@ export function attachmentKindLabel(
   mimeType: string,
 ) {
   if (kind === "image") return "图片输入";
+  if (kind === "directory") return "目录引用";
   if (mimeType === "application/pdf") return "PDF 文件输入";
   return "文件输入";
 }
@@ -244,17 +247,24 @@ export function composerAttachmentToConversationAttachment(
     kind: attachment.kind,
     previewUrl: attachment.previewUrl,
     size: attachment.size,
+    path: attachment.path,
   };
 }
 
 export function formatAttachmentMeta(attachment: ComposerAttachment) {
-  const type = attachment.kind === "image" ? "图片" : readableAttachmentType(attachment.mimeType);
+  const type =
+    attachment.kind === "image"
+      ? "图片"
+      : attachment.kind === "directory"
+        ? "目录"
+        : readableAttachmentType(attachment.mimeType);
   return `${type} · ${formatBytes(attachment.size)}`;
 }
 
 export function attachmentFileTypeLabel(
-  attachment: Pick<ComposerAttachment, "mimeType" | "name">,
+  attachment: Pick<ComposerAttachment, "kind" | "mimeType" | "name">,
 ) {
+  if (attachment.kind === "directory") return "FOLDER";
   const extension = attachment.name.match(/\.([^.]+)$/)?.[1]?.trim();
   if (extension && extension.length <= 10) return extension.toUpperCase();
   if (attachment.mimeType === "application/pdf") return "PDF";
@@ -264,9 +274,49 @@ export function attachmentFileTypeLabel(
 }
 
 export function formatAttachmentOnlyPrompt(attachments: ComposerAttachment[]) {
+  if (
+    attachments.length > 0 &&
+    attachments.every((attachment) => attachment.kind === "directory")
+  ) {
+    if (attachments.length === 1) return `目录：${attachments[0].name}`;
+    return `目录：${attachments.length} 个文件夹`;
+  }
   if (attachments.length === 0) return "附件";
   if (attachments.length === 1) return `附件：${attachments[0].name}`;
   return `附件：${attachments.length} 个文件`;
+}
+
+export function promptWithTextAttachments(
+  prompt: string,
+  attachments: ComposerAttachment[],
+) {
+  const directoryAttachments = attachments.filter(
+    (attachment): attachment is ComposerAttachment & { path: string } =>
+      attachment.kind === "directory" && typeof attachment.path === "string",
+  );
+  const directoryContent = directoryAttachments.map((attachment) =>
+    `请将以下文件夹作为可访问的目录引用，不要修改会话工作区：${attachment.path}`,
+  );
+  const textAttachments = attachments.filter(
+    (attachment): attachment is ComposerAttachment & { text: string } =>
+      attachment.kind === "file" && typeof attachment.text === "string",
+  );
+  if (textAttachments.length === 0) {
+    if (directoryContent.length === 0) return prompt;
+    return [prompt, ...directoryContent].filter(Boolean).join("\n\n");
+  }
+
+  const attachmentContent = textAttachments.map((attachment) =>
+    [
+      `以下是附件「${attachment.name}」的内容：`,
+      "```text",
+      attachment.text,
+      "```",
+    ].join("\n"),
+  );
+  return [prompt, ...attachmentContent, ...directoryContent]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function readFileAsBase64(file: File) {

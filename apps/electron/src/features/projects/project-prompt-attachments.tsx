@@ -1,4 +1,8 @@
-import { Cancel01Icon, File02Icon } from "@hugeicons/core-free-icons";
+import {
+  Cancel01Icon,
+  File02Icon,
+  Folder01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Image } from "lucide-react";
 
@@ -25,7 +29,7 @@ export function ComposerAttachmentList({
   if (attachments.length === 0) return null;
 
   return (
-    <AttachmentGroup className="gap-2">
+    <AttachmentGroup className="gap-2 py-0 pb-2">
       {attachments.map((attachment) =>
         attachment.kind === "image" ? (
           <Attachment
@@ -53,28 +57,33 @@ export function ComposerAttachmentList({
           </Attachment>
         ) : (
           <Attachment
-            className="h-14 w-56 max-w-[calc(100vw-3.5rem)] flex-nowrap gap-3 rounded-xl bg-background/70 p-2"
+            className="h-10 w-40 max-w-[calc(100vw-3.5rem)] flex-nowrap gap-2 rounded-lg bg-background p-1.5"
             key={attachment.id}
             orientation="horizontal"
             size="sm"
           >
             <AttachmentMedia
-              className="size-10 rounded-lg bg-muted/80 text-muted-foreground"
+              className="size-7 rounded-lg bg-muted/60 text-foreground"
               variant="icon"
             >
-              <HugeiconsIcon icon={File02Icon} strokeWidth={2} />
+              <HugeiconsIcon
+                className="size-4"
+                icon={attachment.kind === "directory" ? Folder01Icon : File02Icon}
+                strokeWidth={2}
+              />
             </AttachmentMedia>
-            <AttachmentContent className="min-w-0 overflow-hidden py-0.5">
-              <AttachmentTitle className="w-full text-sm leading-5">
+            <AttachmentContent className="min-w-0 overflow-hidden py-0.5 pr-4">
+              <AttachmentTitle className="w-full text-[13px] font-medium leading-[18px]">
                 {attachment.name}
               </AttachmentTitle>
-              <AttachmentDescription className="mt-0.5 text-xs font-medium uppercase tracking-wide">
+              <AttachmentDescription className="mt-px text-[10px] font-medium uppercase tracking-wide">
                 {attachmentFileTypeLabel(attachment)}
               </AttachmentDescription>
             </AttachmentContent>
             <AttachmentRemoveAction
               name={attachment.name}
               onClick={() => onRemoveAttachment(attachment.id)}
+              overlay
             />
           </Attachment>
         ),
@@ -96,7 +105,7 @@ function AttachmentRemoveAction({
     <AttachmentActions
       className={cn(
         overlay
-          ? "absolute right-1 top-1"
+          ? "absolute right-0.5 top-0.5"
           : "relative -mr-0.5 -mt-0.5 self-start",
       )}
     >

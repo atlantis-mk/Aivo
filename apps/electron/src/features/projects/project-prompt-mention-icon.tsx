@@ -1,5 +1,6 @@
 import {
   Folder01Icon,
+  Message01Icon,
   PackageOpenIcon,
   PuzzleIcon,
   ServerStack01Icon,
@@ -19,6 +20,8 @@ export function PromptMentionIcon({
 }) {
   const icon = kind === "project"
     ? Folder01Icon
+    : kind === "conversation"
+      ? Message01Icon
     : kind === "skill"
       ? PuzzleIcon
       : kind === "extension"

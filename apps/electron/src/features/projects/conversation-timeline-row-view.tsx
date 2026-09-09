@@ -50,6 +50,7 @@ export const ConversationTimelineRowView = memo(
         return (
           <TimelineAssistantPreambleRow
             hideWhenToolsCollapsed={row.hideWhenToolsCollapsed}
+            isCompleted={row.isCompleted}
             text={row.text}
             turnId={row.turnId}
             workspaceRoot={workspaceRoot}
@@ -59,6 +60,7 @@ export const ConversationTimelineRowView = memo(
         return (
           <TimelineToolGroupRow
             agentRuns={agentRuns}
+            defaultCollapsed={row.defaultCollapsed}
             group={row.group}
             isCompleted={row.isCompleted}
             onOpenSession={onOpenSession}
@@ -68,6 +70,7 @@ export const ConversationTimelineRowView = memo(
       case "tool-cluster":
         return (
           <TimelineToolClusterRow
+            defaultCollapsed={row.defaultCollapsed}
             groups={row.groups}
             isCompleted={row.isCompleted}
             turnId={row.turnId}
@@ -77,7 +80,7 @@ export const ConversationTimelineRowView = memo(
         return (
           <TimelineRowFrame role="assistant" turnId={row.turn.id}>
             <AssistantStatus
-              actionHeading={undefined}
+              actionHeading={row.actionHeading}
               completed={Boolean(row.turn.responseCompletedAt)}
               hasToolActivity={row.hasToolActivity}
               isExecuting={row.isExecuting}
@@ -130,17 +133,19 @@ export const ConversationTimelineRowView = memo(
 
 function TimelineAssistantPreambleRow({
   hideWhenToolsCollapsed = false,
+  isCompleted = false,
   text,
   turnId,
   workspaceRoot,
 }: {
   hideWhenToolsCollapsed?: boolean;
+  isCompleted?: boolean;
   text: string;
   turnId: string;
   workspaceRoot: string;
 }) {
   const { expanded: userExpanded } = useToolTurnExpansion(turnId);
-  const statusOpen = userExpanded ?? true;
+  const statusOpen = userExpanded ?? !isCompleted;
   const expanded = statusOpen;
   if (hideWhenToolsCollapsed || !statusOpen) {
     return (
@@ -160,12 +165,14 @@ function TimelineAssistantPreambleRow({
 
 function TimelineToolGroupRow({
   agentRuns,
+  defaultCollapsed = false,
   group,
   isCompleted,
   onOpenSession,
   turnId,
 }: {
   agentRuns: AgentRun[];
+  defaultCollapsed?: boolean;
   group: Extract<ConversationTimelineRow, { type: "tool-group" }>["group"];
   isCompleted: boolean;
   onOpenSession?: (sessionId: string) => void;
@@ -173,7 +180,7 @@ function TimelineToolGroupRow({
 }) {
   const { expanded: statusExpanded } = useToolTurnExpansion(turnId);
   const { expanded, toggle } = useToolGroupExpansion(turnId, group.id);
-  const statusOpen = statusExpanded ?? true;
+  const statusOpen = statusExpanded ?? !isCompleted;
   const groupOpen = expanded ?? false;
   return (
     <AnimatedDisclosure open={statusOpen}>
@@ -184,6 +191,7 @@ function TimelineToolGroupRow({
           group={group}
           onOpenSession={onOpenSession}
           onToggle={() => toggle(groupOpen)}
+          showSummaryWhenCollapsed={defaultCollapsed}
         />
       </TimelineRowFrame>
     </AnimatedDisclosure>
@@ -191,10 +199,12 @@ function TimelineToolGroupRow({
 }
 
 function TimelineToolClusterRow({
+  defaultCollapsed = false,
   groups,
   isCompleted,
   turnId,
 }: {
+  defaultCollapsed?: boolean;
   groups: Extract<ConversationTimelineRow, { type: "tool-cluster" }>["groups"];
   isCompleted: boolean;
   turnId: string;
@@ -204,7 +214,7 @@ function TimelineToolClusterRow({
     turnId,
     groups[0]?.id ?? turnId,
   );
-  const statusOpen = statusExpanded ?? true;
+  const statusOpen = statusExpanded ?? !isCompleted;
   const groupOpen = expanded ?? false;
   return (
     <AnimatedDisclosure open={statusOpen}>
@@ -213,6 +223,7 @@ function TimelineToolClusterRow({
           expanded={groupOpen}
           groups={groups}
           onToggle={() => toggle(groupOpen)}
+          showSummaryWhenCollapsed={defaultCollapsed}
         />
       </TimelineRowFrame>
     </AnimatedDisclosure>

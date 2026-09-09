@@ -1,7 +1,7 @@
 import { domain } from "@/types/codex-domain";
 
-export async function listCodexSessions(limit: number): Promise<domain.Session[]> {
-  const threads = await window.aivoDesktop.codex.listThreads(limit);
+export async function listCodexSessions(limit: number, searchTerm?: string): Promise<domain.Session[]> {
+  const threads = await window.aivoDesktop.codex.listThreads(limit, searchTerm);
   return threads.map((thread) => new domain.Session({
     id: thread.id,
     type: "coding",

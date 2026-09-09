@@ -28,14 +28,19 @@ export function ProjectConversationHistoryList({
   onArchiveConversation,
   onSelectConversation,
   runningConversationIds,
+  unreadConversationIds,
+  onClearConversationUnread,
 }: {
   activeConversationId: string;
   conversations: domain.Session[];
   onArchiveConversation: (sessionId: string) => void;
   onSelectConversation: (session: domain.Session) => void;
   runningConversationIds: string[];
+  unreadConversationIds: string[];
+  onClearConversationUnread: (sessionId: string) => void;
 }) {
   const runningConversationIdSet = new Set(runningConversationIds);
+  const unreadConversationIdSet = new Set(unreadConversationIds);
   const orderedConversations = Array.from(
     new Map(conversations.map((conversation) => [conversation.id, conversation])).values(),
   ).sort(
@@ -87,15 +92,26 @@ export function ProjectConversationHistoryList({
             >
               <button
                 className="flex min-w-0 flex-1 rounded-md px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                onClick={() => onSelectConversation(conversation)}
+                onClick={() => {
+                  onClearConversationUnread(conversation.id);
+                  onSelectConversation(conversation);
+                }}
                 type="button"
               >
                 <ItemContent className="min-w-0 max-w-full">
                   <ItemTitle className="w-full min-w-0 max-w-full">
-                    <AnimatedTitle
-                      className="min-w-0"
-                      value={conversation.title}
-                    />
+                    <span className="flex min-w-0 items-center gap-2">
+                      {unreadConversationIdSet.has(conversation.id) ? (
+                        <span
+                          aria-hidden="true"
+                          className="size-1.5 shrink-0 rounded-full bg-blue-500"
+                        />
+                      ) : null}
+                      <AnimatedTitle
+                        className="min-w-0"
+                        value={conversation.title}
+                      />
+                    </span>
                   </ItemTitle>
                   <ItemDescription className="flex w-full items-center gap-3">
                     {projectName ? (

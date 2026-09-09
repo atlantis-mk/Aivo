@@ -17,12 +17,16 @@ export function sameTimelineRow(
       return (
         previous.hideWhenToolsCollapsed ===
           (next as typeof previous).hideWhenToolsCollapsed &&
+        previous.isCompleted === (next as typeof previous).isCompleted &&
         previous.turnId === (next as typeof previous).turnId &&
         previous.text === (next as typeof previous).text
       );
     case "tool-group": {
       const nextGroup = (next as typeof previous).group;
       return (
+        previous.defaultCollapsed ===
+          (next as typeof previous).defaultCollapsed &&
+        previous.isCompleted === (next as typeof previous).isCompleted &&
         previous.turnId === (next as typeof previous).turnId &&
         previous.group.description === nextGroup.description &&
         previous.group.id === nextGroup.id &&
@@ -34,6 +38,9 @@ export function sameTimelineRow(
     case "tool-cluster": {
       const nextGroups = (next as typeof previous).groups;
       return (
+        previous.defaultCollapsed ===
+          (next as typeof previous).defaultCollapsed &&
+        previous.isCompleted === (next as typeof previous).isCompleted &&
         previous.turnId === (next as typeof previous).turnId &&
         previous.groups.length === nextGroups.length &&
         previous.groups.every((group, index) => {
@@ -52,6 +59,7 @@ export function sameTimelineRow(
     case "assistant-status":
       return (
         previous.turn === (next as typeof previous).turn &&
+        previous.actionHeading === (next as typeof previous).actionHeading &&
         previous.isExecuting === (next as typeof previous).isExecuting
       );
     case "assistant-response":

@@ -62,6 +62,7 @@ export function ProjectWorkspaceComposerFrame({
   onSteerQueuedPrompt,
   onSubmit,
   pending,
+  hasPausedTurn,
   pendingPromptPastes,
   permissionMode,
   prompt,
@@ -114,8 +115,9 @@ export function ProjectWorkspaceComposerFrame({
   onScrollToBottom: () => void;
   onServiceTierSelect: (serviceTier: string) => void;
   onSteerQueuedPrompt: (id: string) => void;
-  onSubmit: () => void;
   pending: boolean;
+  onSubmit: (promptOverride?: string) => void;
+  hasPausedTurn: boolean;
   pendingPromptPastes: PromptComposerProps["pendingPromptPastes"];
   permissionMode: PermissionMode;
   prompt: string;
@@ -171,6 +173,7 @@ export function ProjectWorkspaceComposerFrame({
           onPromptPasteRemove={onPromptPasteRemove}
           onSubmit={onSubmit}
           pending={pending}
+          hasPausedTurn={hasPausedTurn}
           pendingPromptPastes={pendingPromptPastes}
           prompt={prompt}
           queuedPrompts={queuedPrompts}

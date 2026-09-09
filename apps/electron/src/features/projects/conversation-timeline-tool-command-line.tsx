@@ -187,7 +187,7 @@ export function ToolCallCommandLine({
   return (
     <div
       className={cn(
-        "aivo-tool-call-details my-0 flex min-w-0 flex-col overflow-hidden rounded-md border border-border/70 bg-muted/35 text-card-foreground",
+        "aivo-tool-call-details my-0 flex min-w-0 flex-col overflow-hidden rounded-md bg-muted/35 text-card-foreground",
         compact && "aivo-tool-call-details--compact",
       )}
       data-assistant-hover-ignore="true"

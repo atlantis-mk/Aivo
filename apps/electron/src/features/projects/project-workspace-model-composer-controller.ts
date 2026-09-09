@@ -18,6 +18,8 @@ import {
   type PromptMentionReference,
 } from "@/features/projects/project-prompt-mention-model";
 import { useProjectSubmitPromptAction } from "@/features/projects/project-submit-prompt-action";
+import { parsePromptSubmission } from "@/features/projects/project-prompt-editor-model";
+import { codexResourceInputs } from "@/codex-composer-resources";
 import {
   createPromptPaste,
   type PendingPromptPaste,
@@ -31,6 +33,7 @@ import type { domain } from "@/types/codex-domain";
 export type QueuedPrompt = {
   id: string;
   text: string;
+  references?: PromptMentionReference[];
 };
 
 export function useProjectWorkspaceModelComposerController({
@@ -140,10 +143,10 @@ export function useProjectWorkspaceModelComposerController({
     );
   }, []);
 
-  const queuePrompt = useCallback((text: string) => {
+  const queuePrompt = useCallback((text: string, references: PromptMentionReference[] = []) => {
     setQueuedPrompts((currentPrompts) => [
       ...currentPrompts,
-      { id: crypto.randomUUID(), text },
+      { id: crypto.randomUUID(), text, references },
     ]);
   }, []);
   const selectPromptMention = useCallback(
@@ -250,7 +253,7 @@ export function useProjectWorkspaceModelComposerController({
 
     dispatchingQueuedPromptRef.current = true;
     setQueuedPrompts((currentPrompts) => currentPrompts.slice(1));
-    void submitPromptRef.current(queuedPrompt.text).finally(() => {
+    void submitPromptRef.current(queuedPrompt.text, queuedPrompt.references).finally(() => {
       dispatchingQueuedPromptRef.current = false;
     });
   }, [hasPendingTurn, queuedPrompts]);
@@ -297,7 +300,7 @@ export function useProjectWorkspaceModelComposerController({
           activityVisible: false,
           assistantPreambles: [],
           attachments: [],
-          prompt: queuedPrompt.text,
+          prompt: parsePromptSubmission(queuedPrompt.text, queuedPrompt.references ?? []).text,
           preToolText: "",
           responseText: "",
           responseCompletedAt: null,
@@ -314,9 +317,10 @@ export function useProjectWorkspaceModelComposerController({
 
       try {
         await window.aivoDesktop.codex.steerTurn({
+          resourceInputs: codexResourceInputs(parsePromptSubmission(queuedPrompt.text, queuedPrompt.references ?? []).references),
           clientUserMessageId: localTurnId,
           expectedTurnId: activeTurn.turnId,
-          text: queuedPrompt.text,
+          text: parsePromptSubmission(queuedPrompt.text, queuedPrompt.references ?? []).text,
           threadId: activeSessionId,
         });
       } catch (error) {

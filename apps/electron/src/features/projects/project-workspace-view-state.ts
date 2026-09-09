@@ -13,6 +13,7 @@ export function getProjectConversationViewState({
     hasPendingTurn: turns.some(
       (turn) => !turn.responseCompletedAt && !turn.stopped,
     ),
+    hasPausedTurn: lastTurn?.stopped === true,
     hasTurns,
     lastTurnStateKey: lastTurn ? buildConversationTurnStateKey(turns) : "empty",
     showConversationLayout: hasTurns || isOpeningConversationFromEmpty,

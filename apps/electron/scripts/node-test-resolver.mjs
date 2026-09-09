@@ -4,11 +4,16 @@ export async function resolve(specifier, context, nextResolve) {
   if (!isAlias && !isRelative) {
     return nextResolve(specifier, context);
   }
+  // Dependencies resolve their own .js/.mjs files; only application source
+  // imports participate in the extensionless TypeScript mapping.
+  if (!isAlias && context.parentURL?.includes("/node_modules/")) {
+    return nextResolve(specifier, context);
+  }
 
   const sourceUrl = isAlias
     ? new URL(`../src/${specifier.slice(2)}`, import.meta.url)
     : new URL(specifier, context.parentURL);
-  if (!sourceUrl.pathname.endsWith(".ts")) {
+  if (!/\.[cm]?[jt]sx?$/.test(sourceUrl.pathname)) {
     sourceUrl.pathname += ".ts";
   }
   return nextResolve(sourceUrl.href, context);

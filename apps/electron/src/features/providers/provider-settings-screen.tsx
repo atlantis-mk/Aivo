@@ -249,12 +249,12 @@ export function ProviderSettingsScreen() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-aivo-8 px-aivo-4 py-aivo-6 sm:px-aivo-8 sm:py-aivo-8">
-        <header className="flex flex-col gap-aivo-2">
-          <h1 className="aivo-type-title-1 font-semibold text-foreground">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-6 sm:px-8 sm:py-8">
+        <header className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             模型提供商
           </h1>
-          <p className="aivo-type-body max-w-2xl text-muted-foreground">
+          <p className="max-w-2xl text-sm text-muted-foreground">
             查看已经配置的 Provider，或使用与初始化相同的流程连接新的服务。
           </p>
         </header>
@@ -268,16 +268,16 @@ export function ProviderSettingsScreen() {
 
         <section
           aria-labelledby="model-runtime-preferences-heading"
-          className="flex flex-col gap-aivo-4"
+          className="flex flex-col gap-4"
         >
-          <div className="flex flex-col gap-aivo-1">
+          <div className="flex flex-col gap-1">
             <h2
-              className="aivo-type-title-3 font-semibold text-foreground"
+              className="text-base font-semibold text-foreground"
               id="model-runtime-preferences-heading"
             >
               模型运行偏好
             </h2>
-            <p className="aivo-type-footnote text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               这些默认值会随模型请求一起发送，Provider 或模型不支持时由 Core 跳过。
             </p>
           </div>
@@ -289,7 +289,7 @@ export function ProviderSettingsScreen() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col gap-aivo-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">
                     搜索模式
@@ -323,16 +323,16 @@ export function ProviderSettingsScreen() {
           </Card>
         </section>
 
-        <section aria-labelledby="configured-providers-heading" className="flex flex-col gap-aivo-4">
-          <div className="flex items-end justify-between gap-aivo-3">
-            <div className="flex flex-col gap-aivo-1">
+        <section aria-labelledby="configured-providers-heading" className="flex flex-col gap-4">
+          <div className="flex items-end justify-between gap-3">
+            <div className="flex flex-col gap-1">
               <h2
-                className="aivo-type-title-3 font-semibold text-foreground"
+                className="text-base font-semibold text-foreground"
                 id="configured-providers-heading"
               >
                 已配置
               </h2>
-              <p className="aivo-type-footnote text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 配置与凭据由本地 Core 管理。
               </p>
             </div>
@@ -344,7 +344,7 @@ export function ProviderSettingsScreen() {
           {loading ? (
             <ProviderSettingsSkeleton />
           ) : providers.length > 0 ? (
-            <div className="grid grid-cols-1 gap-aivo-3 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               {providers.map((provider) => (
                 <ProviderSettingsCard
                   deleting={deletingProviderId === provider.id}
@@ -379,16 +379,16 @@ export function ProviderSettingsScreen() {
           )}
         </section>
 
-        <section aria-labelledby="add-provider-heading" className="flex flex-col gap-aivo-4 pb-aivo-6">
-          <div className="flex flex-col gap-aivo-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex flex-col gap-aivo-1">
+        <section aria-labelledby="add-provider-heading" className="flex flex-col gap-4 pb-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-1">
               <h2
-                className="aivo-type-title-3 font-semibold text-foreground"
+                className="text-base font-semibold text-foreground"
                 id="add-provider-heading"
               >
                 添加 Provider
               </h2>
-              <p className="aivo-type-footnote text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 API Key 只在连接请求中临时使用，不会写入渲染器存储。
               </p>
             </div>
@@ -480,7 +480,7 @@ function ProviderSettingsCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex min-w-0 items-center gap-aivo-3">
+        <div className="flex min-w-0 items-center gap-3">
           <ProviderIcon provider={providerChoiceFor(provider)} size="sm" />
           <div className="min-w-0">
             <CardTitle className="truncate">{provider.name}</CardTitle>
@@ -494,7 +494,7 @@ function ProviderSettingsCard({
         </CardAction>
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-aivo-4 gap-y-aivo-2">
+        <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2">
           <dt className="text-muted-foreground">默认模型</dt>
           <dd className="max-w-52 truncate text-right text-foreground">
             {providerModelLabel(provider)}
@@ -509,7 +509,7 @@ function ProviderSettingsCard({
           </dd>
         </dl>
       </CardContent>
-      <CardFooter className="justify-end gap-aivo-2 border-t">
+      <CardFooter className="justify-end gap-2 border-t">
         <Button
           disabled={disabled}
           onClick={onRefresh}
@@ -563,7 +563,7 @@ function ProviderSettingsCard({
 
 function ProviderSettingsSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-aivo-3 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {[0, 1].map((index) => (
         <Card aria-hidden="true" key={index}>
           <CardHeader>
@@ -572,7 +572,7 @@ function ProviderSettingsSkeleton() {
               <Skeleton className="h-4 w-24" />
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-aivo-2">
+          <CardContent className="flex flex-col gap-2">
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-4/5" />
           </CardContent>
@@ -586,10 +586,15 @@ function ProviderSettingsSkeleton() {
 }
 
 function providerChoiceFor(provider: ProviderInfo): ProviderChoice {
+  const candidates = [...providerChoices, ...otherProviderChoices];
+  const iconProviderId =
+    provider.id === "volcengine-agent-plan" ||
+    provider.id === "volcengine-coding-plan"
+      ? "volcengine"
+      : provider.id;
+
   return (
-    [...providerChoices, ...otherProviderChoices].find(
-      (candidate) => candidate.id === provider.id,
-    ) ?? {
+    candidates.find((candidate) => candidate.id === iconProviderId) ?? {
       id: provider.id,
       name: provider.name,
       custom: provider.custom,

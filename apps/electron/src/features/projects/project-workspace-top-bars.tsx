@@ -125,7 +125,10 @@ export function ProjectTopBar({
         <div
           className={cn(
             "pointer-events-none relative z-10 flex min-w-0 max-w-[min(52vw,620px)] items-center gap-aivo-1",
-            isSidebarCollapsed ? collapsedTitleMargin : "translate-x-64",
+            // The application sidebar already occupies its own column. Keep
+            // the conversation title aligned to the content edge instead of
+            // applying a second sidebar-width offset.
+            isSidebarCollapsed ? collapsedTitleMargin : "ml-3",
           )}
           data-app-drag
         >

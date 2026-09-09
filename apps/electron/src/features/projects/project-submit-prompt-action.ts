@@ -11,16 +11,19 @@ import {
   composerAttachmentToConversationAttachment,
   formatAttachmentOnlyPrompt,
   modelSupportsAttachment,
+  promptWithTextAttachments,
   type ComposerAttachment,
 } from "@/features/projects/project-composer-attachments";
 import { providerSupportsServiceTier } from "@/features/projects/project-model-options";
 import {
-  activePromptMentionReferences,
   type PromptMentionReference,
 } from "@/features/projects/project-prompt-mention-model";
+import { parsePromptSubmission } from "@/features/projects/project-prompt-editor-model";
+import { codexResourceInputs } from "@/codex-composer-resources";
 import {
   expandPromptPastes,
-  promptWithPasteSummaries,
+  promptPasteTextElements,
+  promptPasteTitle,
   type PendingPromptPaste,
 } from "@/features/projects/project-prompt-paste";
 import { consumePendingToolActivation } from "@/features/projects/project-tool-activation-scope";
@@ -37,7 +40,6 @@ import {
   parseCommandArgumentLine,
   listSessions,
   setSessionAgentMode,
-  setSessionActiveTools,
   submitSessionMessage,
   type AgentModeId,
 } from "@/services/aivo";
@@ -93,7 +95,7 @@ export function useProjectSubmitPromptAction({
   pendingStopRequestedRef: { current: boolean };
   permissionModeRef: { current: PermissionMode };
   prompt: string;
-  queuePrompt: (text: string) => void;
+  queuePrompt: (text: string, references?: PromptMentionReference[]) => void;
   promptResourceReferences: PromptMentionReference[];
   pendingPromptPastes: PendingPromptPaste[];
   reasoningEffort: string;
@@ -113,18 +115,21 @@ export function useProjectSubmitPromptAction({
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
   turns: ConversationTurn[];
 }) {
-  async function submitPrompt(promptOverride?: string) {
+  async function submitPrompt(promptOverride?: string, referencesOverride?: PromptMentionReference[]) {
+    const draft = promptOverride ?? prompt;
+    const submitted = parsePromptSubmission(draft.trim(), referencesOverride ?? promptResourceReferences);
     const nextPrompt =
-      promptOverride ?? expandPromptPastes(prompt, pendingPromptPastes).trim();
-    if (!nextPrompt && composerAttachments.length === 0) {
+      pendingPromptPastes.length > 0
+        ? expandPromptPastes(submitted.text, pendingPromptPastes)
+        : submitted.text;
+    if (!nextPrompt.trim() && composerAttachments.length === 0) {
       return;
     }
     const activeModel = modelOptions.find(
       (model) => model.id === activeModelId,
     );
-    const submittedResourceReferences = activePromptMentionReferences(
-      promptResourceReferences,
-    );
+    const submittedResourceReferences = submitted.references;
+    const resourceInputs = codexResourceInputs(submittedResourceReferences);
     const submittedProjectPath =
       submittedResourceReferences.find(
         (reference) => reference.kind === "project",
@@ -145,22 +150,52 @@ export function useProjectSubmitPromptAction({
       );
       return;
     }
-    if (hasCodexDesktopBridge() && composerAttachments.length > 0) {
-      toast.error("当前 Codex 桌面对话暂不支持发送附件。");
+    const unsupportedDesktopAttachment = hasCodexDesktopBridge()
+      ? composerAttachments.find(
+          (attachment) =>
+            attachment.kind !== "image" &&
+            attachment.kind !== "directory" &&
+            typeof attachment.text !== "string",
+        )
+      : undefined;
+    if (unsupportedDesktopAttachment) {
+      toast.error(
+        `当前 Codex 桌面对话支持图片和文本文件：${unsupportedDesktopAttachment.name} 无法发送。`,
+      );
       return;
     }
     const localTurnId = crypto.randomUUID();
     const startedAt = Date.now();
     const submittedAttachments = composerAttachments;
+    const submittedPastes = pendingPromptPastes.map((paste) => ({
+      id: paste.id,
+      name: promptPasteTitle(paste),
+      preview: paste.text.trim().split("\n").find(Boolean)?.trim() || promptPasteTitle(paste),
+      text: paste.text,
+    }));
+    const transportPrompt = hasCodexDesktopBridge()
+      ? promptWithTextAttachments(nextPrompt, submittedAttachments)
+      : nextPrompt;
+    const textElements =
+      hasCodexDesktopBridge()
+        ? promptPasteTextElements(submitted.text, pendingPromptPastes)
+        : [];
     const submittedTimelineAttachments = submittedAttachments.map(
       composerAttachmentToConversationAttachment,
     );
     const displayPrompt =
-      (promptOverride ??
-        promptWithPasteSummaries(prompt, pendingPromptPastes)) ||
+      submitted.text ||
       formatAttachmentOnlyPrompt(submittedAttachments);
     if (hasPendingTurn) {
-      queuePrompt(displayPrompt);
+      queuePrompt(
+        promptWithTextAttachments(
+          expandPromptPastes(draft, pendingPromptPastes),
+          composerAttachments.filter(
+            (attachment) => attachment.kind === "directory",
+          ),
+        ),
+        submittedResourceReferences,
+      );
       setPrompt("");
       setPromptResourceReferences([]);
       setPendingPromptPastes([]);
@@ -176,6 +211,7 @@ export function useProjectSubmitPromptAction({
         activityVisible: false,
         assistantPreambles: [],
         attachments: submittedTimelineAttachments,
+        pastes: submittedPastes,
         prompt: displayPrompt,
         preToolText: "",
         responseText: "",
@@ -253,14 +289,19 @@ export function useProjectSubmitPromptAction({
         );
       }
       submittedSessionId = threadId;
+      setConversationRunning(threadId, true);
       const turn = await window.aivoDesktop.codex.startTurn({
+        resourceInputs,
+        images: submittedAttachments
+          .filter((attachment) => attachment.kind === "image")
+          .map(({ data, mimeType }) => ({ data, mimeType })),
         model: activeModelRef?.modelId || activeModelId || undefined,
         modelProvider: activeModelRef?.providerId || undefined,
         permissionMode: permissionModeRef.current,
-        text: nextPrompt,
+        text: transportPrompt,
+        textElements,
         threadId,
       });
-      setConversationRunning(threadId, true);
       setTurns((currentTurns) =>
         currentTurns.map((currentTurn) =>
           currentTurn.id === localTurnId
@@ -275,6 +316,13 @@ export function useProjectSubmitPromptAction({
         ...current,
       ]);
       setConversationRunning(submittedSessionId, false);
+      setSessions((currentSessions) =>
+        currentSessions.map((session) =>
+          session.id === submittedSessionId
+            ? domain.Session.createFrom({ ...session, status: "failed" })
+            : session,
+        ),
+      );
       setTurns((currentTurns) =>
         currentTurns.map((turn) =>
           turn.id === localTurnId

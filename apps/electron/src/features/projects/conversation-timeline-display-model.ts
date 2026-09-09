@@ -5,13 +5,9 @@ export const COLLAPSED_USER_MESSAGE_HEIGHT = 420;
 export function formatTimelineAttachmentMeta(
   attachment: ConversationUserAttachment,
 ) {
-  const type =
-    attachment.kind === "image"
-      ? "图片"
-      : readableTimelineAttachmentType(attachment.mimeType);
-  return attachment.size === undefined
-    ? type
-    : `${type} · ${formatTimelineBytes(attachment.size)}`;
+  if (attachment.kind === "image") return "图片";
+  if (attachment.kind === "directory") return "文件夹";
+  return readableTimelineAttachmentType(attachment);
 }
 
 export function shouldShowUserMessageDisclosure(contentHeight: number | null) {
@@ -33,17 +29,15 @@ export function formatThinkingTime(totalSeconds: number) {
   return seconds === 0 ? `${minutes}分钟` : `${minutes}分钟 ${seconds}秒`;
 }
 
-function readableTimelineAttachmentType(mimeType: string) {
-  if (mimeType === "application/pdf") return "PDF";
-  if (mimeType.startsWith("text/")) return "文本";
-  if (mimeType.includes("json")) return "JSON";
-  if (mimeType.includes("csv")) return "CSV";
-  if (mimeType === "application/octet-stream") return "文件";
-  return mimeType.split("/").at(-1)?.toUpperCase() || "文件";
-}
-
-function formatTimelineBytes(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+function readableTimelineAttachmentType(
+  attachment: ConversationUserAttachment,
+) {
+  const extension = attachment.name.match(/\.([^.]+)$/)?.[1]?.trim();
+  if (extension && extension.length <= 10) return extension.toUpperCase();
+  if (attachment.mimeType === "application/pdf") return "PDF";
+  if (attachment.mimeType.startsWith("text/")) return "文本";
+  if (attachment.mimeType.includes("json")) return "JSON";
+  if (attachment.mimeType.includes("csv")) return "CSV";
+  if (attachment.mimeType === "application/octet-stream") return "文件";
+  return attachment.mimeType.split("/").at(-1)?.toUpperCase() || "文件";
 }

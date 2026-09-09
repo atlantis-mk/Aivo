@@ -17,12 +17,14 @@ export type ConversationTimelineRow =
     }
   | {
       hideWhenToolsCollapsed?: boolean;
+      isCompleted?: boolean;
       type: "assistant-preamble";
       key: string;
       text: string;
       turnId: string;
     }
   | {
+      defaultCollapsed?: boolean;
       type: "tool-group";
       key: string;
       group: ToolCallGroup;
@@ -30,6 +32,7 @@ export type ConversationTimelineRow =
       turnId: string;
     }
   | {
+      defaultCollapsed?: boolean;
       type: "tool-cluster";
       key: string;
       groups: ToolCallGroup[];
@@ -37,6 +40,7 @@ export type ConversationTimelineRow =
       turnId: string;
     }
   | {
+      actionHeading?: string;
       hasToolActivity: boolean;
       type: "assistant-status";
       isExecuting: boolean;

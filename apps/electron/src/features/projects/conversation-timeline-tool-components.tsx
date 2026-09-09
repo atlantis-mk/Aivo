@@ -17,12 +17,14 @@ export const TimelineToolGroup = memo(function TimelineToolGroup({
   expanded,
   onOpenSession,
   onToggle,
+  showSummaryWhenCollapsed = false,
 }: {
   agentRuns: AgentRun[];
   group: ToolCallGroup;
   expanded: boolean;
   onOpenSession?: (sessionId: string) => void;
   onToggle: () => void;
+  showSummaryWhenCollapsed?: boolean;
 }) {
   if (group.kind === "delegate") {
     const delegateCalls = uniqueDelegateToolCalls(group.calls, agentRuns);
@@ -48,6 +50,7 @@ export const TimelineToolGroup = memo(function TimelineToolGroup({
       expanded={expanded}
       groups={[group]}
       onToggle={onToggle}
+      showSummaryWhenCollapsed={showSummaryWhenCollapsed}
     />
   );
 }, areTimelineToolGroupPropsEqual);
@@ -56,16 +59,19 @@ export const TimelineToolCluster = memo(function TimelineToolCluster({
   groups,
   expanded,
   onToggle,
+  showSummaryWhenCollapsed = false,
 }: {
   groups: ToolCallGroup[];
   expanded: boolean;
   onToggle: () => void;
+  showSummaryWhenCollapsed?: boolean;
 }) {
   return (
     <CodexToolActivity
       expanded={expanded}
       groups={groups}
       onToggle={onToggle}
+      showSummaryWhenCollapsed={showSummaryWhenCollapsed}
     />
   );
 }, areTimelineToolClusterPropsEqual);
@@ -75,17 +81,20 @@ function areTimelineToolClusterPropsEqual(
     groups: ToolCallGroup[];
     expanded: boolean;
     onToggle: () => void;
+    showSummaryWhenCollapsed?: boolean;
   },
   next: {
     groups: ToolCallGroup[];
     expanded: boolean;
     onToggle: () => void;
+    showSummaryWhenCollapsed?: boolean;
   },
 ) {
   return (
     previous.groups.length === next.groups.length &&
     previous.expanded === next.expanded &&
     previous.onToggle === next.onToggle &&
+    previous.showSummaryWhenCollapsed === next.showSummaryWhenCollapsed &&
     previous.groups.every((group, index) => {
       const nextGroup = next.groups[index];
       return (
@@ -106,6 +115,7 @@ function areTimelineToolGroupPropsEqual(
     expanded: boolean;
     onOpenSession?: (sessionId: string) => void;
     onToggle: () => void;
+    showSummaryWhenCollapsed?: boolean;
   },
   next: {
     agentRuns: AgentRun[];
@@ -113,6 +123,7 @@ function areTimelineToolGroupPropsEqual(
     expanded: boolean;
     onOpenSession?: (sessionId: string) => void;
     onToggle: () => void;
+    showSummaryWhenCollapsed?: boolean;
   },
 ) {
   return (
@@ -123,6 +134,7 @@ function areTimelineToolGroupPropsEqual(
     previous.group.title === next.group.title &&
     previous.onOpenSession === next.onOpenSession &&
     previous.onToggle === next.onToggle &&
+    previous.showSummaryWhenCollapsed === next.showSummaryWhenCollapsed &&
     (previous.group.kind !== "delegate" ||
       sameAgentRuns(previous.agentRuns, next.agentRuns)) &&
     sameToolCalls(previous.group.calls, next.group.calls)

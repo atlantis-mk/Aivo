@@ -97,10 +97,10 @@ export function AssistantStatus({
       hasToolActivity={hasToolActivity}
       turnId={turnId}
     >
-      <span>
-        用时 {formatThinkingTime(responseSeconds)}
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <span className="shrink-0">用时 {formatThinkingTime(responseSeconds)}</span>
         {modelProvider || model ? (
-          <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+          <span className="min-w-0 truncate rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
             {[modelProvider, model].filter(Boolean).join(" · ")}
           </span>
         ) : null}
@@ -119,13 +119,15 @@ function AssistantCompletionStatus({
   turnId?: string;
 }) {
   const { expanded: userExpanded, toggle } = useToolTurnExpansion(turnId);
-  const expanded = userExpanded ?? true;
+  // Tool activity remains visible while it is running, then collapses into the
+  // completion row once the answer is final. A user choice always wins.
+  const expanded = userExpanded ?? false;
   if (hasToolActivity) {
     return (
       <div className="aivo-assistant-status mb-3 animate-in border-b border-border/60 pb-3 fade-in slide-in-from-bottom-2 duration-300">
         <button
           aria-expanded={expanded}
-          className="aivo-assistant-status-toggle"
+          className="aivo-assistant-status-toggle inline-flex max-w-full items-center gap-1.5 text-left"
           onClick={() => toggle(expanded)}
           type="button"
         >
@@ -168,11 +170,6 @@ function ThinkingStatus({
       role="status"
     >
       <ShimmerText text={statusText} />
-      {actionHeading ? (
-        <div className="min-w-0 truncate text-muted-foreground">
-          {actionHeading}
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -5,13 +5,21 @@ import {
   ipcMain,
   type IpcMainInvokeEvent,
   Menu,
+  Notification,
   nativeTheme,
+  nativeImage,
   safeStorage,
   shell,
 } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import {
   createDesktopUpdater,
@@ -19,6 +27,7 @@ import {
   type DesktopUpdater,
 } from "./desktop-updater.cjs";
 import { buildAivoRuntimeEnvironment } from "./codex-runtime-environment";
+import { loadCodexSkills, loadCodexMcpServers, codexResourceInputs, type CodexResourceInput } from "./codex-composer-resources";
 import {
   codexApprovalResponse,
   codexPermissionPolicy,
@@ -96,6 +105,43 @@ interface CodexTurnStart {
 
 interface CodexTurnSteer extends CodexTurnStart {}
 
+interface CodexImageInput {
+  data: string;
+  mimeType: string;
+}
+
+type ComposerLocalSelection =
+  | { kind: "directory"; path: string }
+  | {
+      kind: "file";
+      name: string;
+      mimeType: string;
+      size: number;
+      data: string;
+    };
+
+function readComposerLocalSelection(
+  targetPath: string,
+): ComposerLocalSelection | null {
+  try {
+    const metadata = statSync(targetPath);
+    if (metadata.isDirectory()) {
+      return { kind: "directory", path: targetPath };
+    }
+    if (!metadata.isFile()) return null;
+    return {
+      kind: "file",
+      name: path.basename(targetPath),
+      // The renderer derives a more specific type from the file name when needed.
+      mimeType: "application/octet-stream",
+      size: metadata.size,
+      data: readFileSync(targetPath).toString("base64"),
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface BackendProviderConnectionInput {
   apiKey: string;
   baseUrl: string;
@@ -128,6 +174,7 @@ interface PendingServerApproval {
 }
 
 class AppServerRuntime {
+  private startPromise?: Promise<RuntimeStatus>;
   private child?: ChildProcessWithoutNullStreams;
   private nextRequestId = 1;
   private pendingRequests = new Map<number, PendingRequest>();
@@ -149,6 +196,13 @@ class AppServerRuntime {
   }
 
   async start(): Promise<RuntimeStatus> {
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = this.startRuntime();
+    try { return await this.startPromise; }
+    finally { this.startPromise = undefined; }
+  }
+
+  private async startRuntime(): Promise<RuntimeStatus> {
     if (
       this.runtimeStatus.state === "ready" ||
       this.runtimeStatus.state === "starting"
@@ -473,10 +527,11 @@ class AppServerRuntime {
     return { threadId };
   }
 
-  async listThreads(limit: number): Promise<CodexThread[]> {
+  async listThreads(limit: number, searchTerm?: string): Promise<CodexThread[]> {
     await this.start();
     const result = await this.request("thread/list", {
       limit,
+      ...(searchTerm ? { searchTerm } : {}),
       sortKey: "recency_at",
       sortDirection: "desc",
       modelProviders: [],
@@ -524,6 +579,18 @@ class AppServerRuntime {
         } satisfies CodexThread,
       ];
     });
+  }
+
+  async listSkills(workspaceRoot?: string, forceReload = false) {
+    const status = await this.start();
+    if (status.state !== "ready") throw new Error(status.detail);
+    return loadCodexSkills((method, params) => this.request(method, params), workspaceRoot, forceReload);
+  }
+
+  async listMcpServers() {
+    const status = await this.start();
+    if (status.state !== "ready") throw new Error(status.detail);
+    return loadCodexMcpServers((method, params) => this.request(method, params));
   }
 
   async archiveThread(threadId: string): Promise<void> {
@@ -577,15 +644,24 @@ class AppServerRuntime {
   }
 
   async startTurn({
+    resourceInputs,
+    images,
     model,
     modelProvider,
     text,
+    textElements,
     threadId,
     permissionMode,
   }: {
+    resourceInputs?: CodexResourceInput[];
+    images?: CodexImageInput[];
     model?: string;
     modelProvider?: string;
     text: string;
+    textElements?: Array<{
+      byteRange: { start: number; end: number };
+      placeholder: string;
+    }>;
     threadId: string;
     permissionMode?: PermissionMode;
   }): Promise<CodexTurnStart> {
@@ -594,7 +670,14 @@ class AppServerRuntime {
       threadId,
       model: model || undefined,
       modelProvider: modelProvider || undefined,
-      input: [{ type: "text", text, textElements: [] }],
+      input: [
+        ...codexResourceInputs((resourceInputs ?? []).map(input => ({ input }))),
+        ...(text ? [{ type: "text", text, textElements: textElements ?? [] }] : []),
+        ...(images ?? []).map((image) => ({
+          type: "image",
+          url: `data:${image.mimeType};base64,${image.data}`,
+        })),
+      ],
       ...codexTurnPermissionFields(permissionMode),
     });
     const turn = isRecord(result) && isRecord(result.turn) ? result.turn : null;
@@ -613,11 +696,13 @@ class AppServerRuntime {
   }
 
   async steerTurn({
+    resourceInputs,
     expectedTurnId,
     text,
     threadId,
     clientUserMessageId,
   }: {
+    resourceInputs?: CodexResourceInput[];
     clientUserMessageId: string;
     expectedTurnId: string;
     text: string;
@@ -627,7 +712,7 @@ class AppServerRuntime {
     const result = await this.request("turn/steer", {
       clientUserMessageId,
       expectedTurnId,
-      input: [{ type: "text", text, textElements: [] }],
+      input: [{ type: "text", text, textElements: [] }, ...codexResourceInputs((resourceInputs ?? []).map(input => ({ input })))],
       threadId,
     });
     const steerResult = isRecord(result) ? result : null;
@@ -808,6 +893,10 @@ class AppServerRuntime {
     method: string | undefined,
     params: unknown,
   ): void {
+    if (method === "turn/completed") {
+      this.notifyTurnCompleted(params);
+    }
+
     if (method === "account/updated") {
       const payload = isRecord(params) ? params : {};
       this.sendToWindows("account:updated", {
@@ -955,6 +1044,46 @@ class AppServerRuntime {
       window.webContents.send(channel, payload);
     }
   }
+
+  private notifyTurnCompleted(params: unknown): void {
+    if (!Notification.isSupported()) return;
+
+    const payload = isRecord(params) ? params : {};
+    const turn = isRecord(payload.turn) ? payload.turn : {};
+    if (turn.status !== "completed") return;
+    if (BrowserWindow.getFocusedWindow()) return;
+    const finalMessage = finalMessageFromTurn(turn);
+    const body = finalMessage || "对话已完成，点击返回。";
+
+    const window = BrowserWindow.getAllWindows().find(
+      (candidate) => !candidate.isDestroyed(),
+    );
+    if (!window) return;
+
+    const notification = new Notification({
+      body,
+      title: "Aivo",
+    });
+    notification.once("click", () => {
+      if (window.isDestroyed()) return;
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
+    });
+    notification.show();
+  }
+}
+
+function finalMessageFromTurn(turn: Record<string, unknown>): string | null {
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!isRecord(item) || item.type !== "agentMessage") continue;
+    if (typeof item.text === "string" && item.text.trim()) {
+      return item.text.trim();
+    }
+  }
+  return null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1027,6 +1156,11 @@ function listCurrentCodexModels(): Promise<CodexModel[]> {
 }
 const devServerURL = process.env.VITE_DEV_SERVER_URL;
 const isMac = process.platform === "darwin";
+
+const resolveDevelopmentIcon = () => {
+  const iconFile = process.platform === "win32" ? "icon.ico" : "icon.png";
+  return nativeImage.createFromPath(path.join(app.getAppPath(), "build", iconFile));
+};
 let desktopUpdater: DesktopUpdater | undefined;
 
 app.setName("Aivo");
@@ -1175,6 +1309,7 @@ async function checkAndOfferUpdate(
 
 const createWindow = async (): Promise<BrowserWindow> => {
   nativeTheme.themeSource = "light";
+  const applicationIcon = app.isPackaged ? undefined : resolveDevelopmentIcon();
   const window = new BrowserWindow({
     width: 1180,
     height: 760,
@@ -1188,6 +1323,7 @@ const createWindow = async (): Promise<BrowserWindow> => {
           trafficLightPosition: { x: 10, y: 10 },
         }
       : {}),
+    ...(applicationIcon && !isMac ? { icon: applicationIcon } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -1195,6 +1331,10 @@ const createWindow = async (): Promise<BrowserWindow> => {
       sandbox: true,
     },
   });
+
+  if (isMac && applicationIcon && app.dock) {
+    app.dock.setIcon(applicationIcon);
+  }
 
   if (devServerURL) {
     await window.loadURL(devServerURL);
@@ -1233,10 +1373,18 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("models:list", () => runtime.listModels());
-  ipcMain.handle("models:codex:list", () => listCurrentCodexModels());
-  ipcMain.handle("threads:list", (event, limit: number) => {
+  ipcMain.handle("skills:list", (event, workspaceRoot?: string, forceReload?: boolean) => {
     requireMainRenderer(event);
-    return runtime.listThreads(limit);
+    return runtime.listSkills(workspaceRoot, forceReload);
+  });
+  ipcMain.handle("mcp:servers:list", (event) => {
+    requireMainRenderer(event);
+    return runtime.listMcpServers();
+  });
+  ipcMain.handle("models:codex:list", () => listCurrentCodexModels());
+  ipcMain.handle("threads:list", (event, limit: number, searchTerm?: string) => {
+    requireMainRenderer(event);
+    return runtime.listThreads(limit, searchTerm);
   });
   ipcMain.handle("thread:turns:list", (event, threadId: string) => {
     requireMainRenderer(event);
@@ -1261,9 +1409,15 @@ app.whenReady().then(async () => {
     (
       event,
       input: {
+        resourceInputs?: CodexResourceInput[];
+        images?: CodexImageInput[];
         model?: string;
         permissionMode?: PermissionMode;
         text: string;
+        textElements?: Array<{
+          byteRange: { start: number; end: number };
+          placeholder: string;
+        }>;
         threadId: string;
       },
     ) => {
@@ -1301,6 +1455,7 @@ app.whenReady().then(async () => {
     (
       event,
       input: {
+        resourceInputs?: CodexResourceInput[];
         clientUserMessageId: string;
         expectedTurnId: string;
         text: string;
@@ -1327,6 +1482,35 @@ app.whenReady().then(async () => {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
+  ipcMain.handle("composer:select-local-resource", async (event) => {
+    requireMainRenderer(event);
+    const kind = await dialog.showMessageBox({
+      buttons: ["选择文件", "选择文件夹", "取消"],
+      cancelId: 2,
+      defaultId: 0,
+      message: "添加到输入",
+      detail: "文件会作为附件发送；文件夹会作为当前项目上下文使用。",
+      type: "question",
+    });
+    if (kind.response === 2) return null;
+    const result = await dialog.showOpenDialog({
+      properties: [kind.response === 0 ? "openFile" : "openDirectory"],
+      title: kind.response === 0 ? "选择文件" : "选择文件夹",
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return readComposerLocalSelection(result.filePaths[0]);
+  });
+  ipcMain.handle(
+    "composer:inspect-dropped-resources",
+    (event, targetPaths: string[]) => {
+      requireMainRenderer(event);
+      if (!Array.isArray(targetPaths)) return [];
+      return targetPaths
+        .filter((targetPath): targetPath is string => typeof targetPath === "string")
+        .map(readComposerLocalSelection)
+        .filter((selection): selection is ComposerLocalSelection => selection !== null);
+    },
+  );
   ipcMain.handle("window:toggle-maximize", (event) => {
     requireMainRenderer(event);
     const window = BrowserWindow.fromWebContents(event.sender);

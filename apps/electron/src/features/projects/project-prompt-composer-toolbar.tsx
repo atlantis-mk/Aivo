@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { ArrowUp, Pause, Plus } from "lucide-react";
+import { ArrowUp, Play, Plus, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ModelSettingsMenu } from "@/features/projects/project-model-settings-menu";
@@ -21,6 +21,7 @@ type PromptComposerToolbarProps = Pick<
   | "onSubmit"
   | "pending"
   | "pendingPromptPastes"
+  | "hasPausedTurn"
   | "permissionMode"
   | "prompt"
   | "projectPath"
@@ -39,6 +40,7 @@ export function PromptComposerToolbar({
   compact,
   fileInputRef,
   hasAttachments,
+  hasPausedTurn,
   modelId,
   modelLabel,
   modelOptions,
@@ -63,8 +65,9 @@ export function PromptComposerToolbar({
     hasAttachments ||
     pendingPromptPastes.length > 0;
   const isStopAction = pending && !hasSubmitInput;
+  const isContinueAction = hasPausedTurn && !hasSubmitInput;
   return (
-    <div className="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-2 sm:gap-2.5">
+    <div className="flex min-h-8 min-w-0 flex-1 items-center justify-between gap-2 sm:gap-2.5">
       <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
         <input
           className="hidden"
@@ -78,7 +81,7 @@ export function PromptComposerToolbar({
         />
         <Button
           aria-label="选择文件或文件夹"
-          className="rounded-full"
+          className="size-8 rounded-full"
           onClick={onSelectLocalResource}
           size="icon-sm"
           type="button"
@@ -112,15 +115,21 @@ export function PromptComposerToolbar({
         />
 
         <Button
-          aria-label={isStopAction ? "停止" : "发送"}
+          aria-label={isStopAction ? "停止" : isContinueAction ? "继续" : "发送"}
           className="rounded-full"
-          disabled={!pending && !hasSubmitInput}
+          disabled={!pending && !hasSubmitInput && !isContinueAction}
           onClick={() => onSubmit()}
-          size="icon-lg"
+          size="icon"
           type="button"
           variant="default"
         >
-          {isStopAction ? <Pause /> : <ArrowUp />}
+          {isStopAction ? (
+            <Square className="size-[9px]" fill="currentColor" />
+          ) : isContinueAction ? (
+            <Play />
+          ) : (
+            <ArrowUp />
+          )}
         </Button>
       </div>
     </div>

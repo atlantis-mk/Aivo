@@ -5,6 +5,7 @@ import {
   createPromptPaste,
   expandPromptPastes,
   isLargePromptPaste,
+  promptPasteTextElements,
   promptWithPasteSummaries,
   promptPasteTarget,
   inferPromptPasteName,
@@ -79,6 +80,18 @@ describe("prompt paste handling", () => {
     assert.equal(
       expandPromptPastes("", [{ id: "paste", text: largeText }]),
       largeText,
+    );
+  });
+
+  it("marks pasted content with UTF-8 ranges for durable compact rendering", () => {
+    assert.deepEqual(
+      promptPasteTextElements("请处理：", [
+        { id: "paste", text: "第一行\n第二行", name: "字幕.srt" },
+      ]),
+      [{
+        byteRange: { start: 14, end: 33 },
+        placeholder: "字幕.srt",
+      }],
     );
   });
 

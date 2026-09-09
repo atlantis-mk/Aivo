@@ -1,4 +1,8 @@
 type CodexApprovalRequest = import("./codex-app-server").CodexApprovalRequest;
+type CodexResourceInput = import("./codex-composer-resources").CodexResourceInput;
+type CodexSkillCatalog = import("./codex-composer-resources").CodexSkillCatalog;
+type CodexMcpServer = import("./codex-composer-resources").CodexMcpServer;
+type ComposerLocalSelection = import("./services/aivo/project-service").ComposerLocalSelection;
 
 interface RuntimeStatus {
   state: "stopped" | "starting" | "ready" | "error";
@@ -122,7 +126,9 @@ interface AivoDesktopApi {
     getAccount(): Promise<CodexAccount>;
     listCodexModels(): Promise<CodexModel[]>;
     listModels(): Promise<CodexModel[]>;
-    listThreads(limit: number): Promise<CodexThread[]>;
+    listSkills(workspaceRoot?: string, forceReload?: boolean): Promise<CodexSkillCatalog>;
+    listMcpServers(): Promise<CodexMcpServer[]>;
+    listThreads(limit: number, searchTerm?: string): Promise<CodexThread[]>;
     listThreadTurns(threadId: string): Promise<CodexThreadTurn[]>;
     resumeThread(threadId: string): Promise<void>;
     startThread(input: {
@@ -132,14 +138,21 @@ interface AivoDesktopApi {
       permissionMode?: "request_approval" | "auto_review" | "full_access";
     }): Promise<CodexThreadStart>;
     startTurn(input: {
+      resourceInputs?: CodexResourceInput[];
+      images?: Array<{ data: string; mimeType: string }>;
       model?: string;
       modelProvider?: string;
       permissionMode?: "request_approval" | "auto_review" | "full_access";
       text: string;
+      textElements?: Array<{
+        byteRange: { start: number; end: number };
+        placeholder: string;
+      }>;
       threadId: string;
     }): Promise<CodexTurnStart>;
     interruptTurn(input: CodexTurnStart & CodexThreadStart): Promise<void>;
     steerTurn(input: {
+      resourceInputs?: CodexResourceInput[];
       clientUserMessageId: string;
       expectedTurnId: string;
       text: string;
@@ -177,6 +190,10 @@ interface AivoDesktopApi {
   };
   workspace: {
     choose(): Promise<string | null>;
+  };
+  composer: {
+    selectLocalResource(): Promise<ComposerLocalSelection | null>;
+    inspectDroppedResources(files: File[]): Promise<ComposerLocalSelection[]>;
   };
   file: {
     openPath(target: string): Promise<string>;

@@ -24,8 +24,10 @@ export function ProjectWorkspaceEmptyPrompt({
           : "translate-y-0 opacity-100",
       )}
     >
-      <h1 className="aivo-type-large-title text-foreground">{appName}</h1>
-      <p className="aivo-type-title-3 mt-3 text-muted-foreground">
+      <h1 className="text-4xl font-bold tracking-tight text-foreground">
+        {appName}
+      </h1>
+      <p className="mt-4 text-lg text-balance text-muted-foreground">
         描述目标，{appName} 会帮你推进
       </p>
     </div>

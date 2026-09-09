@@ -10,6 +10,7 @@ import {
   type ComposerAttachment,
 } from "@/features/projects/project-composer-attachments";
 import type { ModelInfo } from "@/lib/provider-catalog";
+import { inspectDroppedComposerResources } from "@/services/aivo/project-service";
 import type { domain } from "@/types/codex-domain";
 
 export function useProjectComposerAttachmentState({
@@ -27,6 +28,13 @@ export function useProjectComposerAttachmentState({
 
   async function addFiles(input: ComposerAttachmentInput) {
     if (!input) return;
+    if (isNativeComposerDirectory(input)) {
+      setAttachments((current) => [
+        ...current,
+        directoryAttachment(input.path),
+      ]);
+      return;
+    }
     const activeModel = modelOptions.find((model) => model.id === activeModelId);
     const result = isNativeComposerFile(input)
       ? readNativeComposerAttachment(input, activeModelRef, activeModel)
@@ -68,24 +76,39 @@ export function useProjectComposerAttachmentState({
     }
   }
 
-  async function addDroppedResources(
-    files: File[],
-    onProjectAdd: (rootPath?: string) => void,
-  ) {
-    void onProjectAdd;
+  async function addDroppedResources(files: File[]) {
+    const selections = await inspectDroppedComposerResources(files);
+    if (selections.length > 0) {
+      const nativeFiles: Extract<
+        NonNullable<ComposerAttachmentInput>,
+        { kind: "file" }
+      >[] = [];
+      const { ignoredDirectoryCount } = routeComposerLocalSelections(selections, {
+        onDirectory: (path) => {
+          setAttachments((current) => [...current, directoryAttachment(path)]);
+        },
+        onFile: (file) => nativeFiles.push(file),
+      });
+      for (const file of nativeFiles) {
+        await addFiles(file);
+      }
+      if (ignoredDirectoryCount > 0) {
+        toast.info("一次只能添加一个文件夹，已忽略其余文件夹。");
+      }
+      return;
+    }
     await addFiles(files);
   }
 
   function handleDrop(
     event: DragEvent<HTMLDivElement>,
-    onProjectAdd: (rootPath?: string) => void,
   ) {
     if (!dragEventHasFiles(event)) return;
     event.preventDefault();
     event.stopPropagation();
     dropDepthRef.current = 0;
     setDropActive(false);
-    void addDroppedResources(Array.from(event.dataTransfer.files), onProjectAdd);
+    void addDroppedResources(Array.from(event.dataTransfer.files));
   }
 
   function removeAttachment(id: string) {
@@ -111,4 +134,26 @@ function isNativeComposerFile(
   input: NonNullable<ComposerAttachmentInput>,
 ): input is Extract<NonNullable<ComposerAttachmentInput>, { kind: "file" }> {
   return !Array.isArray(input) && !("length" in input) && input.kind === "file";
+}
+
+function isNativeComposerDirectory(
+  input: NonNullable<ComposerAttachmentInput>,
+): input is Extract<NonNullable<ComposerAttachmentInput>, { kind: "directory" }> {
+  return (
+    !Array.isArray(input) &&
+    !("length" in input) &&
+    input.kind === "directory"
+  );
+}
+
+function directoryAttachment(path: string): ComposerAttachment {
+  return {
+    id: crypto.randomUUID(),
+    name: path.split(/[\\/]/).filter(Boolean).at(-1) || path,
+    mimeType: "inode/directory",
+    size: 0,
+    kind: "directory",
+    data: "",
+    path,
+  };
 }

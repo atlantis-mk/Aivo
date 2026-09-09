@@ -5,6 +5,7 @@ export type ConversationTurn = {
   activityVisible: boolean;
   assistantPreambles?: ConversationAssistantTextPart[];
   attachments?: ConversationUserAttachment[];
+  pastes?: ConversationUserPaste[];
   id: string;
   model?: string;
   modelProvider?: string;
@@ -34,9 +35,17 @@ export type ConversationUserAttachment = {
   id: string;
   name: string;
   mimeType: string;
-  kind: "image" | "file";
+  kind: "image" | "file" | "directory";
   previewUrl?: string;
+  path?: string;
   size?: number;
+};
+
+export type ConversationUserPaste = {
+  id: string;
+  name: string;
+  preview: string;
+  text: string;
 };
 
 export type ConversationAssistantTextPart = {

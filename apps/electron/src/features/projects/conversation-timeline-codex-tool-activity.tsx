@@ -27,10 +27,12 @@ export function CodexToolActivity({
   expanded,
   groups,
   onToggle,
+  showSummaryWhenCollapsed = false,
 }: {
   expanded: boolean;
   groups: ToolCallGroup[];
   onToggle: () => void;
+  showSummaryWhenCollapsed?: boolean;
 }) {
   const calls = useMemo(() => groups.flatMap((group) => group.calls), [groups]);
   const isRunning = calls.some((call) => call.status === "running");
@@ -56,28 +58,30 @@ export function CodexToolActivity({
 
   if (
     calls.length === 1 &&
-    (isCommandToolCall(calls[0]) || calls[0].name === "web_search")
+    (isCommandToolCall(calls[0]) || calls[0].name === "web_search") &&
+    (!showSummaryWhenCollapsed || expanded)
   ) {
     return <CodexStandaloneToolActivity call={calls[0]} status={status} />;
   }
 
   return (
     <section
-      className="aivo-codex-tool-activity min-w-0 py-1"
+      className="aivo-codex-tool-activity min-w-0"
       data-assistant-hover-ignore="true"
       data-state={expanded ? "open" : "closed"}
       data-status={status}
+      data-tool-kind={groups.length === 1 ? groups[0].kind : "mixed"}
     >
       <button
         aria-expanded={expanded}
-        className="aivo-tool-activity-header group/activity-header flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md py-1 text-left text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        className="group/activity-header flex w-full min-w-0 max-w-full cursor-pointer items-center gap-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         onClick={() => {
           onToggle();
         }}
         type="button"
       >
         <ToolActivityIcon status={status} />
-        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        <span className="min-w-0 shrink truncate">{summary}</span>
         {isRunning ? (
           <span className="shrink-0 text-xs text-muted-foreground">运行中</span>
         ) : null}
@@ -97,14 +101,14 @@ export function CodexToolActivity({
 
       <div
         className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+          "aivo-tool-activity-content grid transition-[grid-template-rows,opacity] duration-200 ease-out",
           expanded
             ? "grid-rows-[1fr] opacity-100"
             : "grid-rows-[0fr] opacity-0",
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          <ScrollArea className="aivo-tool-activity-items mt-1 max-h-64 w-full min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-64 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!pr-3">
+          <ScrollArea className="aivo-tool-activity-items mt-0.5 max-h-64 w-full min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-64 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!pr-3">
             <div className="aivo-tool-activity-items-list flex w-full min-w-0 flex-col">
               {calls.map((call) =>
                 isCommandToolCall(call) ? (

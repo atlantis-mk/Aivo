@@ -14,6 +14,7 @@ type ProjectConversationViewportHandlers = {
 };
 
 export function ProjectConversationViewport({
+  activeSessionId,
   agentRuns,
   contentRef,
   handlers,
@@ -26,6 +27,7 @@ export function ProjectConversationViewport({
   turns,
   workspaceRoot,
 }: {
+  activeSessionId: string;
   agentRuns: AgentRun[];
   contentRef: RefObject<HTMLDivElement | null>;
   handlers: ProjectConversationViewportHandlers;
@@ -45,6 +47,7 @@ export function ProjectConversationViewport({
       <ScrollArea className="h-full [&_[data-slot=scroll-area-scrollbar]]:mt-2">
         {hasTurns ? (
           <SubmittedPromptContent
+            key={activeSessionId}
             agentRuns={agentRuns}
             contentRef={contentRef}
             onOpenSession={handlers.onOpenSession}

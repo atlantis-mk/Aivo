@@ -70,19 +70,27 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
   } = useProjectAssistantDeltaBuffer(setTurns);
   const {
     activeSessionIdRef,
+    clearConversationUnread,
+    markConversationUnread,
     pendingStopRequestedRef,
     runningConversationIds,
     setConversationRunning,
     sidebarConversationSelectionRef,
+    unreadConversationIds,
   } = useProjectConversationRuntimeState({
     activeSessionId,
     flushPendingAssistantDelta,
   });
-  const { hasPendingTurn, hasTurns, lastTurnStateKey, showConversationLayout } =
-    getProjectConversationViewState({
-      isOpeningConversationFromEmpty,
-      turns,
-    });
+  const {
+    hasPendingTurn,
+    hasPausedTurn,
+    hasTurns,
+    lastTurnStateKey,
+    showConversationLayout,
+  } = getProjectConversationViewState({
+    isOpeningConversationFromEmpty,
+    turns,
+  });
   const {
     activeSession,
     activeWorkspaceRoot,
@@ -320,6 +328,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
     refreshAgentRuntimeState,
     refreshPendingQuestionRequests,
     refreshRecentProjects,
+    markConversationUnread,
     setConversationRunning,
     setSessions,
     setTodoItems,
@@ -376,6 +385,8 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       pinnedConversationIds,
       projectGroups: projectConversationGroups,
       runningConversationIds,
+      unreadConversationIds,
+      onClearConversationUnread: clearConversationUnread,
       selectedProjectPath,
     },
     topBar: {
@@ -410,6 +421,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       hasPendingInteractionRequest,
       hasPendingQuestionRequest,
       hasPendingTurn,
+      hasPausedTurn,
       hasTurns,
       isComposerDropActive,
       isRevealingHistoryConversation,
@@ -425,7 +437,7 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       onDragEnter: handleComposerDragEnter,
       onDragLeave: handleComposerDragLeave,
       onDragOver: handleComposerDragOver,
-      onDrop: (event) => handleComposerDrop(event, addProjectToComposer),
+      onDrop: (event) => handleComposerDrop(event),
       onExtraHeightChange: setComposerExtraHeight,
       onHeightChange: handleComposerHeightChange,
       onHideCompletedTodoPlan: hideCompletedTodoPlan,
@@ -451,7 +463,11 @@ export function useProjectWorkspaceScreenController(): ProjectWorkspaceScreenVie
       onSubmit:
         hasPendingTurn && !hasComposerSubmitInput
           ? stopPendingTurn
-          : submitPrompt,
+          : () => {
+              void submitPrompt(
+                hasPausedTurn && !hasComposerSubmitInput ? "继续" : undefined,
+              );
+            },
       pendingQuestionRequests,
       permissionMode,
       project: composerProject,

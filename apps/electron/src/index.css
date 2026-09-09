@@ -11,7 +11,7 @@
 @source "../node_modules/@streamdown/cjk/dist/*.js";
 @source "../node_modules/@streamdown/math/dist/*.js";
 @source "../node_modules/@streamdown/mermaid/dist/*.js";
- 
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -135,6 +135,27 @@
   }
 }
 
+/* The macOS window uses a hidden native title bar.  Map the semantic markers
+ * used by each page to Electron hit-test regions so the empty portions of the
+ * top bar move the window while controls remain interactive. */
+[data-app-drag],
+.window-title-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+[data-app-no-drag],
+[data-app-no-drag] * {
+  -webkit-app-region: no-drag;
+}
+
+.window-title-drag-region {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+  height: 2.25rem;
+}
+
 @keyframes title-change-out {
   from {
     opacity: 1;
@@ -206,5 +227,284 @@
 @media (prefers-reduced-motion: reduce) {
   .aivo-text-shimmer [data-slot="text-shimmer-char-shimmer"] {
     animation: none;
+  }
+}
+
+/* ChatGPT-inspired conversation typography. Streamdown owns parsing and
+ * streaming safety; these rules only shape the semantic nodes it produces. */
+.aivo-markdown--chatgpt {
+  color: var(--foreground);
+}
+
+.aivo-markdown--chatgpt :where(h1, h2, h3, h4, h5, h6) {
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+}
+
+.aivo-markdown--chatgpt :where(h1) {
+  font-size: 1.35rem;
+  margin: 1.6rem 0 0.75rem;
+}
+
+.aivo-markdown--chatgpt :where(h2) {
+  font-size: 1.15rem;
+  margin: 1.45rem 0 0.65rem;
+}
+
+.aivo-markdown--chatgpt :where(h3, h4, h5, h6) {
+  font-size: 1rem;
+  margin: 1.2rem 0 0.5rem;
+}
+
+.aivo-markdown--chatgpt :where(p, ul, ol, blockquote, pre, table) {
+  margin-block: 0.7rem;
+}
+
+.aivo-markdown--chatgpt :where(ul, ol) {
+  padding-inline-start: 1.45rem;
+}
+
+.aivo-markdown--chatgpt :where(li + li) {
+  margin-top: 0.3rem;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="blockquote"] {
+  border-left: 3px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  color: var(--muted-foreground);
+  padding-left: 1rem;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="inline-code"] {
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  border-radius: 0.3rem;
+  color: inherit;
+  font-size: 0.9em;
+  padding: 0.1rem 0.35rem;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="code-block"] {
+  background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  margin-block: 1rem;
+  overflow: hidden;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="code-block-header"] {
+  background: color-mix(in oklab, var(--foreground) 3%, transparent);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  min-height: 2.25rem;
+  padding-inline: 0.85rem;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="code-block-body"] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  padding: 0.9rem 1rem;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="code-block-actions"] {
+  background: color-mix(in oklab, var(--background) 82%, transparent);
+  border-color: var(--border);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+
+.aivo-markdown--chatgpt [data-streamdown="table-wrapper"] {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  margin-block: 1rem;
+}
+
+.aivo-markdown--chatgpt [data-streamdown="table"] :where(th) {
+  background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  font-weight: 600;
+}
+
+.aivo-markdown--chatgpt :where(.katex-display) {
+  margin-block: 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ChatGPT desktop conversation shell: the card and tool surfaces use a
+ * restrained border/shadow hierarchy so the message stream remains primary. */
+.aivo-prompt-composer {
+  background: var(--background);
+  border-color: color-mix(in oklab, var(--foreground) 13%, transparent);
+}
+
+.aivo-prompt-composer:focus-within {
+  border-color: color-mix(in oklab, var(--foreground) 22%, transparent);
+  box-shadow: 0 2px 16px color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+
+.aivo-prompt-editor .ProseMirror {
+  position: relative;
+  min-height: 2rem;
+  width: 100%;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.aivo-prompt-editor .ProseMirror p {
+  min-height: 1.625em;
+  margin: 0;
+}
+
+.aivo-prompt-editor .ProseMirror[data-empty="true"]::before {
+  position: absolute;
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.aivo-prompt-mention {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  gap: 0.25em;
+  padding: 0 0.25em;
+  border-radius: 0;
+  color: #2563eb;
+  white-space: nowrap;
+  cursor: text;
+  font: inherit;
+}
+.aivo-prompt-mention-label { align-self: baseline; }
+.aivo-prompt-mention { max-width: min(16rem, 100%); }
+.aivo-prompt-mention-label { overflow: hidden; text-overflow: ellipsis; }
+.dark .aivo-prompt-mention { color: #60a5fa; }
+.aivo-prompt-mention svg { width: 1.2em; height: 1.2em; margin: 0; }
+.aivo-prompt-editor .ProseMirror-selectednode { background: var(--accent); }
+.aivo-prompt-editor .ProseMirror-separator { display: inline !important; border: 0 !important; margin: 0 !important; width: 0 !important; height: 0 !important; }
+.aivo-prompt-editor .ProseMirror-hideselection *::selection { background: transparent; }
+.aivo-prompt-editor .ProseMirror-hideselection { caret-color: transparent; }
+.aivo-prompt-editor h1 { font-size: 1.5em; font-weight: 700; }
+.aivo-prompt-editor h2 { font-size: 1.3em; font-weight: 700; }
+.aivo-prompt-editor h3, .aivo-prompt-editor h4, .aivo-prompt-editor h5, .aivo-prompt-editor h6 { font-size: 1.1em; font-weight: 600; }
+.aivo-prompt-editor ul { list-style: disc; padding-left: 1.5em; }
+.aivo-prompt-editor ol { list-style: decimal; padding-left: 1.5em; }
+.aivo-prompt-editor blockquote { border-left: 3px solid var(--border); padding-left: 1em; }
+.aivo-prompt-editor pre { white-space: pre-wrap; border-radius: 0.5rem; background: var(--muted); padding: 0.75em; }
+.aivo-prompt-editor code { font-family: var(--font-mono); background: var(--muted); border-radius: 0.25em; padding: 0.1em 0.2em; }
+.aivo-prompt-editor pre code { padding: 0; }
+.aivo-prompt-editor a { color: var(--primary); text-decoration: underline; cursor: text; }
+.aivo-prompt-editor img:not(.ProseMirror-separator) { max-width: 100%; max-height: 180px; }
+
+.aivo-assistant-status {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.aivo-assistant-status-toggle {
+  color: var(--muted-foreground);
+}
+
+.aivo-assistant-status-toggle:hover {
+  color: var(--foreground);
+}
+
+.aivo-tool-activity-header {
+  color: var(--muted-foreground);
+  min-height: 1.875rem;
+  padding-block: 0.2rem;
+}
+
+.aivo-tool-activity-header:hover {
+  color: var(--foreground);
+}
+
+.aivo-tool-activity-content {
+  border: 0;
+}
+
+.aivo-tool-call-row {
+  height: 1.25rem;
+  min-height: 1.25rem;
+  padding-block: 0;
+  line-height: 1.25rem;
+}
+
+/* Command groups are a dense execution trace, not a stack of cards.  Keep the
+ * rule scoped to the expanded list so individual tool detail panels retain
+ * their own breathing room. */
+.aivo-tool-activity-items .aivo-tool-call-item {
+  margin-block: 0 !important;
+}
+
+.aivo-tool-activity-items .aivo-codex-tool-activity--single-command {
+  /* A grouped command is a line in one execution trace.  The standalone
+   * treatment below intentionally keeps its surrounding separation. */
+  margin-block: 0.125rem !important;
+}
+
+.aivo-tool-activity-items .aivo-tool-call-row {
+  height: 1.25rem !important;
+  min-height: 1.25rem !important;
+  padding-block: 0 !important;
+}
+
+.aivo-tool-activity-items .aivo-tool-call-row > svg:first-child {
+  /* Lucide's view box otherwise looks optically lower than the adjacent
+   * text glyphs in this compact, fixed-height execution trace. */
+  height: 0.875rem;
+  width: 0.875rem;
+  transform: translateY(-0.5px);
+}
+
+.aivo-codex-tool-activity[data-tool-kind="write"] {
+  background: var(--background);
+  border: 1px solid color-mix(in oklab, var(--foreground) 11%, transparent);
+  border-radius: 0.875rem;
+  margin-block: 0.8rem;
+  overflow: hidden;
+}
+
+.aivo-codex-tool-activity[data-tool-kind="write"] .aivo-tool-activity-header {
+  color: var(--foreground);
+  min-height: 3.25rem;
+  padding: 0.7rem 1rem;
+}
+
+.aivo-codex-tool-activity[data-tool-kind="write"]
+  .aivo-tool-activity-header:hover {
+  background: color-mix(in oklab, var(--foreground) 3%, transparent);
+}
+
+.aivo-codex-tool-activity[data-tool-kind="write"] .aivo-tool-activity-content {
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+
+.aivo-codex-tool-activity[data-tool-kind="write"] .aivo-tool-call-row {
+  min-height: 2.6rem;
+  padding: 0.55rem 1rem;
+}
+
+.aivo-codex-tool-activity[data-tool-kind="write"]
+  .aivo-tool-activity-items-list
+  > :not(:last-child) {
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--foreground) 7%, transparent);
+}
+
+.aivo-codex-tool-activity--single-command {
+  margin-block: 0.45rem;
+}
+
+.aivo-codex-tool-activity--single-command .aivo-tool-call-row {
+  padding-inline: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aivo-markdown--chatgpt [data-sd-animate] {
+    animation: none !important;
   }
 }

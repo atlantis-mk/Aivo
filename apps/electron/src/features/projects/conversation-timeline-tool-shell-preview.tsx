@@ -7,6 +7,7 @@ import {
   shellPreviewEntries,
   type ShellPreviewEntry,
 } from "@/features/projects/conversation-timeline-shell-model";
+import { cn } from "@/lib/utils";
 import type { domain } from "@/types/codex-domain";
 
 export function InlineShellPreview({
@@ -33,18 +34,20 @@ function ShellPreviewEntryView({ entry }: { entry: ShellPreviewEntry }) {
   const hasOutput = Boolean(entry.stdout || entry.stderr || entry.error);
   return (
     <div
-      className="aivo-shell-preview min-w-0"
+      className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-muted/35 text-card-foreground"
       data-has-output={hasOutput}
     >
-      <div className="aivo-shell-preview-label">Shell</div>
-      <ScrollArea className="aivo-shell-preview-command max-h-12 min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-12 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">
-        <pre className="aivo-shell-preview-content">
+      <div className="px-3 pt-2 text-sm font-medium text-muted-foreground">
+        Shell
+      </div>
+      <ScrollArea className="mx-3 mt-1.5 max-h-12 min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-12 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">
+        <pre className="m-0 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
           <span className="text-muted-foreground">$ </span>
           <span>{compactShellCommand(entry.command)}</span>
         </pre>
       </ScrollArea>
-      <ScrollArea className="aivo-shell-preview-result h-full min-h-0 min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:min-h-0 [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0">
-        <pre className="aivo-shell-preview-content">
+      <ScrollArea className="mx-3 mt-1.5 max-h-36 min-w-0 max-w-full overflow-hidden [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:max-h-36 [&>[data-slot=scroll-area-viewport]]:overflow-auto" showHorizontalScrollbar>
+        <pre className="m-0 min-w-max pb-2 pr-2 whitespace-pre font-mono text-xs leading-relaxed text-muted-foreground">
           {entry.stdout ? <span>{entry.stdout.trim()}</span> : null}
           {entry.stderr ? (
             <span className="text-destructive">{entry.stderr.trim()}</span>
@@ -59,7 +62,13 @@ function ShellPreviewEntryView({ entry }: { entry: ShellPreviewEntry }) {
           ) : null}
         </pre>
       </ScrollArea>
-      <div className="aivo-shell-preview-status" data-status={status}>
+      <div
+        className={cn(
+          "flex items-center justify-end gap-1 px-3 pb-2 pt-1.5 text-xs text-muted-foreground",
+          status === "failed" && "text-destructive",
+        )}
+        data-status={status}
+      >
         {status === "success" ? (
           <Check aria-hidden="true" className="size-4" strokeWidth={2} />
         ) : status === "running" ? (

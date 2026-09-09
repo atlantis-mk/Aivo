@@ -4,11 +4,10 @@ import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import {
  ChartLineData01Icon,
- FileLinkIcon,
- GlobeIcon,
  Image02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Link2 } from "lucide-react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
 import {
@@ -211,11 +210,10 @@ function MarkdownImage({ alt = "", src, title, ...props }: ComponentPropsWithout
 function LocalPathLinkContent({ children }: { children: ReactNode }) {
  return (
  <>
- <HugeiconsIcon
+ <Link2
  aria-hidden="true"
  className="relative top-[0.125em] size-[1.05em] shrink-0 self-baseline"
- icon={FileLinkIcon}
- strokeWidth={2}
+ strokeWidth={1.8}
  />
  <span className="min-w-0 break-all text-left">{children}</span>
  </>
@@ -225,11 +223,10 @@ function LocalPathLinkContent({ children }: { children: ReactNode }) {
 function ExternalLinkContent({ children }: { children: ReactNode }) {
  return (
  <>
- <HugeiconsIcon
+ <Link2
  aria-hidden="true"
  className="relative top-[0.125em] size-[1.05em] shrink-0 self-baseline"
- icon={GlobeIcon}
- strokeWidth={2}
+ strokeWidth={1.8}
  />
  <span className="min-w-0 break-all text-left">{children}</span>
  </>
@@ -254,6 +251,18 @@ const markdownControls = {
  mermaid: true,
  table: true,
 } satisfies ControlsConfig;
+
+// Keep streamed text feeling responsive without letting a slow response build
+// an ever-growing animation queue. These values mirror the short, sequential
+// fade used in ChatGPT's conversation renderer.
+const markdownStreamAnimation = {
+ animation: "fadeIn",
+ duration: 150,
+ easing: "ease-out",
+ sep: "word",
+ stagger: 16,
+ maxBacklogMs: 96,
+} as const;
 
 export function Markdown(props: MarkdownProps) {
  const isStreamSource = typeof props.stream === "function";
@@ -317,8 +326,11 @@ function MarkdownViewer({ content, isFinished, className, workspaceRoot = "" }: 
 
  return (
  <Streamdown
- animated={false}
- className={cn("aivo-markdown aivo-markdown--codex break-words", className)}
+ animated={isFinished ? false : markdownStreamAnimation}
+ className={cn(
+ "aivo-markdown aivo-markdown--chatgpt break-words text-[14px] leading-6",
+ className,
+ )}
  components={components}
  controls={markdownControls}
  isAnimating={!isFinished}

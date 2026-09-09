@@ -4,6 +4,7 @@ import {
   Bell,
   ChevronDown,
   Folder,
+  LoaderCircle,
   Pin,
   Search,
   Settings,
@@ -156,10 +157,19 @@ export function ProjectWorkspaceAppSidebar({
           onClick={() => onSelectConversation(conversation)}
           type="button"
         >
-          <AnimatedTitle
-            className="block min-w-0 leading-5 text-sidebar-foreground"
-            value={conversation.title}
-          />
+          <div className="flex min-w-0 items-center gap-1.5">
+            <AnimatedTitle
+              className="min-w-0 flex-1 leading-5 text-sidebar-foreground"
+              value={conversation.title}
+            />
+            {(runningConversationIdSet.has(conversation.id) ||
+              conversation.status === "inProgress") && (
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-3.5 shrink-0 animate-spin text-sidebar-foreground/70"
+              />
+            )}
+          </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
             {projectName ? (
               <>
@@ -167,9 +177,6 @@ export function ProjectWorkspaceAppSidebar({
                 <span className="truncate">{projectName}</span>
               </>
             ) : null}
-            <span className="ml-auto shrink-0 transition-opacity group-hover/item:opacity-0">
-              {runningConversationIdSet.has(conversation.id) ? "运行中" : ""}
-            </span>
           </div>
         </button>
         <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover/item:pointer-events-auto group-hover/item:opacity-100">

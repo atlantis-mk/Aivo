@@ -19,7 +19,11 @@ export function conversationAttachmentsFromEvent(
     const name = stringFromUnknown(attachment?.name);
     const mimeType = stringFromUnknown(attachment?.mimeType);
     const kind = stringFromUnknown(attachment?.kind);
-    if (!name || !mimeType || (kind !== "image" && kind !== "file")) {
+    if (
+      !name ||
+      !mimeType ||
+      (kind !== "image" && kind !== "file" && kind !== "directory")
+    ) {
       continue;
     }
     const data = stringFromUnknown(attachment?.data);
@@ -30,6 +34,7 @@ export function conversationAttachmentsFromEvent(
       name,
       previewUrl:
         kind === "image" && data ? `data:${mimeType};base64,${data}` : undefined,
+      path: stringFromUnknown(attachment?.path) || undefined,
       size: numberFromUnknown(attachment?.size),
     });
   }

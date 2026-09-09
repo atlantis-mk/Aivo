@@ -14,12 +14,12 @@ export type ComposerLocalSelection =
     };
 
 export function selectComposerFileOrDirectory() {
-  return Promise.resolve(null);
+  return window.aivoDesktop?.composer.selectLocalResource() ?? Promise.resolve(null);
 }
 
 export function inspectDroppedComposerResources(files: File[]) {
-  void files;
-  return Promise.resolve([] as ComposerLocalSelection[]);
+  return window.aivoDesktop?.composer.inspectDroppedResources(files) ??
+    Promise.resolve([] as ComposerLocalSelection[]);
 }
 
 export function exportDiagnostics() {

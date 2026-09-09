@@ -35,10 +35,13 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
       ipcRenderer.invoke("account:cancel-login", loginId),
     getAccount: (): Promise<CodexAccount> => ipcRenderer.invoke("account:read"),
     listModels: (): Promise<CodexModel[]> => ipcRenderer.invoke("models:list"),
+    listSkills: (workspaceRoot?: string, forceReload?: boolean): Promise<CodexSkillCatalog> =>
+      ipcRenderer.invoke("skills:list", workspaceRoot, forceReload),
+    listMcpServers: (): Promise<CodexMcpServer[]> => ipcRenderer.invoke("mcp:servers:list"),
     listCodexModels: (): Promise<CodexModel[]> =>
       ipcRenderer.invoke("models:codex:list"),
-    listThreads: (limit: number): Promise<CodexThread[]> =>
-      ipcRenderer.invoke("threads:list", limit),
+    listThreads: (limit: number, searchTerm?: string): Promise<CodexThread[]> =>
+      ipcRenderer.invoke("threads:list", limit, searchTerm),
     listThreadTurns: (threadId: string): Promise<CodexThreadTurn[]> =>
       ipcRenderer.invoke("thread:turns:list", threadId),
     resumeThread: (threadId: string): Promise<void> =>
@@ -50,15 +53,22 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
       permissionMode?: "request_approval" | "auto_review" | "full_access";
     }): Promise<CodexThreadStart> => ipcRenderer.invoke("thread:start", input),
     startTurn: (input: {
+      resourceInputs?: CodexResourceInput[];
+      images?: Array<{ data: string; mimeType: string }>;
       model?: string;
       permissionMode?: "request_approval" | "auto_review" | "full_access";
       modelProvider?: string;
       text: string;
+      textElements?: Array<{
+        byteRange: { start: number; end: number };
+        placeholder: string;
+      }>;
       threadId: string;
     }): Promise<CodexTurnStart> => ipcRenderer.invoke("turn:start", input),
     interruptTurn: (input: CodexTurnStart & CodexThreadStart): Promise<void> =>
       ipcRenderer.invoke("turn:interrupt", input),
     steerTurn: (input: {
+      resourceInputs?: CodexResourceInput[];
       clientUserMessageId: string;
       expectedTurnId: string;
       text: string;
@@ -166,6 +176,25 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
   workspace: {
     choose: (): Promise<string | null> =>
       ipcRenderer.invoke("workspace:choose"),
+  },
+  composer: {
+    selectLocalResource: (): Promise<ComposerLocalSelection | null> =>
+      ipcRenderer.invoke("composer:select-local-resource"),
+    inspectDroppedResources: (
+      files: File[],
+    ): Promise<ComposerLocalSelection[]> =>
+      ipcRenderer.invoke(
+        "composer:inspect-dropped-resources",
+        files
+          .map((file) => {
+            try {
+              return webUtils.getPathForFile(file);
+            } catch {
+              return "";
+            }
+          })
+          .filter(Boolean),
+      ),
   },
   file: {
     openPath: (target: string): Promise<string> =>

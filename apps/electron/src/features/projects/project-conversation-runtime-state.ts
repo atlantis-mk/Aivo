@@ -10,6 +10,9 @@ export function useProjectConversationRuntimeState({
   const [runningConversationIds, setRunningConversationIds] = useState<
     string[]
   >([]);
+  const [unreadConversationIds, setUnreadConversationIds] = useState<
+    string[]
+  >([]);
   const activeSessionIdRef = useRef("");
   const pendingStopRequestedRef = useRef(false);
   const sidebarConversationSelectionRef = useRef(0);
@@ -28,17 +31,39 @@ export function useProjectConversationRuntimeState({
     },
     [],
   );
+  const markConversationUnread = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    setUnreadConversationIds((currentIds) =>
+      currentIds.includes(sessionId)
+        ? currentIds
+        : [sessionId, ...currentIds],
+    );
+  }, []);
+  const clearConversationUnread = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    setUnreadConversationIds((currentIds) =>
+      currentIds.filter((currentId) => currentId !== sessionId),
+    );
+  }, []);
 
   useEffect(() => {
     flushPendingAssistantDelta();
     activeSessionIdRef.current = activeSessionId;
+    setUnreadConversationIds((currentIds) =>
+      activeSessionId
+        ? currentIds.filter((currentId) => currentId !== activeSessionId)
+        : currentIds,
+    );
   }, [activeSessionId, flushPendingAssistantDelta]);
 
   return {
+    clearConversationUnread,
     activeSessionIdRef,
     pendingStopRequestedRef,
     runningConversationIds,
     setConversationRunning,
     sidebarConversationSelectionRef,
+    markConversationUnread,
+    unreadConversationIds,
   };
 }

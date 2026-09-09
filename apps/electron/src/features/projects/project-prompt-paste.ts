@@ -16,6 +16,11 @@ export type PromptPasteResult = {
   paste: PendingPromptPaste;
 };
 
+export type PromptPasteTextElement = {
+  byteRange: { start: number; end: number };
+  placeholder: string;
+};
+
 export function isLargePromptPaste(text: string): boolean {
   return [...text.replace(/\r\n?/g, "\n")].length > LARGE_PROMPT_PASTE_CHAR_THRESHOLD;
 }
@@ -148,6 +153,30 @@ export function expandPromptPastes(
   ].join("\n\n");
 }
 
+/**
+ * Build the UI-only ranges persisted by Codex alongside a submitted message.
+ * The model still receives the complete pasted text; the ranges let the
+ * conversation renderer restore it as compact paste cards after a reload.
+ */
+export function promptPasteTextElements(
+  prompt: string,
+  pendingPastes: PendingPromptPaste[],
+): PromptPasteTextElement[] {
+  if (pendingPastes.length === 0) return [];
+
+  const promptText = prompt.trim();
+  let textBeforePaste = promptText;
+  return pendingPastes.map((paste) => {
+    if (textBeforePaste) textBeforePaste += "\n\n";
+    const start = utf8ByteLength(textBeforePaste);
+    textBeforePaste += paste.text;
+    return {
+      byteRange: { start, end: utf8ByteLength(textBeforePaste) },
+      placeholder: promptPasteTitle(paste),
+    };
+  });
+}
+
 export function promptWithPasteSummaries(
   prompt: string,
   pendingPastes: PendingPromptPaste[],
@@ -158,4 +187,8 @@ export function promptWithPasteSummaries(
     ...(promptText ? [promptText] : []),
     ...pendingPastes.map((paste) => `[${promptPasteTitle(paste)}]`),
   ].join("\n\n");
+}
+
+function utf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).length;
 }

@@ -11,6 +11,8 @@ export function ConversationSidebar({
   onArchiveConversation,
   onSelectConversation,
   runningConversationIds,
+  unreadConversationIds,
+  onClearConversationUnread,
   topBar,
 }: ConversationSidebarProps) {
   return (
@@ -28,6 +30,8 @@ export function ConversationSidebar({
           onArchiveConversation={onArchiveConversation}
           onSelectConversation={onSelectConversation}
           runningConversationIds={runningConversationIds}
+          unreadConversationIds={unreadConversationIds}
+          onClearConversationUnread={onClearConversationUnread}
         />
       </SidebarContent>
     </>

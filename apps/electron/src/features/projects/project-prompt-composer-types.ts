@@ -19,6 +19,7 @@ import type { domain } from "@/types/codex-domain";
 export type QueuedPrompt = {
   id: string;
   text: string;
+  references?: PromptMentionReference[];
 };
 
 export type PromptComposerProps = {
@@ -51,8 +52,9 @@ export type PromptComposerProps = {
   onRemoveQueuedPrompt: (id: string) => void;
   onServiceTierSelect: (serviceTier: string) => void;
   onSteerQueuedPrompt: (id: string) => void;
-  onSubmit: () => void;
+  onSubmit: (promptOverride?: string) => void;
   pending: boolean;
+  hasPausedTurn?: boolean;
   pendingPromptPastes: PendingPromptPaste[];
   permissionMode: PermissionMode;
   prompt: string;
@@ -82,4 +84,4 @@ export type ProjectPickerProps = {
   projects: domain.AssistantProject[];
 };
 
-export type AutoTextareaHeightRef = RefObject<HTMLTextAreaElement | null>;
+export type AutoTextareaHeightRef = RefObject<HTMLDivElement | null>;

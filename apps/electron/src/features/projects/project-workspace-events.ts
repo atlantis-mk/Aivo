@@ -47,6 +47,7 @@ export function useProjectWorkspaceEvents({
   setSessions,
   setTodoItems,
   setTurns,
+  markConversationUnread,
 }: {
   activeSessionIdRef: { current: string };
   activeWorkspaceRoot: string;
@@ -67,6 +68,7 @@ export function useProjectWorkspaceEvents({
   setSessions: Dispatch<SetStateAction<domain.Session[]>>;
   setTodoItems: Dispatch<SetStateAction<TodoItem[]>>;
   setTurns: Dispatch<SetStateAction<ConversationTurn[]>>;
+  markConversationUnread: (sessionId: string) => void;
 }) {
   const codexDeltaTurnIdsRef = useRef(new Set<string>());
 
@@ -110,6 +112,10 @@ export function useProjectWorkspaceEvents({
         });
       }
       if (event.method === "turn/completed" && threadId) {
+        setConversationRunning(threadId, false);
+        if (threadId !== activeSessionIdRef.current) {
+          markConversationUnread(threadId);
+        }
         void listCodexSessions(50)
           .then((nextSessions) => setSessions(nextSessions ?? []))
           .catch(() => undefined);
@@ -221,7 +227,6 @@ export function useProjectWorkspaceEvents({
       const error = recordValue(completedTurn?.error);
       const errorMessage = stringValue(error?.message);
       const durationMs = numberValue(completedTurn?.durationMs);
-      setConversationRunning(threadId, false);
       setTurns((currentTurns) =>
         finalizeCodexTurn(currentTurns, turnId, {
           completedTurn,
@@ -235,6 +240,7 @@ export function useProjectWorkspaceEvents({
     enqueueCodexDelta,
     flushCodexDeltas,
     flushPendingAssistantDelta,
+    markConversationUnread,
     mergeToolActivityFromCall,
     setConversationRunning,
     setSessions,

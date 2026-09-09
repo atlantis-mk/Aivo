@@ -20,6 +20,8 @@ export type ConversationSidebarProps = {
   pinnedConversationIds: string[];
   projectGroups: ProjectConversationGroup[];
   runningConversationIds: string[];
+  unreadConversationIds: string[];
+  onClearConversationUnread: (sessionId: string) => void;
   selectedProjectPath: string;
   topBar: React.ReactNode;
 };

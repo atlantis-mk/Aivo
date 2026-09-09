@@ -18,6 +18,7 @@ import { ProjectWorkspaceComposerFrame } from "@/features/projects/project-works
 import { ProjectConversationViewport } from "@/features/projects/project-workspace-conversation-view";
 
 export function ProjectWorkspaceChatContent({
+  activeSessionId,
   activeSubagentRun,
   agentMode,
   agentModes,
@@ -33,6 +34,7 @@ export function ProjectWorkspaceChatContent({
   hasPendingInteractionRequest,
   hasPendingQuestionRequest,
   hasPendingTurn,
+  hasPausedTurn,
   hasTurns,
   isComposerDropActive,
   isRevealingHistoryConversation,
@@ -92,8 +94,12 @@ export function ProjectWorkspaceChatContent({
   viewportHandlers,
   workspaceRoot,
 }: ProjectWorkspaceMainContentProps) {
-  const { requests: codexApprovalRequests, resolve: resolveCodexApproval } =
-    useCodexApprovalRequests();
+  const {
+    approvalAction,
+    requests: codexApprovalRequests,
+    resolve: resolveCodexApproval,
+    setApprovalAction,
+  } = useCodexApprovalRequests();
   const { requests: codexUserInputRequests, resolve: resolveCodexUserInput } =
     useCodexUserInputRequests();
   const hasPendingCodexApproval = codexApprovalRequests.length > 0;
@@ -128,6 +134,7 @@ export function ProjectWorkspaceChatContent({
         <ProjectComposerDropOverlay active={isComposerDropActive} />
 
         <ProjectConversationViewport
+          activeSessionId={activeSessionId}
           agentRuns={agentRuns}
           contentRef={contentRef}
           handlers={viewportHandlers}
@@ -149,6 +156,8 @@ export function ProjectWorkspaceChatContent({
 
         {hasPendingCodexApproval && showConversationLayout ? (
           <CodexApprovalDock
+            approvalAction={approvalAction}
+            onApprovalActionSelect={setApprovalAction}
             requests={codexApprovalRequests}
             resolve={resolveCodexApproval}
           />
@@ -200,6 +209,7 @@ export function ProjectWorkspaceChatContent({
             onSteerQueuedPrompt={onSteerQueuedPrompt}
             onSubmit={onSubmit}
             pending={hasPendingTurn}
+            hasPausedTurn={hasPausedTurn}
             permissionMode={permissionMode}
             prompt={prompt}
             queuedPrompts={queuedPrompts}
