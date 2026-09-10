@@ -3,6 +3,7 @@ import type { CatalogState, ModelInfo } from "@/lib/provider-catalog";
 type CodexModel = {
   id: string;
   name: string;
+  providerId?: string;
 };
 
 export function catalogWithCodexModels(
@@ -11,7 +12,7 @@ export function catalogWithCodexModels(
 ): CatalogState {
   const models: ModelInfo[] = codexModels.map((model) => ({
     id: model.id,
-    providerId: "openai",
+    providerId: model.providerId ?? "openai",
     name: model.name,
   }));
   const defaultModelId = models[0]?.id;

@@ -76,8 +76,8 @@ export function useProjectWorkspaceEvents({
     (deltas: ProjectCodexDelta[]) => {
       setTurns((currentTurns) => {
         let nextTurns = currentTurns;
-        for (const { delta, turnId } of deltas) {
-          nextTurns = updateCodexTurn(nextTurns, turnId, (turn) => ({
+        for (const { delta, threadId, turnId } of deltas) {
+          nextTurns = updateCodexTurn(nextTurns, turnId, threadId, (turn) => ({
             ...turn,
             responseText: `${turn.responseText}${delta}`,
             responseVisible: true,
@@ -140,7 +140,7 @@ export function useProjectWorkspaceEvents({
         if (!itemId || !delta) return;
         const toolCallId = `codex:${threadId}:${itemId}`;
         setTurns((currentTurns) =>
-          updateCodexTurn(currentTurns, turnId, (turn) => ({
+          updateCodexTurn(currentTurns, turnId, threadId, (turn) => ({
             ...turn,
             toolCalls: turn.toolCalls.map((toolCall) =>
               toolCall.id === toolCallId
@@ -173,7 +173,7 @@ export function useProjectWorkspaceEvents({
         if (agentMessageText && !codexDeltaTurnIdsRef.current.has(turnId)) {
           flushPendingAssistantDelta();
           setTurns((currentTurns) =>
-            updateCodexTurn(currentTurns, turnId, (turn) => ({
+            updateCodexTurn(currentTurns, turnId, threadId, (turn) => ({
               ...turn,
               responseText:
                 turn.responseText &&
@@ -228,7 +228,7 @@ export function useProjectWorkspaceEvents({
       const errorMessage = stringValue(error?.message);
       const durationMs = numberValue(completedTurn?.durationMs);
       setTurns((currentTurns) =>
-        finalizeCodexTurn(currentTurns, turnId, {
+        finalizeCodexTurn(currentTurns, turnId, threadId, {
           completedTurn,
           durationMs,
           errorMessage,
@@ -251,18 +251,20 @@ export function useProjectWorkspaceEvents({
 function updateCodexTurn(
   turns: ConversationTurn[],
   turnId: string,
+  sessionId: string,
   update: (turn: ConversationTurn) => ConversationTurn,
 ) {
+  const ownedTurns = turns.filter((turn) => turn.sessionId === sessionId);
   const targetId =
-    [...turns]
+    [...ownedTurns]
       .reverse()
       .find(
         (turn) =>
           turn.steered &&
           (turn.turnId === turnId || turn.steerTargetTurnId === turnId),
       )?.id ??
-    turns.find((turn) => turn.turnId === turnId)?.id ??
-    [...turns]
+    ownedTurns.find((turn) => turn.turnId === turnId)?.id ??
+    [...ownedTurns]
       .reverse()
       .find((turn) => !turn.turnId || !turn.responseCompletedAt)?.id;
   if (window.localStorage.getItem("aivo:debug-stream") === "1") {
@@ -270,7 +272,7 @@ function updateCodexTurn(
       found: Boolean(targetId),
       targetId,
       turnId,
-      turnIds: turns.map((turn) => turn.turnId ?? null),
+      turnIds: ownedTurns.map((turn) => turn.turnId ?? null),
       localIds: turns.map((turn) => turn.id),
     });
   }
@@ -283,6 +285,7 @@ function updateCodexTurn(
 function finalizeCodexTurn(
   turns: ConversationTurn[],
   turnId: string,
+  sessionId: string,
   {
     completedTurn,
     durationMs,
@@ -293,7 +296,7 @@ function finalizeCodexTurn(
     errorMessage: string | null;
   },
 ) {
-  const updatedTurns = updateCodexTurn(turns, turnId, (currentTurn) => ({
+  const updatedTurns = updateCodexTurn(turns, turnId, sessionId, (currentTurn) => ({
     ...currentTurn,
     model: stringValue(completedTurn?.model) || currentTurn.model,
     modelProvider:
@@ -312,7 +315,8 @@ function finalizeCodexTurn(
   }));
 
   return updatedTurns.map((turn) =>
-    turn.turnId === turnId || turn.steerTargetTurnId === turnId
+    turn.sessionId === sessionId &&
+      (turn.turnId === turnId || turn.steerTargetTurnId === turnId)
       ? turn.responseCompletedAt
         ? turn
         : {

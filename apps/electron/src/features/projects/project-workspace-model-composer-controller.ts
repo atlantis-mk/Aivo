@@ -305,6 +305,7 @@ export function useProjectWorkspaceModelComposerController({
           responseText: "",
           responseCompletedAt: null,
           responseVisible: false,
+          sessionId: activeSessionId,
           startedAt,
           submittedAt: new Date(),
           steerTargetTurnId: activeTurn.turnId,

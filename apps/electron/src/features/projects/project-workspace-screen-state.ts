@@ -1,13 +1,16 @@
 import { useState } from "react";
 
+import { useProjectConversationDrafts } from "@/features/projects/project-conversation-drafts";
 import type { ConversationTurn } from "@/features/projects/conversation-timeline-model";
 import type { domain } from "@/types/codex-domain";
 
 export function useProjectWorkspaceScreenState() {
-  const [prompt, setPrompt] = useState("");
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [sessions, setSessions] = useState<domain.Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
+  const { prompt, setPrompt } = useProjectConversationDrafts({
+    activeSessionId,
+  });
   const [toolActivationDialogOpen, setToolActivationDialogOpen] =
     useState(false);
   const [extensionSettingsDrawerOpen, setExtensionSettingsDrawerOpen] =

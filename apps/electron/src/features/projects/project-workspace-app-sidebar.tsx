@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Archive,
   Bell,
@@ -14,6 +14,15 @@ import {
 import { Link } from "@tanstack/react-router";
 import { AnimatedTitle } from "@/components/animated-title";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAppConfig } from "@/lib/app-config";
 import { appNameFromConfig } from "@/lib/app-identity";
@@ -105,6 +114,8 @@ export function ProjectWorkspaceAppSidebar({
   pinnedConversationIds,
   runningConversationIds,
   onTogglePinnedConversation,
+  unreadConversationIds,
+  onClearConversationUnread,
 }: Pick<
   ProjectWorkspaceScreenViewProps["leftSidebar"],
   | "activeConversationId"
@@ -115,6 +126,8 @@ export function ProjectWorkspaceAppSidebar({
   | "pinnedConversationIds"
   | "runningConversationIds"
   | "onTogglePinnedConversation"
+  | "unreadConversationIds"
+  | "onClearConversationUnread"
 > & {
   isCollapsed: boolean;
 }) {
@@ -136,7 +149,24 @@ export function ProjectWorkspaceAppSidebar({
     [regularConversations],
   );
   const runningConversationIdSet = new Set(runningConversationIds);
+  const unreadConversationIdSet = new Set(unreadConversationIds);
   const isMac = window.aivoDesktop?.platform === "darwin";
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const searchResults = conversations.filter((conversation) => {
+    const searchText = [
+      conversation.title,
+      conversation.projectPath
+        ? projectNameFromPath(conversation.projectPath)
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return searchText.includes(normalizedSearchQuery);
+  });
 
   const renderConversation = (conversation: domain.Session) => {
     const isActive = conversation.id === activeConversationId;
@@ -144,6 +174,7 @@ export function ProjectWorkspaceAppSidebar({
       ? projectNameFromPath(conversation.projectPath)
       : "";
     const isPinned = pinnedConversationIdSet.has(conversation.id);
+    const isUnread = unreadConversationIdSet.has(conversation.id);
 
     return (
       <div
@@ -154,7 +185,10 @@ export function ProjectWorkspaceAppSidebar({
         <button
           aria-current={isActive ? "page" : undefined}
           className="block w-full min-w-0 pr-0 text-left transition-[padding-right] duration-150 group-hover/item:pr-16"
-          onClick={() => onSelectConversation(conversation)}
+          onClick={() => {
+            onClearConversationUnread(conversation.id);
+            onSelectConversation(conversation);
+          }}
           type="button"
         >
           <div className="flex min-w-0 items-center gap-1.5">
@@ -169,6 +203,12 @@ export function ProjectWorkspaceAppSidebar({
                 className="size-3.5 shrink-0 animate-spin text-sidebar-foreground/70"
               />
             )}
+            {isUnread ? (
+              <span
+                aria-label="未读"
+                className="size-2 shrink-0 rounded-full bg-blue-500"
+              />
+            ) : null}
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
             {projectName ? (
@@ -239,7 +279,10 @@ export function ProjectWorkspaceAppSidebar({
               />
             </Button>
             <div className="flex items-center">
-              <SidebarIconButton label="搜索">
+              <SidebarIconButton
+                label="搜索"
+                onClick={() => setIsSearchOpen(true)}
+              >
                 <Search />
               </SidebarIconButton>
               <SidebarIconButton label="通知">
@@ -308,6 +351,59 @@ export function ProjectWorkspaceAppSidebar({
               </Link>
             </Button>
           </div>
+          <CommandDialog
+            description="按标题或项目搜索并打开对话"
+            onOpenChange={setIsSearchOpen}
+            open={isSearchOpen}
+            title="搜索聊天"
+          >
+            <Command shouldFilter={false}>
+              <CommandInput
+                onValueChange={setSearchQuery}
+                placeholder="搜索聊天"
+                value={searchQuery}
+              />
+              <CommandList>
+                <CommandEmpty>没有找到匹配的对话。</CommandEmpty>
+                <CommandGroup heading="聊天">
+                  {searchResults.map((conversation) => {
+                    const projectName = conversation.projectPath
+                      ? projectNameFromPath(conversation.projectPath)
+                      : "";
+
+                    return (
+                      <CommandItem
+                        key={conversation.id}
+                        onSelect={() => {
+                          setIsSearchOpen(false);
+                          setSearchQuery("");
+                          onClearConversationUnread(conversation.id);
+                          void onSelectConversation(conversation);
+                        }}
+                        value={conversation.id}
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {conversation.title}
+                        </span>
+                        {projectName ? (
+                          <span className="ml-auto flex min-w-0 shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                            <span className="truncate">{projectName}</span>
+                            <span className="text-muted-foreground/70">
+                              #
+                              {conversations.findIndex(
+                                (candidate) =>
+                                  candidate.id === conversation.id,
+                              ) + 1}
+                            </span>
+                          </span>
+                        ) : null}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </CommandDialog>
         </>
       </aside>
     </div>

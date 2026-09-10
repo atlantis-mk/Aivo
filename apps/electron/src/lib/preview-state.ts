@@ -70,6 +70,81 @@ const volcengineProviderIds = [
   "volcengine",
 ];
 
+let sharedState: PreviewState | null = null;
+
+function hasDesktopStateBridge(): boolean {
+  return (
+    typeof window !== "undefined" && Boolean(window.aivoDesktop?.desktopState)
+  );
+}
+
+function hasCodexBridge(): boolean {
+  return typeof window !== "undefined" && Boolean(window.aivoDesktop?.codex);
+}
+
+function stripAuthSecrets(auth: PreviewStoredAuth): PreviewStoredAuth {
+  return { ...auth, secret: undefined, refreshSecret: undefined };
+}
+
+function serializeSharedState(state: PreviewState): Record<string, unknown> {
+  const auth: PreviewState["auth"] = {};
+  if (state.auth) {
+    for (const [providerId, value] of Object.entries(state.auth)) {
+      if (Array.isArray(value)) {
+        auth[providerId] = value.map(stripAuthSecrets);
+      } else if (value) {
+        auth[providerId] = stripAuthSecrets(value);
+      }
+    }
+  }
+  return JSON.parse(JSON.stringify({ ...state, auth }));
+}
+
+async function persistSharedState(): Promise<void> {
+  if (!sharedState || !hasDesktopStateBridge()) return;
+  try {
+    await window.aivoDesktop.desktopState.write(
+      serializeSharedState(sharedState),
+    );
+  } catch {
+    // State remains in memory even if the write fails.
+  }
+}
+
+export async function initializeSharedPreviewState(): Promise<void> {
+  if (sharedState) return;
+  if (hasDesktopStateBridge()) {
+    try {
+      const remote = await window.aivoDesktop.desktopState.read();
+      if (remote) {
+        sharedState = migratePreviewStateStorage(remote as PreviewState);
+        return;
+      }
+    } catch {
+      // Fall through to localStorage migration.
+    }
+    if (!import.meta.env.DEV) {
+      const local = safeJSONParse<PreviewState>(
+        window.localStorage.getItem(PREVIEW_STATE_KEY),
+        {},
+      );
+      sharedState = migratePreviewStateStorage(local);
+      void persistSharedState();
+      window.localStorage.removeItem(PREVIEW_STATE_KEY);
+      return;
+    }
+    sharedState = {};
+    return;
+  }
+  const local = safeJSONParse<PreviewState>(
+    typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem(PREVIEW_STATE_KEY),
+    {},
+  );
+  sharedState = migratePreviewStateStorage(local);
+}
+
 function safeJSONParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
@@ -80,19 +155,13 @@ function safeJSONParse<T>(raw: string | null, fallback: T): T {
 }
 
 function readPreviewState(): PreviewState {
-  if (typeof window === "undefined") return {};
-  const state = safeJSONParse<PreviewState>(
-    window.localStorage.getItem(PREVIEW_STATE_KEY),
-    {},
-  );
-  const migrated = migratePreviewStateStorage(state);
-  if (migrated !== state) writePreviewState(migrated);
-  return migrated;
+  if (!sharedState) sharedState = {};
+  return sharedState;
 }
 
 function writePreviewState(nextState: PreviewState) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(PREVIEW_STATE_KEY, JSON.stringify(nextState));
+  sharedState = nextState;
+  void persistSharedState();
 }
 
 function randomString(bytes: number) {
@@ -268,6 +337,22 @@ function persistPreviewProvider(
   };
   nextAuth.accountId =
     authSecret?.accountId ?? accountLabelForStoredAuth(nextAuth);
+  const rawApiKey = authSecret?.secret ?? input.apiKey?.trim();
+  if (hasCodexBridge()) {
+    nextAuth.secret = undefined;
+    nextAuth.refreshSecret = undefined;
+    if (rawApiKey && input.providerId !== "openai") {
+      void window.aivoDesktop.codex
+        .configureProvider({
+          apiKey: rawApiKey,
+          baseUrl: input.baseUrl ?? "",
+          model: input.modelId ?? "",
+          name: input.name ?? input.providerId,
+          providerId: input.providerId,
+        })
+        .catch(() => {});
+    }
+  }
   const existingAuth = normalizeStoredAuth(state.auth?.[providerID]);
   state.auth = {
     ...(state.auth ?? {}),

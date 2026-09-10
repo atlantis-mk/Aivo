@@ -13,6 +13,7 @@ export type ConversationTurn = {
   preToolText: string;
   responseText: string;
   toolCalls: domain.ToolCall[];
+  sessionId?: string;
   turnId?: string;
   userEventId?: string;
   assistantEventId?: string;

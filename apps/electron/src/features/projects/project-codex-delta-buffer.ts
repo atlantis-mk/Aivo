@@ -76,14 +76,9 @@ export function useProjectCodexDeltaBuffer({
       turnId: activeDelta.turnId,
     };
     const nextText = activeDelta.text.slice(renderCount);
-    if (nextText) {
-      pendingDeltasRef.current[activeIndex] = {
-        ...activeDelta,
-        text: nextText,
-      };
-    } else {
-      pendingDeltasRef.current.splice(activeIndex, 1);
-    }
+    pendingDeltasRef.current = nextText
+      ? [{ ...activeDelta, text: nextText }]
+      : [];
 
     renderRef.current([renderedDelta]);
     if (pendingDeltasRef.current.length === 0) stopRenderTimer();

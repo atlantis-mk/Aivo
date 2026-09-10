@@ -217,6 +217,7 @@ export function useProjectSubmitPromptAction({
         responseText: "",
         responseCompletedAt: null,
         responseVisible: false,
+        sessionId: activeSessionId,
         startedAt,
         submittedAt: new Date(),
         stopped: false,
@@ -260,6 +261,13 @@ export function useProjectSubmitPromptAction({
         threadId = thread.threadId;
         activeSessionIdRef.current = threadId;
         setActiveSessionId(threadId);
+        setTurns((currentTurns) =>
+          currentTurns.map((currentTurn) =>
+            currentTurn.id === localTurnId
+              ? { ...currentTurn, sessionId: threadId }
+              : currentTurn,
+          ),
+        );
         setCodingWorkspaceRoot(workspacePath);
         const now = new Date().toISOString();
         const optimisticSession = new domain.Session({

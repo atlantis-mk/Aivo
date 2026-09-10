@@ -45,11 +45,15 @@ export function mergeTurnPauseMetadata(
   const now = Date.now();
   let changed = false;
   const mergedTurns = nextTurns.map((turn, index) => {
+    const identityKeys = turnIdentityKeys(turn);
     const current =
-      turnIdentityKeys(turn)
+      identityKeys
         .map((key) => currentByKey.get(key))
         .find(Boolean) ??
       fallbackCurrentTurnForMerge(turn, index, currentTurns);
+    const identityMatched = Boolean(
+      current && identityKeys.some((key) => currentByKey.get(key) === current),
+    );
     if (!current) return turn;
     if (current.stopped || current.responseCompletedAt) return turn;
 
@@ -81,6 +85,7 @@ export function mergeTurnPauseMetadata(
     }
 
     if (
+      identityMatched &&
       (nextTurn.attachments?.length ?? 0) === 0 &&
       (current.attachments?.length ?? 0) > 0
     ) {
@@ -145,12 +150,15 @@ function fallbackCurrentTurnForMerge(
   index: number,
   currentTurns: ConversationTurn[],
 ) {
-  const currentAtIndex = currentTurns[index];
+  const sessionTurns = currentTurns.filter(
+    (currentTurn) => currentTurn.sessionId === turn.sessionId,
+  );
+  const currentAtIndex = sessionTurns[index];
   if (currentAtIndex && turnsCanShareLiveMetadata(turn, currentAtIndex)) {
     return currentAtIndex;
   }
 
-  return currentTurns.find((currentTurn) =>
+  return sessionTurns.find((currentTurn) =>
     turnsCanShareLiveMetadata(turn, currentTurn),
   );
 }
@@ -165,9 +173,10 @@ function turnsCanShareLiveMetadata(
 }
 
 function turnIdentityKeys(turn: ConversationTurn) {
+  const sessionPrefix = turn.sessionId ? `${turn.sessionId}:` : "";
   return [
-    turn.turnId && `turn:${turn.turnId}`,
-    turn.userEventId && `user-event:${turn.userEventId}`,
-    turn.id && `id:${turn.id}`,
+    turn.turnId && `${sessionPrefix}turn:${turn.turnId}`,
+    turn.userEventId && `${sessionPrefix}user-event:${turn.userEventId}`,
+    turn.id && `${sessionPrefix}id:${turn.id}`,
   ].filter((key): key is string => Boolean(key));
 }

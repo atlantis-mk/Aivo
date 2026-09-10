@@ -1,6 +1,6 @@
 {
   "name": "@aivo/electron",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "Aivo Electron client for the local Codex app-server runtime.",
@@ -101,11 +101,11 @@
     ],
     "extraResources": [
       {
-        "from": "../../../vendor/codex/codex-rs/target/release/codex",
+        "from": "../../vendor/codex/codex-rs/target/release/codex",
         "to": "bin/codex"
       },
       {
-        "from": "../../../vendor/codex/codex-rs/target/release/codex-code-mode-host",
+        "from": "../../vendor/codex/codex-rs/target/release/codex-code-mode-host",
         "to": "bin/codex-code-mode-host"
       }
     ],

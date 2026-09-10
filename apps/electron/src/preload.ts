@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("aivoDesktop", {
   platform: process.platform,
+  desktopState: {
+    read: (): Promise<Record<string, unknown> | null> =>
+      ipcRenderer.invoke("desktop-state:read"),
+    write: (state: Record<string, unknown>): Promise<void> =>
+      ipcRenderer.invoke("desktop-state:write", state),
+  },
   runtime: {
     getStatus: (): Promise<RuntimeStatus> =>
       ipcRenderer.invoke("runtime:get-status"),
@@ -199,6 +205,8 @@ contextBridge.exposeInMainWorld("aivoDesktop", {
   file: {
     openPath: (target: string): Promise<string> =>
       ipcRenderer.invoke("file:open-path", target),
+    readDataUrl: (target: string): Promise<string | null> =>
+      ipcRenderer.invoke("file:read-data-url", target),
     openExternal: (target: string): Promise<void> =>
       ipcRenderer.invoke("file:open-external", target),
     openText: (name: string, text: string): Promise<string> =>

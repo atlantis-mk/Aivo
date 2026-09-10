@@ -56,8 +56,20 @@ export function useProjectConversationTurnLoader({
       options: LoadConversationTurnsOptions = {},
     ) {
       if (hasCodexDesktopBridge()) {
-        const nextTurns = (await listCodexThreadTurns(sessionId)).map(
-          (turn) => codexTurnToConversationTurn(turn, sessionId),
+        const nextTurns = await Promise.all(
+          (await listCodexThreadTurns(sessionId)).map(async (turn) => {
+            const conversationTurn = codexTurnToConversationTurn(
+              turn,
+              sessionId,
+            );
+            return {
+              ...conversationTurn,
+              sessionId,
+              attachments: await hydrateConversationAttachments(
+                conversationTurn.attachments,
+              ),
+            };
+          }),
         );
         const hydratedTurns = mergeTurnPauseMetadata(
           applyPendingTurnMetadata(nextTurns, options),
@@ -83,7 +95,7 @@ export function useProjectConversationTurnLoader({
         events ?? [],
         toolCalls ?? [],
         runtimeTurns ?? [],
-      );
+      ).map((turn) => ({ ...turn, sessionId }));
       if (
         nextTurns.length === 0 &&
         options.fallbackAssistantEvent &&
@@ -122,6 +134,7 @@ export function useProjectConversationTurnLoader({
               toolCalls ?? [],
               options.fallbackAssistantEvent.turnId,
             ),
+            sessionId,
             turnId: options.fallbackAssistantEvent.turnId,
             assistantEventId: options.fallbackAssistantEvent.id,
           },
@@ -391,11 +404,25 @@ function imageAttachmentsFromUserMessage(
 ): ConversationUserAttachment[] {
   if (!Array.isArray(content)) return [];
   let imageIndex = 0;
-  return content.flatMap((item) => {
+  return content.flatMap((item): ConversationUserAttachment[] => {
     if (typeof item !== "object" || item === null) return [];
     const record = item as Record<string, unknown>;
-    if (record.type !== "image" || typeof record.url !== "string") return [];
-    const mimeType = mimeTypeFromDataUrl(record.url);
+    if (record.type === "image") {
+      if (typeof record.url !== "string") return [];
+      const mimeType = mimeTypeFromDataUrl(record.url);
+      if (!mimeType) return [];
+      imageIndex += 1;
+      return [{
+        id: `codex-image:${turnId}:${imageIndex}`,
+        kind: "image" as const,
+        mimeType,
+        name: `图片 ${imageIndex}`,
+        previewUrl: record.url,
+      }];
+    }
+
+    if (record.type !== "localImage" || typeof record.path !== "string") return [];
+    const mimeType = mimeTypeFromImagePath(record.path);
     if (!mimeType) return [];
     imageIndex += 1;
     return [{
@@ -403,11 +430,41 @@ function imageAttachmentsFromUserMessage(
       kind: "image" as const,
       mimeType,
       name: `图片 ${imageIndex}`,
-      previewUrl: record.url,
+      path: record.path,
     }];
   });
 }
 
 function mimeTypeFromDataUrl(url: string) {
   return /^data:([^;,]+);base64,/i.exec(url)?.[1] ?? null;
+}
+
+function mimeTypeFromImagePath(path: string) {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
+  return null;
+}
+
+async function hydrateConversationAttachments(
+  attachments: ConversationUserAttachment[] | undefined,
+) {
+  if (!attachments?.length) return attachments;
+  return Promise.all(
+    attachments.map(async (attachment) => {
+      if (
+        attachment.kind !== "image" ||
+        attachment.previewUrl ||
+        !attachment.path ||
+        !hasCodexDesktopBridge()
+      ) {
+        return attachment;
+      }
+      const previewUrl =
+        await window.aivoDesktop.file.readDataUrl(attachment.path);
+      return previewUrl ? { ...attachment, previewUrl } : attachment;
+    }),
+  );
 }

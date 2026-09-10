@@ -1,8 +1,10 @@
 type CodexApprovalRequest = import("./codex-app-server").CodexApprovalRequest;
-type CodexResourceInput = import("./codex-composer-resources").CodexResourceInput;
+type CodexResourceInput =
+  import("./codex-composer-resources").CodexResourceInput;
 type CodexSkillCatalog = import("./codex-composer-resources").CodexSkillCatalog;
 type CodexMcpServer = import("./codex-composer-resources").CodexMcpServer;
-type ComposerLocalSelection = import("./services/aivo/project-service").ComposerLocalSelection;
+type ComposerLocalSelection =
+  import("./services/aivo/project-service").ComposerLocalSelection;
 
 interface RuntimeStatus {
   state: "stopped" | "starting" | "ready" | "error";
@@ -23,6 +25,8 @@ interface CodexModel {
   id: string;
   name: string;
   description: string;
+  providerId?: string;
+  providerName?: string;
 }
 
 interface CodexThreadStart {
@@ -107,6 +111,10 @@ interface DesktopUpdateState {
 
 interface AivoDesktopApi {
   platform: NodeJS.Platform;
+  desktopState: {
+    read(): Promise<Record<string, unknown> | null>;
+    write(state: Record<string, unknown>): Promise<void>;
+  };
   runtime: {
     getStatus(): Promise<RuntimeStatus>;
     start(): Promise<RuntimeStatus>;
@@ -126,7 +134,10 @@ interface AivoDesktopApi {
     getAccount(): Promise<CodexAccount>;
     listCodexModels(): Promise<CodexModel[]>;
     listModels(): Promise<CodexModel[]>;
-    listSkills(workspaceRoot?: string, forceReload?: boolean): Promise<CodexSkillCatalog>;
+    listSkills(
+      workspaceRoot?: string,
+      forceReload?: boolean,
+    ): Promise<CodexSkillCatalog>;
     listMcpServers(): Promise<CodexMcpServer[]>;
     listThreads(limit: number, searchTerm?: string): Promise<CodexThread[]>;
     listThreadTurns(threadId: string): Promise<CodexThreadTurn[]>;
@@ -197,6 +208,7 @@ interface AivoDesktopApi {
   };
   file: {
     openPath(target: string): Promise<string>;
+    readDataUrl(target: string): Promise<string | null>;
     openExternal(target: string): Promise<void>;
     openText(name: string, text: string): Promise<string>;
     pathForFile(file: File): string;

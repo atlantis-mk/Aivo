@@ -20,6 +20,7 @@ export function mergeSingleToolCall(
     (turn) => !turn.stopped && !turn.responseCompletedAt,
   );
   const nextTurns = turns.map((turn, index) => {
+    if (toolCall.sessionId && turn.sessionId !== toolCall.sessionId) return turn;
     if (toolCall.turnId) {
       if (turn.turnId !== toolCall.turnId) return turn;
     } else if (index !== lastRunningTurnIndex) {
@@ -54,6 +55,7 @@ export function moveOpenResponseTextToAssistantPreambleBeforeTool(
     (turn) => !turn.stopped && !turn.responseCompletedAt,
   );
   const nextTurns = turns.map((turn, index) => {
+    if (toolCall.sessionId && turn.sessionId !== toolCall.sessionId) return turn;
     if (turn.stopped || turn.responseCompletedAt || !turn.responseText.trim()) {
       return turn;
     }

@@ -156,6 +156,7 @@ export function useProjectSidebarActions({
     const isDifferentSession = session.id !== activeSessionIdRef.current;
     if (isDifferentSession) {
       saveCurrentToolActivitySessionState();
+      setTurns([]);
     }
     const shouldAnimateFromEmpty = !hasTurns && isDifferentSession;
     const selectionId = sidebarConversationSelectionRef.current + 1;

@@ -21,13 +21,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { homedir } from "node:os";
 import {
   createDesktopUpdater,
   type DesktopUpdateState,
   type DesktopUpdater,
 } from "./desktop-updater.cjs";
 import { buildAivoRuntimeEnvironment } from "./codex-runtime-environment";
-import { loadCodexSkills, loadCodexMcpServers, codexResourceInputs, type CodexResourceInput } from "./codex-composer-resources";
+import {
+  loadCodexSkills,
+  loadCodexMcpServers,
+  codexResourceInputs,
+  type CodexResourceInput,
+} from "./codex-composer-resources";
+import { fallbackCatalogState } from "./lib/provider-catalog-fallback";
 import {
   codexApprovalResponse,
   codexPermissionPolicy,
@@ -67,6 +74,8 @@ interface CodexModel {
   id: string;
   name: string;
   description: string;
+  providerId?: string;
+  providerName?: string;
 }
 
 interface CodexThreadStart {
@@ -198,8 +207,11 @@ class AppServerRuntime {
   async start(): Promise<RuntimeStatus> {
     if (this.startPromise) return this.startPromise;
     this.startPromise = this.startRuntime();
-    try { return await this.startPromise; }
-    finally { this.startPromise = undefined; }
+    try {
+      return await this.startPromise;
+    } finally {
+      this.startPromise = undefined;
+    }
   }
 
   private async startRuntime(): Promise<RuntimeStatus> {
@@ -350,7 +362,112 @@ class AppServerRuntime {
       cursor = stringOrNull(result.nextCursor);
     } while (cursor);
 
-    return models;
+    const providerId = await this.currentProviderId();
+    return models.map((model) => ({ ...model, providerId }));
+  }
+
+  async listAllModels(): Promise<CodexModel[]> {
+    await this.start();
+    const configResult = await this.request("config/read", {
+      cwd: null,
+      includeLayers: false,
+    });
+    const config =
+      isRecord(configResult) && isRecord(configResult.config)
+        ? configResult.config
+        : null;
+    const currentProviderId = stringOrNull(config?.model_provider) ?? undefined;
+    const configProviderIds = isRecord(config?.model_providers)
+      ? Object.keys(config.model_providers)
+      : [];
+    const configuredProviderIds = (() => {
+      try {
+        return Object.keys(readProviderApiKeys());
+      } catch (error) {
+        console.warn("Unable to read configured providers:", error);
+        return [];
+      }
+    })();
+    const providerIds = [
+      ...new Set(
+        [
+          currentProviderId,
+          "openai",
+          ...configProviderIds,
+          ...configuredProviderIds,
+        ].filter((providerId): providerId is string => Boolean(providerId)),
+      ),
+    ];
+    const models = new Map<string, CodexModel>();
+    const providerCatalog = fallbackCatalogState();
+    if (providerIds.includes("openai")) {
+      try {
+        const openAIModels = await listCurrentCodexModels();
+        for (const model of openAIModels) {
+          models.set(`openai:${model.id}`, {
+            ...model,
+            providerId: "openai",
+            providerName: "OpenAI",
+          });
+        }
+      } catch (error) {
+        console.warn("Unable to list OpenAI models:", error);
+        const provider = providerCatalog.providers.find(
+          (candidate) => candidate.id === "openai",
+        );
+        for (const model of provider?.models ?? []) {
+          models.set(`openai:${model.id}`, {
+            id: model.id,
+            name: model.name,
+            description: "",
+            providerId: "openai",
+            providerName: "OpenAI",
+          });
+        }
+      }
+    }
+
+    for (const providerId of providerIds.filter((id) => id !== "openai")) {
+      const catalogProviderId =
+        providerId === "volcengine-agent-plan" ||
+        providerId === "volcengine-coding-plan"
+          ? "volcengine"
+          : providerId;
+      const provider = providerCatalog.providers.find(
+        (candidate) => candidate.id === catalogProviderId,
+      );
+      if (!provider) continue;
+      const modelProviders = isRecord(config?.model_providers)
+        ? config.model_providers
+        : {};
+      const providerConfig = isRecord(modelProviders[providerId])
+        ? modelProviders[providerId]
+        : null;
+      const providerName =
+        stringOrNull(providerConfig?.name) ?? provider.name ?? providerId;
+      for (const model of provider.models) {
+        models.set(`${provider.id}:${model.id}`, {
+          id: model.id,
+          name: model.name,
+          description: "",
+          providerId,
+          providerName,
+        });
+      }
+    }
+
+    return [...models.values()];
+  }
+
+  private async currentProviderId(): Promise<string | undefined> {
+    await this.start();
+    const result = await this.request("config/read", {
+      cwd: null,
+      includeLayers: false,
+    });
+    const config =
+      isRecord(result) && isRecord(result.config) ? result.config : null;
+    return stringOrNull(config?.model_provider) ?? undefined;
   }
 
   async configureProvider({
@@ -527,7 +644,10 @@ class AppServerRuntime {
     return { threadId };
   }
 
-  async listThreads(limit: number, searchTerm?: string): Promise<CodexThread[]> {
+  async listThreads(
+    limit: number,
+    searchTerm?: string,
+  ): Promise<CodexThread[]> {
     await this.start();
     const result = await this.request("thread/list", {
       limit,
@@ -584,13 +704,19 @@ class AppServerRuntime {
   async listSkills(workspaceRoot?: string, forceReload = false) {
     const status = await this.start();
     if (status.state !== "ready") throw new Error(status.detail);
-    return loadCodexSkills((method, params) => this.request(method, params), workspaceRoot, forceReload);
+    return loadCodexSkills(
+      (method, params) => this.request(method, params),
+      workspaceRoot,
+      forceReload,
+    );
   }
 
   async listMcpServers() {
     const status = await this.start();
     if (status.state !== "ready") throw new Error(status.detail);
-    return loadCodexMcpServers((method, params) => this.request(method, params));
+    return loadCodexMcpServers((method, params) =>
+      this.request(method, params),
+    );
   }
 
   async archiveThread(threadId: string): Promise<void> {
@@ -671,8 +797,12 @@ class AppServerRuntime {
       model: model || undefined,
       modelProvider: modelProvider || undefined,
       input: [
-        ...codexResourceInputs((resourceInputs ?? []).map(input => ({ input }))),
-        ...(text ? [{ type: "text", text, textElements: textElements ?? [] }] : []),
+        ...codexResourceInputs(
+          (resourceInputs ?? []).map((input) => ({ input })),
+        ),
+        ...(text
+          ? [{ type: "text", text, textElements: textElements ?? [] }]
+          : []),
         ...(images ?? []).map((image) => ({
           type: "image",
           url: `data:${image.mimeType};base64,${image.data}`,
@@ -712,7 +842,12 @@ class AppServerRuntime {
     const result = await this.request("turn/steer", {
       clientUserMessageId,
       expectedTurnId,
-      input: [{ type: "text", text, textElements: [] }, ...codexResourceInputs((resourceInputs ?? []).map(input => ({ input })))],
+      input: [
+        { type: "text", text, textElements: [] },
+        ...codexResourceInputs(
+          (resourceInputs ?? []).map((input) => ({ input })),
+        ),
+      ],
       threadId,
     });
     const steerResult = isRecord(result) ? result : null;
@@ -962,6 +1097,7 @@ class AppServerRuntime {
 
     this.pendingApprovals.set(request.id, { id, request });
     this.sendToWindows("codex:approval-request", { request });
+    this.notifyApprovalRequest(request);
   }
 
   private handleUserInputRequest(id: number | string, params: unknown): void {
@@ -1045,25 +1181,21 @@ class AppServerRuntime {
     }
   }
 
-  private notifyTurnCompleted(params: unknown): void {
+  private showAppNotification({
+    body,
+    title,
+  }: {
+    body: string;
+    title: string;
+  }): void {
     if (!Notification.isSupported()) return;
-
-    const payload = isRecord(params) ? params : {};
-    const turn = isRecord(payload.turn) ? payload.turn : {};
-    if (turn.status !== "completed") return;
     if (BrowserWindow.getFocusedWindow()) return;
-    const finalMessage = finalMessageFromTurn(turn);
-    const body = finalMessage || "对话已完成，点击返回。";
-
     const window = BrowserWindow.getAllWindows().find(
       (candidate) => !candidate.isDestroyed(),
     );
     if (!window) return;
 
-    const notification = new Notification({
-      body,
-      title: "Aivo",
-    });
+    const notification = new Notification({ body, title });
     notification.once("click", () => {
       if (window.isDestroyed()) return;
       if (window.isMinimized()) window.restore();
@@ -1071,6 +1203,22 @@ class AppServerRuntime {
       window.focus();
     });
     notification.show();
+  }
+
+  private notifyApprovalRequest(request: CodexApprovalRequest): void {
+    this.showAppNotification({
+      body: request.command || request.reason || request.title,
+      title: "Aivo 需要授权",
+    });
+  }
+
+  private notifyTurnCompleted(params: unknown): void {
+    const payload = isRecord(params) ? params : {};
+    const turn = isRecord(payload.turn) ? payload.turn : {};
+    if (turn.status !== "completed") return;
+    const finalMessage = finalMessageFromTurn(turn);
+    const body = finalMessage || "对话已完成，点击返回。";
+    this.showAppNotification({ body, title: "Aivo" });
   }
 }
 
@@ -1159,7 +1307,9 @@ const isMac = process.platform === "darwin";
 
 const resolveDevelopmentIcon = () => {
   const iconFile = process.platform === "win32" ? "icon.ico" : "icon.png";
-  return nativeImage.createFromPath(path.join(app.getAppPath(), "build", iconFile));
+  return nativeImage.createFromPath(
+    path.join(app.getAppPath(), "build", iconFile),
+  );
 };
 let desktopUpdater: DesktopUpdater | undefined;
 
@@ -1349,6 +1499,11 @@ app.whenReady().then(async () => {
   ipcMain.handle("runtime:get-status", () => runtime.status());
   ipcMain.handle("runtime:start", () => runtime.start());
   ipcMain.handle("runtime:stop", () => runtime.stop());
+  ipcMain.handle("desktop-state:read", () => readDesktopState());
+  ipcMain.handle(
+    "desktop-state:write",
+    (_event, state: Record<string, unknown>) => writeDesktopState(state),
+  );
   ipcMain.handle("account:read", () => runtime.readAccount());
   ipcMain.handle(
     "provider:configure",
@@ -1372,20 +1527,26 @@ app.whenReady().then(async () => {
       return runtime.saveModelPreferences(input);
     },
   );
-  ipcMain.handle("models:list", () => runtime.listModels());
-  ipcMain.handle("skills:list", (event, workspaceRoot?: string, forceReload?: boolean) => {
-    requireMainRenderer(event);
-    return runtime.listSkills(workspaceRoot, forceReload);
-  });
+  ipcMain.handle("models:list", () => runtime.listAllModels());
+  ipcMain.handle(
+    "skills:list",
+    (event, workspaceRoot?: string, forceReload?: boolean) => {
+      requireMainRenderer(event);
+      return runtime.listSkills(workspaceRoot, forceReload);
+    },
+  );
   ipcMain.handle("mcp:servers:list", (event) => {
     requireMainRenderer(event);
     return runtime.listMcpServers();
   });
   ipcMain.handle("models:codex:list", () => listCurrentCodexModels());
-  ipcMain.handle("threads:list", (event, limit: number, searchTerm?: string) => {
-    requireMainRenderer(event);
-    return runtime.listThreads(limit, searchTerm);
-  });
+  ipcMain.handle(
+    "threads:list",
+    (event, limit: number, searchTerm?: string) => {
+      requireMainRenderer(event);
+      return runtime.listThreads(limit, searchTerm);
+    },
+  );
   ipcMain.handle("thread:turns:list", (event, threadId: string) => {
     requireMainRenderer(event);
     return runtime.listThreadTurns(threadId);
@@ -1506,9 +1667,14 @@ app.whenReady().then(async () => {
       requireMainRenderer(event);
       if (!Array.isArray(targetPaths)) return [];
       return targetPaths
-        .filter((targetPath): targetPath is string => typeof targetPath === "string")
+        .filter(
+          (targetPath): targetPath is string => typeof targetPath === "string",
+        )
         .map(readComposerLocalSelection)
-        .filter((selection): selection is ComposerLocalSelection => selection !== null);
+        .filter(
+          (selection): selection is ComposerLocalSelection =>
+            selection !== null,
+        );
     },
   );
   ipcMain.handle("window:toggle-maximize", (event) => {
@@ -1522,8 +1688,31 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("file:open-path", async (_event, target: string) => {
-    const errorMessage = await shell.openPath(target);
+    const resolvedTarget = target.startsWith("~")
+      ? path.join(homedir(), target.slice(1))
+      : target;
+    const errorMessage = await shell.openPath(resolvedTarget);
     if (errorMessage) throw new Error(errorMessage);
+  });
+  ipcMain.handle("file:read-data-url", (_event, target: string) => {
+    const resolvedTarget = target.startsWith("~")
+      ? path.join(homedir(), target.slice(1))
+      : path.resolve(target);
+    const metadata = statSync(resolvedTarget);
+    if (!metadata.isFile() || metadata.size > 20 * 1024 * 1024) return null;
+    const extension = path.extname(resolvedTarget).toLowerCase();
+    const mimeType =
+      extension === ".png"
+        ? "image/png"
+        : extension === ".jpg" || extension === ".jpeg"
+          ? "image/jpeg"
+          : extension === ".webp"
+            ? "image/webp"
+            : extension === ".gif"
+              ? "image/gif"
+              : null;
+    if (!mimeType) return null;
+    return `data:${mimeType};base64,${readFileSync(resolvedTarget).toString("base64")}`;
   });
   ipcMain.handle("file:open-external", (_event, target: string) =>
     shell.openExternal(target),
@@ -1622,6 +1811,29 @@ function configEdit(keyPath: string, value: boolean | number | string | null) {
 
 function providerCredentialsPath() {
   return path.join(app.getPath("userData"), PROVIDER_CREDENTIALS_FILE);
+}
+
+function desktopStatePath() {
+  return path.join(homedir(), ".aivo", "desktop-state.json");
+}
+
+function readDesktopState(): Record<string, unknown> | null {
+  const filePath = desktopStatePath();
+  if (!existsSync(filePath)) return null;
+  try {
+    return JSON.parse(readFileSync(filePath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return null;
+  }
+}
+
+function writeDesktopState(state: Record<string, unknown>): void {
+  const filePath = desktopStatePath();
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, JSON.stringify(state, null, 2));
 }
 
 function readProviderApiKeys(): Record<string, string> {
