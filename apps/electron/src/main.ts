@@ -923,18 +923,16 @@ class AppServerRuntime {
     }
 
     if (app.isPackaged) {
-      return path.join(process.resourcesPath, "bin", "codex");
+      return path.join(
+        process.resourcesPath,
+        "bin",
+        process.platform === "win32" ? "codex.exe" : "codex",
+      );
     }
 
     return path.resolve(
       app.getAppPath(),
-      "..",
-      "..",
-      "vendor",
-      "codex",
-      "codex-rs",
-      "target",
-      "debug",
+      ".aivo-runtime",
       "codex",
     );
   }

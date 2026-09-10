@@ -21,6 +21,9 @@ out/
 .turbo/
 coverage/
 
+# Development-only OpenAI Codex release binary
+apps/electron/.aivo-runtime/
+
 # Environment
 .env
 .env.*

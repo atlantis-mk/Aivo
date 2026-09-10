@@ -26,7 +26,10 @@ import {
   normalizeTurnUpdatedPayload,
 } from "@/features/projects/project-event-payloads";
 import { hasCodexDesktopBridge } from "@/lib/app-config";
-import { listCodexSessions } from "@/services/codex-thread-service";
+import {
+  listCodexSessions,
+  listCodexThreadTurns,
+} from "@/services/codex-thread-service";
 import {
   useProjectCodexDeltaBuffer,
   type ProjectCodexDelta,
@@ -71,6 +74,8 @@ export function useProjectWorkspaceEvents({
   markConversationUnread: (sessionId: string) => void;
 }) {
   const codexDeltaTurnIdsRef = useRef(new Set<string>());
+  const codexAssistantTextTurnIdsRef = useRef(new Set<string>());
+  const codexRecoveryTurnIdsRef = useRef(new Set<string>());
 
   const renderCodexDeltas = useCallback(
     (deltas: ProjectCodexDelta[]) => {
@@ -130,6 +135,7 @@ export function useProjectWorkspaceEvents({
         const delta = stringValue(payload?.delta);
         if (!delta) return;
         codexDeltaTurnIdsRef.current.add(turnId);
+        codexAssistantTextTurnIdsRef.current.add(turnId);
         enqueueCodexDelta({ delta, threadId, turnId });
         return;
       }
@@ -171,6 +177,7 @@ export function useProjectWorkspaceEvents({
           });
         }
         if (agentMessageText && !codexDeltaTurnIdsRef.current.has(turnId)) {
+          codexAssistantTextTurnIdsRef.current.add(turnId);
           flushPendingAssistantDelta();
           setTurns((currentTurns) =>
             updateCodexTurn(currentTurns, turnId, threadId, (turn) => ({
@@ -227,19 +234,38 @@ export function useProjectWorkspaceEvents({
       const error = recordValue(completedTurn?.error);
       const errorMessage = stringValue(error?.message);
       const durationMs = numberValue(completedTurn?.durationMs);
+      const completedAssistantText = agentMessageTextFromTurn(completedTurn);
+      const needsAssistantTextRecovery =
+        !errorMessage &&
+        !completedAssistantText &&
+        !codexAssistantTextTurnIdsRef.current.has(turnId) &&
+        !codexRecoveryTurnIdsRef.current.has(turnId);
       setTurns((currentTurns) =>
         finalizeCodexTurn(currentTurns, turnId, threadId, {
           completedTurn,
+          completedAssistantText,
           durationMs,
           errorMessage,
         }),
       );
+      if (needsAssistantTextRecovery) {
+        codexRecoveryTurnIdsRef.current.add(turnId);
+        void recoverMissingCodexAssistantText({
+          activeSessionIdRef,
+          loadConversationTurns,
+          threadId,
+          turnId,
+        });
+      }
+      codexDeltaTurnIdsRef.current.delete(turnId);
+      codexAssistantTextTurnIdsRef.current.delete(turnId);
     });
   }, [
     activeSessionIdRef,
     enqueueCodexDelta,
     flushCodexDeltas,
     flushPendingAssistantDelta,
+    loadConversationTurns,
     markConversationUnread,
     mergeToolActivityFromCall,
     setConversationRunning,
@@ -288,10 +314,12 @@ function finalizeCodexTurn(
   sessionId: string,
   {
     completedTurn,
+    completedAssistantText,
     durationMs,
     errorMessage,
   }: {
     completedTurn: Record<string, unknown> | null;
+    completedAssistantText: string | null;
     durationMs: number | null;
     errorMessage: string | null;
   },
@@ -304,8 +332,8 @@ function finalizeCodexTurn(
     responseCompletedAt: new Date(),
     responseText:
       currentTurn.responseText ||
+      completedAssistantText ||
       errorMessage ||
-      currentTurn.responseText ||
       "",
     responseVisible: true,
     thinkingSeconds:
@@ -335,6 +363,41 @@ function finalizeCodexTurn(
   );
 }
 
+async function recoverMissingCodexAssistantText({
+  activeSessionIdRef,
+  loadConversationTurns,
+  threadId,
+  turnId,
+}: {
+  activeSessionIdRef: { current: string };
+  loadConversationTurns: (
+    sessionId: string,
+    options?: LoadConversationTurnsOptions,
+  ) => Promise<void>;
+  threadId: string;
+  turnId: string;
+}) {
+  for (const delayMs of [250, 1_000]) {
+    await delay(delayMs);
+    if (activeSessionIdRef.current !== threadId) return;
+
+    try {
+      const turns = await listCodexThreadTurns(threadId);
+      const completedTurn = turns.find((turn) => turn.id === turnId);
+      if (!completedTurn || !agentMessageTextFromTurn(completedTurn)) continue;
+      if (activeSessionIdRef.current !== threadId) return;
+      await loadConversationTurns(threadId);
+      return;
+    } catch {
+      // A later retry can still recover a turn that has not finished persisting.
+    }
+  }
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -354,4 +417,14 @@ function agentMessageTextFromItem(value: unknown): string | null {
   const item = value as Record<string, unknown>;
   if (item.type !== "agentMessage") return null;
   return typeof item.text === "string" && item.text.trim() ? item.text : null;
+}
+
+function agentMessageTextFromTurn(value: unknown): string | null {
+  const turn = recordValue(value);
+  if (!Array.isArray(turn?.items)) return null;
+  const text = turn.items
+    .map(agentMessageTextFromItem)
+    .filter((part): part is string => Boolean(part))
+    .join("\n");
+  return text || null;
 }

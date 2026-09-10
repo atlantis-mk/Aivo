@@ -60,7 +60,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
-          submodules: recursive
       - uses: pnpm/action-setup@v6
         with:
           version: 12.3.4
@@ -69,7 +68,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
       - name: Bind requested release identity
         run: |
           version="${RELEASE_TAG#v}"

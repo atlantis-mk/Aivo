@@ -7,7 +7,7 @@
   "main": "dist/main/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:main\" \"pnpm dev:preload\" \"pnpm dev:renderer\" \"pnpm dev:electron\"",
-    "predev": "pnpm build:runtime:debug",
+    "predev": "pnpm download:runtime",
     "dev:main": "vite build --watch --config vite.main.config.ts",
     "dev:preload": "vite build --watch --config vite.preload.config.ts",
     "dev:renderer": "node ./scripts/start-dev-renderer.mjs",
@@ -16,10 +16,12 @@
     "build:runtime": "node ./scripts/build-runtime.mjs --release --fast-release",
     "build:runtime:full": "node ./scripts/build-runtime.mjs --release",
     "build:runtime:debug": "node ./scripts/build-runtime.mjs --host-only",
-    "package": "pnpm build && pnpm build:runtime && electron-builder --publish never",
-    "package:mac": "pnpm build && pnpm build:runtime && electron-builder --mac --publish never",
-    "package:win": "pnpm build && pnpm build:runtime && electron-builder --win --publish never",
-    "package:linux": "pnpm build && pnpm build:runtime && electron-builder --linux --publish never",
+    "download:runtime": "node ./scripts/download-codex-release.mjs",
+    "download:runtime:package": "node ./scripts/download-codex-release.mjs --package",
+    "package": "pnpm build && pnpm download:runtime:package && electron-builder --publish never",
+    "package:mac": "pnpm build && pnpm download:runtime:package && electron-builder --mac --publish never",
+    "package:win": "pnpm build && pnpm download:runtime:package && electron-builder --win --publish never",
+    "package:linux": "pnpm build && pnpm download:runtime:package && electron-builder --linux --publish never",
     "test": "node --experimental-strip-types --import ./scripts/node-test-register.mjs --test \"src/**/*.test.ts\"",
     "lint": "tsc --noEmit"
   },
@@ -101,12 +103,8 @@
     ],
     "extraResources": [
       {
-        "from": "../../vendor/codex/codex-rs/target/release/codex",
-        "to": "bin/codex"
-      },
-      {
-        "from": "../../vendor/codex/codex-rs/target/release/codex-code-mode-host",
-        "to": "bin/codex-code-mode-host"
+        "from": ".aivo-runtime/package",
+        "to": "bin"
       }
     ],
     "mac": {
