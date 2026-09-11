@@ -252,6 +252,6 @@ jobs:
             gh release create "$tag" "${assets[@]}" "$asset_directory/SHA256SUMS" --repo "$GITHUB_REPOSITORY" --verify-tag --title "${release_titles[0]}" --notes-file "$notes" --draft
           fi
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "${release_titles[0]}" --notes-file "$notes" --draft=false
-          release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json draft,assets)"
+          release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,assets)"
           [[ "$(jq '[.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length' <<< "$release_json")" == 7 ]]
-          jq -e '.draft == false' <<< "$release_json" >/dev/null
+          jq -e '.isDraft == false' <<< "$release_json" >/dev/null
