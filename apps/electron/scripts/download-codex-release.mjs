@@ -204,7 +204,7 @@ function checksumFor(asset) {
 
 function extractTarball(archive, destination) {
   return new Promise((resolvePromise, reject) => {
-    const tar = spawn("tar", ["-xzf", archive, "-C", destination], {
+    const tar = spawn("tar", ["-xzf", tarPath(archive), "-C", tarPath(destination)], {
       stdio: "inherit",
     });
     tar.once("error", (error) => {
@@ -222,6 +222,13 @@ function extractTarball(archive, destination) {
       }
     });
   });
+}
+
+function tarPath(filePath) {
+  if (platform() !== "win32") return filePath;
+  return filePath
+    .replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`)
+    .replace(/\\/g, "/");
 }
 
 async function findBinary(directory, expectedName) {
