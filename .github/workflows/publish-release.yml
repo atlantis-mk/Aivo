@@ -24,8 +24,34 @@ env:
   RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
+  preflight:
+    name: Detect completed release
+    runs-on: ubuntu-24.04
+    outputs:
+      release_complete: ${{ steps.release.outputs.complete }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - id: release
+        name: Detect an already published asset set
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets 2>/dev/null || true)"
+          complete=false
+          if [[ -n "$release_json" ]] && \
+            jq -e '.isDraft == false and ([.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length == 7)' \
+              <<< "$release_json" >/dev/null; then
+            complete=true
+          fi
+          echo "complete=$complete" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.platform }}
+    needs: preflight
+    if: needs.preflight.outputs.release_complete != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +144,8 @@ jobs:
 
   publish_r2:
     name: Publish immutable R2 assets
-    needs: build
+    needs: [preflight, build]
+    if: needs.preflight.outputs.release_complete != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -208,7 +235,12 @@ jobs:
 
   github_release:
     name: Publish GitHub Release assets
-    needs: [build, publish_r2]
+    needs: [preflight, build, publish_r2]
+    if: >-
+      always() &&
+      needs.preflight.result == 'success' &&
+      (needs.preflight.outputs.release_complete == 'true' ||
+      (needs.build.result == 'success' && needs.publish_r2.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -220,6 +252,7 @@ jobs:
         shell: bash
     steps:
       - name: Require completed build and R2 publication
+        if: needs.preflight.outputs.release_complete != 'true'
         run: |
           test "${{ needs.build.result }}" = success
           test "${{ needs.publish_r2.result }}" = success
@@ -228,15 +261,18 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v8
+        if: needs.preflight.outputs.release_complete != 'true'
         with:
           pattern: aivo-release-*
           path: ${{ runner.temp }}/aivo-github-release
           merge-multiple: true
       - uses: actions/download-artifact@v8
+        if: needs.preflight.outputs.release_complete != 'true'
         with:
           name: aivo-release-publication
           path: ${{ runner.temp }}/aivo-publication
       - name: Create or resume the verified release
+        if: needs.preflight.outputs.release_complete != 'true'
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
@@ -255,3 +291,10 @@ jobs:
           release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,assets)"
           [[ "$(jq '[.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length' <<< "$release_json")" == 7 ]]
           jq -e '.isDraft == false' <<< "$release_json" >/dev/null
+      - name: Verify the existing published release
+        if: needs.preflight.outputs.release_complete == 'true'
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets)"
+          jq -e '.isDraft == false' <<< "$release_json" >/dev/null
+          [[ "$(jq '[.assets[] | select(.name == "SHA256SUMS" or (.name | startswith("Aivo_")))] | length' <<< "$release_json")" == 7 ]]
