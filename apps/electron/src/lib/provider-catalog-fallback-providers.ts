@@ -101,6 +101,74 @@ function geminiProvider(): ProviderInfo {
   };
 }
 
+function deepSeekProvider(): ProviderInfo {
+  const textModelDefaults = {
+    contextLength: 1_048_576,
+    maxContextLength: 1_048_576,
+    capabilities: ["reasoning", "tool-calling"],
+    modalities: ["text"],
+    streaming: true,
+    toolSupport: true,
+    supportedReasoningEfforts: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ],
+    defaultReasoningEffort: "high",
+    supportsVerbosity: true,
+    supportsParallelToolCalls: true,
+    webSearchToolType: "web_search",
+    webSearchToolTypeKnown: true,
+    useResponsesLite: false,
+  };
+  return {
+    id: "deepseek",
+    name: "DeepSeek",
+    type: "responses",
+    baseUrl: "https://api.deepseek.com",
+    builtIn: true,
+    custom: false,
+    connected: false,
+    environment: "DEEPSEEK_API_KEY",
+    defaultModelId: "deepseek-v4-flash",
+    models: [
+      {
+        ...textModelDefaults,
+        id: "deepseek-v4-flash",
+        providerId: "deepseek",
+        name: "DeepSeek V4 Flash",
+        recommended: true,
+      },
+      {
+        ...textModelDefaults,
+        id: "deepseek-v4-pro",
+        providerId: "deepseek",
+        name: "DeepSeek V4 Pro",
+      },
+      {
+        ...textModelDefaults,
+        id: "deepseek-v4-flash-vision-exp",
+        providerId: "deepseek",
+        name: "DeepSeek V4 Flash Vision (Experimental)",
+        capabilities: [
+          ...textModelDefaults.capabilities,
+          "multimodal",
+          "image-input",
+        ],
+        modalities: ["text", "image"],
+        supportsImageDetailOriginal: true,
+      },
+    ],
+    authMethods: [
+      { id: "api-key", label: "API Key", stable: true, available: true },
+    ],
+  };
+}
+
 function volcengineProviderBase(): ProviderInfo {
   return {
     id: "volcengine-agent-plan",
@@ -382,6 +450,7 @@ export function fallbackProviders(): ProviderInfo[] {
     openAIProvider(),
     claudeCodeProvider(),
     geminiProvider(),
+    deepSeekProvider(),
     volcengineProvider(
       "volcengine",
       "火山方舟",
@@ -397,6 +466,7 @@ export function fallbackPopularProviders(): ProviderInfo[] {
     openAIProvider(),
     claudeCodeProvider(),
     geminiProvider(),
+    deepSeekProvider(),
     volcengineProvider(
       "volcengine",
       "火山方舟",

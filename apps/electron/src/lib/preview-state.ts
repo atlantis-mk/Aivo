@@ -276,7 +276,7 @@ function buildPreviewCatalog(state: PreviewState): CatalogState {
     (provider) => provider.connected,
   );
   catalog.popularProviders = catalog.providers.filter((provider) =>
-    ["openai", "claude-code", "gemini"].includes(provider.id),
+    ["openai", "claude-code", "gemini", "deepseek"].includes(provider.id),
   );
   catalog.pendingAuth = state.pendingAuth ?? undefined;
   if (config.defaultModel) {
@@ -300,7 +300,8 @@ function connectedVolcengineProviderId(auth: PreviewState["auth"]) {
     )
     .sort(
       (first, second) =>
-        Date.parse(second.connectedAt ?? "") - Date.parse(first.connectedAt ?? ""),
+        Date.parse(second.connectedAt ?? "") -
+        Date.parse(first.connectedAt ?? ""),
     )[0]?.providerId;
 }
 

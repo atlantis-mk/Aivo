@@ -1,4 +1,5 @@
 import anthropicIcon from "@/assets/icons/provider/anthropic.svg";
+import deepSeekIcon from "@/assets/icons/provider/deepseek.svg";
 import googleIcon from "@/assets/icons/provider/google.svg";
 import openAIIcon from "@/assets/icons/provider/openai.svg";
 import syntheticIcon from "@/assets/icons/provider/synthetic.svg";
@@ -32,6 +33,7 @@ const providerIconModules = import.meta.glob<string>(
 const primaryProviderIds = new Set([
   "openai",
   "anthropic",
+  "deepseek",
   "google",
   "synthetic",
 ]);
@@ -51,6 +53,11 @@ export const providerChoices: ProviderChoice[] = [
     id: "gemini",
     name: "Gemini",
     iconSrc: googleIcon,
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    iconSrc: deepSeekIcon,
   },
   {
     id: "volcengine",

@@ -1,7 +1,7 @@
 {
   "name": "aivo-monorepo",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Aivo web, Electron, and shared UI monorepo.",
   "scripts": {
     "dev:web": "pnpm --filter @aivo/web dev",

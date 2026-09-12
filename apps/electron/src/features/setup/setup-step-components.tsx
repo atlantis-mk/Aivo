@@ -104,7 +104,9 @@ export function ProviderChoiceGrid({
   const visibleProviders = hasCodexDesktopBridge()
     ? providerChoices.filter(
         (provider) =>
-          provider.id === "openai" || volcengineProviderIds.has(provider.id),
+          provider.id === "openai" ||
+          provider.id === "deepseek" ||
+          volcengineProviderIds.has(provider.id),
       )
     : providerChoices;
 

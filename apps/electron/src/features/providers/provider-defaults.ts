@@ -16,7 +16,7 @@ export const providerProtocolDefaults: Record<string, ProviderProtocol> = {
   openai: "openai",
   "claude-code": "anthropic",
   anthropic: "anthropic",
-  deepseek: "openai",
+  deepseek: "responses",
   google: "google",
   gemini: "google",
   groq: "openai",
@@ -154,7 +154,7 @@ const providerModelDefaults: Record<string, string> = {
   "cloudflare-workers-ai": "@cf/zai-org/glm-4.7-flash",
   cortecs: "minimax-m2.7",
   deepinfra: "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
-  deepseek: "deepseek-chat",
+  deepseek: "deepseek-v4-flash",
   digitalocean: "openai-gpt-4o-mini",
   dinference: "gpt-oss-120b",
   drun: "public/deepseek-r1",
@@ -243,6 +243,7 @@ const providerDisplayNames: Record<string, string> = {
   "claude-code": "Claude Code",
   "cloudflare-ai-gateway": "Cloudflare AI Gateway",
   "cloudflare-workers-ai": "Cloudflare Workers AI",
+  deepseek: "DeepSeek",
   "fireworks-ai": "Fireworks AI",
   gemini: "Gemini",
   "github-copilot": "GitHub Copilot",
@@ -305,6 +306,7 @@ export function credentialReferenceFor(providerId: string) {
   if (providerId === "google") return "GEMINI_API_KEY";
   if (providerId === "gemini") return "GEMINI_API_KEY";
   if (providerId === "openrouter") return "OPENROUTER_API_KEY";
+  if (providerId === "deepseek") return "DEEPSEEK_API_KEY";
   if (volcengineProviderIds.has(providerId)) return "ARK_API_KEY";
   return undefined;
 }
@@ -322,6 +324,7 @@ export function primaryDefaultModelForProvider(providerId: string) {
     return "gemini-2.5-pro";
   }
   if (providerId === "openrouter") return "openai/gpt-5-codex";
+  if (providerId === "deepseek") return "deepseek-v4-flash";
   return "";
 }
 
